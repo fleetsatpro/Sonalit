@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { lazy, memo, Suspense, useState, useEffect, useRef } from 'react';
 import './CDSDesignSystem.css';
+import './CDSOverviewVisual.css';
 
 import { useAuthStore } from '../../stores/auth.js';
 
@@ -444,11 +445,12 @@ interface OverviewMetricCardProps {
   label: string;
   value: string;
   detail: string;
+  image: string;
   tone: 'blue' | 'cyan' | 'teal' | 'amber' | 'red' | 'violet';
   onOpen: () => void;
 }
 
-function OverviewMetricCard({ index, label, value, detail, tone, onOpen }: OverviewMetricCardProps) {
+function OverviewMetricCard({ index, label, value, detail, image, tone, onOpen }: OverviewMetricCardProps) {
   const [displayValue, setDisplayValue] = useState(value === '—' ? value : '0');
   const hasAnimated = useRef(false);
 
@@ -494,6 +496,10 @@ function OverviewMetricCard({ index, label, value, detail, tone, onOpen }: Overv
         <span className="cds-overview-metric__label">{label}</span>
         <span className="cds-overview-metric__index">{index}</span>
       </span>
+      <span className="cds-overview-metric__media" aria-hidden="true">
+        <img src={image} alt="" loading="lazy" decoding="async" />
+        <span className="cds-overview-metric__media-shade" />
+      </span>
       <span className="cds-overview-metric__value" aria-live="off">{displayValue}</span>
       <span className="cds-overview-metric__detail">{detail}</span>
       <span className="cds-overview-metric__trace" aria-hidden="true" />
@@ -537,6 +543,7 @@ function DashboardView() {
       label: 'REGISTERED CONTAINERS',
       value: kv('active_containers'),
       detail: 'Organisation-wide equipment register',
+      image: 'https://images.unsplash.com/photo-1700716465891-9e5e9f501d7d?auto=format&fit=crop&w=560&q=82',
       tone: 'blue',
       onOpen: () => setActiveView('containers'),
     },
@@ -545,6 +552,7 @@ function DashboardView() {
       label: 'ACTIVE MOVEMENTS',
       value: kv('in_transit'),
       detail: 'Dispatched, checkpoint, delayed or at port',
+      image: 'https://images.unsplash.com/photo-1766561994067-dbd575e1cff2?auto=format&fit=crop&w=560&q=82',
       tone: 'cyan',
       onOpen: () => setActiveView('live'),
     },
@@ -553,6 +561,7 @@ function DashboardView() {
       label: 'ACTIVE E-LOCKS',
       value: kv('active_locks'),
       detail: 'Assigned or installed devices',
+      image: 'https://images.unsplash.com/photo-1654944932871-20b64b5b800a?auto=format&fit=crop&w=560&q=82',
       tone: 'teal',
       onOpen: () => setActiveView('locks'),
     },
@@ -561,6 +570,7 @@ function DashboardView() {
       label: 'DELAYED TRIPS',
       value: kv('delayed_trips'),
       detail: 'Movements requiring operator review',
+      image: 'https://images.unsplash.com/photo-1759273560543-7f0e66af2a4d?auto=format&fit=crop&w=560&q=82',
       tone: delayedCount > 0 ? 'red' : 'blue',
       onOpen: () => setActiveView('pulse'),
     },
@@ -580,6 +590,8 @@ function DashboardView() {
     { label: 'AWAITING DEPARTURE', count: trips.filter(trip => trip.phase === 'staged').length, tone: 'staged' },
   ];
 
+  const phaseTotal = phaseCounts.reduce((total, phase) => total + phase.count, 0);
+
   const activityTags: Record<string, { label: string; tone: string }> = {
     clamp: { label: 'CLAMP', tone: 'blue' },
     depart: { label: 'DEPART', tone: 'cyan' },
@@ -598,7 +610,7 @@ function DashboardView() {
         <div className="cds-overview-heading__copy">
           <div className="cds-overview-eyebrow">CONTAINER MANAGEMENT <span>/</span> OPERATIONAL INTELLIGENCE</div>
           <h1>Operations overview</h1>
-          <p>Container custody, active movements and equipment status across your organisation.</p>
+          <p>A consolidated operating picture of container custody, movement phases and equipment readiness.</p>
         </div>
         <div className="cds-overview-date">
           <span className="cds-overview-date__label">OPERATIONAL SNAPSHOT</span>
@@ -643,8 +655,8 @@ function DashboardView() {
 
       <section className="cds-overview-secondary" aria-label="Operational flow indicators">
         <div className="cds-overview-secondary__heading">
-          <span>FLOW &amp; EXCEPTIONS</span>
-          <span>LIVE REGISTER MEASURES</span>
+          <span>OPERATIONS PULSE</span>
+          <span>QUEUE · COMPLETION · EFFICIENCY</span>
         </div>
         <div className="cds-overview-secondary__grid">
           {secondaryMetrics.map((metric, index) => (
@@ -682,6 +694,28 @@ function DashboardView() {
                 <span className="cds-overview-phase__label">{phase.label}</span>
               </div>
             ))}
+          </div>
+
+          <div
+            className="cds-overview-phase-distribution"
+            role="img"
+            aria-label={phaseTotal > 0
+              ? 'Open-trip distribution: ' + phaseCounts.map(phase => phase.label.toLowerCase() + ' ' + phase.count).join(', ')
+              : 'No open trips to distribute by phase'}
+          >
+            <div className="cds-overview-phase-distribution__track" aria-hidden="true">
+              {phaseCounts.map(phase => (
+                <span
+                  key={phase.label}
+                  className={'cds-overview-phase-distribution__segment cds-overview-phase-distribution__segment--' + phase.tone}
+                  style={{ width: phaseTotal > 0 ? (phase.count / phaseTotal * 100) + '%' : '0%' }}
+                />
+              ))}
+            </div>
+            <div className="cds-overview-phase-distribution__caption">
+              <span>OPEN TRIP DISTRIBUTION</span>
+              <span>{phaseTotal.toLocaleString('en-GB')} {phaseTotal === 1 ? 'record' : 'records'} · current movement phase</span>
+            </div>
           </div>
 
           <div className="cds-overview-map">
