@@ -24,7 +24,6 @@ const Rail=React.memo(function Rail({onClose}:{onClose?:()=>void}){
   const user=useAuthStore(s=>s.user);
   const routerState=useRouterState();
   const currentPath=routerState.location.pathname;
-  const initials=user?.name?.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)??'OP';
   return <nav style={{display:'flex',flexDirection:'column',width:'var(--d-rail-w)',height:'100vh',background:'var(--d-carbon)',borderRight:'1px solid var(--d-rim2)',position:'fixed',left:0,top:0,zIndex:300,overflowY:'auto',scrollbarWidth:'none'}}>
     <Link to="/home" onClick={onClose} style={{display:'block',textDecoration:'none',padding:'20px 20px 12px',borderBottom:'1px solid var(--d-rim)'}}>
       <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -51,7 +50,7 @@ const Rail=React.memo(function Rail({onClose}:{onClose?:()=>void}){
     </div>
     <div style={{padding:'16px 20px',borderTop:'1px solid var(--d-rim)',display:'flex',alignItems:'center',gap:10}}>
       <div style={{position:'relative',flexShrink:0}}>
-        <div style={{width:36,height:36,borderRadius:'50%',background:'linear-gradient(135deg,#f07020,#ff9040)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Orbitron, sans-serif',fontWeight:700,fontSize:12,color:'#fff'}}>{initials}</div>
+        <div style={{width:36,height:36,borderRadius:'50%',background:'linear-gradient(135deg,#f07020,#ff9040)',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}><NavArtwork name="nav-profile" className="son-rail-profile-art" /></div>
         <div style={{position:'absolute',inset:-4,borderRadius:'50%',border:'1.5px solid var(--d-orange)',animation:'d-sonar 2.5s ease-out infinite',opacity:0}}/>
       </div>
       <div><div style={{fontSize:13,fontWeight:600,color:'var(--d-t1)'}}>{user?.name??'Operator'}</div><div style={{fontSize:10,color:'var(--d-t3)',textTransform:'uppercase',letterSpacing:'.08em',fontFamily:'IBM Plex Mono, monospace'}}>{user?.role??'operator'}</div></div>
