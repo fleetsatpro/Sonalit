@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 const quickActions = readFileSync(new URL('./QuickActions.tsx', import.meta.url), 'utf8');
 const compactEmpty = readFileSync(new URL('./CompactEmpty.tsx', import.meta.url), 'utf8');
 const rail = readFileSync(new URL('../layout/Rail.tsx', import.meta.url), 'utf8');
+const navSprite = readFileSync(new URL('../../../public/assets/nav/sonalit-nav-sprite.svg', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../styles/dashboard.css', import.meta.url), 'utf8');
 const launcher = readFileSync(new URL('../layout/AppLauncherOverlay.tsx', import.meta.url), 'utf8');
 const cdsRail = readFileSync(new URL('../../../../../container-delivery-system/src/components/layout/Rail.tsx', import.meta.url), 'utf8');
@@ -20,6 +21,9 @@ describe('premium operational iconography', () => {
     expect(rail).toContain('son-rail-icon');
     expect(rail).toContain('export function NavArtwork');
     expect(rail).toContain('son-rail-art');
+    expect(rail).toContain('name="nav-profile"');
+    expect(rail).not.toContain('initials');
+    expect(navSprite).toContain('id="nav-profile"');
     expect(rail).toContain('sonalit-nav-sprite.svg#');
     expect(rail).not.toContain('LucideIcon');
     expect(css).toContain('.son-rail-icon .son-rail-art');
