@@ -1,10 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import {
   Search, Bell, ChevronLeft, PanelLeftClose, PanelLeft, Menu, X,
-  LayoutDashboard, MapPin, ClipboardList, Container, Lock,
-  Truck, Anchor, Activity, FileText, BarChart2, Settings,
-  
-  type LucideIcon,
 } from 'lucide-react';
 import { lazy, memo, Suspense, useState, useEffect, useRef } from 'react';
 import './CDSDesignSystem.css';
@@ -95,19 +91,19 @@ const CDSWorkspace = memo(function CDSWorkspace({ activeView }: { activeView: CD
   );
 });
 
-const VIEW_ICONS: Record<string, LucideIcon> = {
-  dashboard: LayoutDashboard,
-  live: MapPin,
-  bookings: ClipboardList,
-  port: Anchor,
-  pulse: Activity,
-  containers: Container,
-  locks: Lock,
-  transporters: Truck,
-  inbox: FileText,
-  analytics: BarChart2,
-  reports: FileText,
-  settings: Settings,
+const VIEW_CODES: Record<string, string> = {
+  dashboard: 'OV',
+  live: 'MV',
+  bookings: 'BK',
+  port: 'PT',
+  pulse: 'BH',
+  containers: 'CT',
+  locks: 'EL',
+  transporters: 'TP',
+  inbox: 'AC',
+  analytics: 'PI',
+  reports: 'RP',
+  settings: 'CF',
 };
 
 const NAV_SECTIONS: { label: string; ids: string[] }[] = [
@@ -134,12 +130,7 @@ function CDSNavigation({ expanded, activeView, mobile = false, onSelect, onBack,
   return (
     <nav className={`cds-navigation ${mobile ? 'cds-navigation--mobile' : 'cds-navigation--desktop'} ${expanded ? 'is-expanded' : 'is-collapsed'}`} aria-label="Container Management workspaces">
       <div className="cds-nav-brand">
-        <div className="cds-brand-mark" aria-hidden="true">
-          <svg width="28" height="28" viewBox="0 0 36 36" fill="none">
-            <path d="M6 11.5 18 5l12 6.5v13L18 31 6 24.5v-13Z" stroke="currentColor" strokeWidth="2.1" strokeLinejoin="round"/>
-            <path d="M6 11.5 18 18l12-6.5M18 18v13M11 8.8l14 7.6M11 27.1V14.4M25 27.1V14.4" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
-          </svg>
-        </div>
+        <div className="cds-brand-mark" aria-hidden="true"><span>CDS</span></div>
         {showLabels && <div className="cds-brand-copy"><strong>CONTAINER MANAGEMENT</strong><span>OPERATIONS SYSTEM <i>/</i> CDS</span></div>}
         {mobile && <button type="button" className="cds-nav-close" onClick={onClose} aria-label="Close navigation"><X size={21} strokeWidth={2.3}/></button>}
       </div>
@@ -153,11 +144,11 @@ function CDSNavigation({ expanded, activeView, mobile = false, onSelect, onBack,
             {section.ids.map(id => {
               const view = CDS_VIEWS.find(item => item.id === id);
               if (!view) return null;
-              const Icon = VIEW_ICONS[id];
+              const code = VIEW_CODES[id] ?? '—';
               const active = activeView === id;
               return (
                 <button key={id} type="button" onClick={() => onSelect(id as CDSView)} title={showLabels ? undefined : view.label} aria-label={view.label} aria-current={active ? 'page' : undefined} className={`cds-nav-item ${active ? 'is-active' : ''}`}>
-                  {Icon && <Icon className="cds-nav-icon" size={20} strokeWidth={2.25} aria-hidden="true"/>}
+                  <span className="cds-nav-code" aria-hidden="true">{code}</span>
                   {showLabels && <span className="cds-nav-label">{view.label}</span>}
                   {active && <span className="cds-nav-active-marker" aria-hidden="true"/>}
                 </button>
@@ -532,9 +523,10 @@ function DashboardView() {
   const pendingUnclampCount = Number(kpis?.['pending_unclamp'] ?? 0);
   const unacknowledgedCount = Number(kpis?.['unacknowledged_alerts'] ?? 0);
   const avgHrs = Number(kpis?.['avg_transit_hours'] ?? 0);
-  const avgH = Math.floor(avgHrs);
-  const avgM = Math.round((avgHrs - avgH) * 60);
-  const avgTransit = Number.isFinite(avgHrs) && avgHrs > 0 ? String(avgH) + 'h ' + String(avgM) + 'm' : '—';
+  const avgTotalMinutes = Number.isFinite(avgHrs) && avgHrs > 0 ? Math.round(avgHrs * 60) : 0;
+  const avgH = Math.floor(avgTotalMinutes / 60);
+  const avgM = avgTotalMinutes % 60;
+  const avgTransit = avgTotalMinutes > 0 ? String(avgH) + 'h ' + String(avgM).padStart(2, '0') + 'm' : '—';
   const todayLabel = new Intl.DateTimeFormat('en-GB', {
     weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
   }).format(new Date());
