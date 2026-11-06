@@ -60,6 +60,7 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(alerts).toContain('IMPACT FIRST. URGENCY SEPARATE.');
     expect(alerts).toContain('OPERATIONAL SIGNAL');
     expect(deep).toContain('CLASSIFICATION');
+    expect(deep).toContain('x.headline||x.title||x.body||x.text');
     expect(alerts).toContain('severity_assessment');
     expect(deep).toContain('PRELIMINARY THREAT ASSESSMENT');
     expect(deep).toContain('displayText(JSON.stringify(v,null,2),2400)');
