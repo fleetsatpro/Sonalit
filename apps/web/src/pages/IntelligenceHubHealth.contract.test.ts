@@ -13,6 +13,7 @@ const router = read('../router.tsx');
 const mainEntry = read('../main.tsx');
 const visualSystem = read('../styles/intelligence-centre-premium.css');
 const signatureSystem = read('../styles/intelligence-centre-signature.css');
+const craftSystem = read('../styles/intelligence-centre-craft.css');
 
 describe('Intel Hub product and evidence-truth contract', () => {
   it('exposes one command, analysis, collection and dissemination shell', () => {
@@ -81,7 +82,8 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(signatureSystem).toContain('transform:translate3d');
     expect(signatureSystem).toContain('@keyframes intel-aurora-drift');
     expect(deep).toContain('function WorkbenchGlyph');
-    expect(deep).toContain('aria-label="Analysis workspaces"');
+    expect(deep).toContain('aria-label="Analysis domains"');
+    expect(deep).toContain('aria-label={activeGroup[1]+\' workspaces\'}');
     for (const glyph of ['situation', 'signals', 'operations', 'atlas', 'countries', 'investigations', 'forecasts', 'publications', 'watchlists', 'sources']) expect(deep).toContain("'" + glyph + "'");
     expect(deep).not.toContain('<Icon size={14}/>');
     expect(signatureSystem).toContain('grid-template-columns:repeat(5,minmax(0,1fr))');
@@ -89,6 +91,14 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(signatureSystem).toContain('prefers-reduced-motion:reduce');
     expect(command).toContain("basemap === 'dark' ? DARK_STREET_STYLE : STREET_STYLE");
     expect(command).toContain('icv-basemap-toggle');
+    expect(command).toContain("basemap === 'dark' ? 'OpenFreeMap · Dark' : 'Esri World Street Map'");
+    expect(craftSystem).toContain('.intelligence-live');
+    expect(craftSystem).toContain('.ia-page');
+    expect(craftSystem).toContain('.icd-subnav');
+    expect(craftSystem).toContain('prefers-reduced-motion: reduce');
+    expect(alerts).toContain('function IncidentGlyph');
+    expect(alerts).not.toContain('const ICONS:');
+    expect(newsroom).toContain('PREVIOUS RESULTS RETAINED');
   });
 
   it('uses server-side window aggregates and keeps event/warning detail separate', () => {

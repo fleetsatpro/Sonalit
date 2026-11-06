@@ -251,7 +251,7 @@ export default function IntelligenceCommandView() {
           </MapLibreMap>
           <div className="icv-map-readout"><span>GEOLOCATED EVENT OBJECTS</span><strong>{summaryUnavailable ? '—' : located.length}</strong><small>{events.length} event records returned · {Math.max(0, events.length - located.length)} without coordinates</small></div>
         </div>
-        <footer className="icv-map-footer"><span><MapPin size={12}/> Geographic placement reflects recorded coordinates only.</span><span>Basemap: Esri World Street Map</span></footer>
+        <footer className="icv-map-footer"><span><MapPin size={12}/> Geographic placement reflects recorded coordinates only.</span><span>Basemap: {basemap === 'dark' ? 'OpenFreeMap · Dark' : 'Esri World Street Map'}</span></footer>
       </section>
 
       <aside className="icv-right-rail">
