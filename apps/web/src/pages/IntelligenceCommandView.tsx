@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Clock3, ExternalLink, Globe2, MapPin, RefreshCw, ShieldAlert, ShieldCheck, X } from 'lucide-react';
-import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
+import MapLibreMap, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
 import { STREET_STYLE } from '../lib/mapStyles.js';
@@ -27,6 +27,33 @@ const COUNTRY_NAMES: Record<string, string> = {
   ZM: 'Zambia', ZW: 'Zimbabwe',
 };
 const WINDOWS = [1, 6, 24, 72, 168];
+const REGION_CENTRES: Record<string, { longitude: number; latitude: number; zoom: number }> = {
+  'east-africa': { longitude: 37, latitude: -2, zoom: 3.45 },
+  'west-africa': { longitude: -3, latitude: 9, zoom: 3.35 },
+  'central-africa': { longitude: 19, latitude: 0, zoom: 3.25 },
+  'north-africa': { longitude: 17, latitude: 27, zoom: 3.2 },
+  'southern-africa': { longitude: 24, latitude: -24, zoom: 3.3 },
+};
+const COUNTRY_CENTRES: Record<string, { longitude: number; latitude: number; zoom: number }> = {
+  BI: { longitude: 29.9, latitude: -3.3, zoom: 6 },
+  CD: { longitude: 23.7, latitude: -2.5, zoom: 4.3 },
+  DJ: { longitude: 42.6, latitude: 11.8, zoom: 6 },
+  ER: { longitude: 39.5, latitude: 15.2, zoom: 5.2 },
+  ET: { longitude: 40.5, latitude: 9.1, zoom: 4.5 },
+  KE: { longitude: 37.9, latitude: 0.2, zoom: 5 },
+  MG: { longitude: 46.5, latitude: -19, zoom: 4.8 },
+  MW: { longitude: 34.3, latitude: -13.5, zoom: 5.5 },
+  MZ: { longitude: 35.5, latitude: -18.2, zoom: 4.6 },
+  RW: { longitude: 29.9, latitude: -1.9, zoom: 6 },
+  SD: { longitude: 30.2, latitude: 15.5, zoom: 4.5 },
+  SO: { longitude: 46, latitude: 5, zoom: 4.6 },
+  SS: { longitude: 31.3, latitude: 7.3, zoom: 5 },
+  TZ: { longitude: 34.8, latitude: -6.3, zoom: 4.6 },
+  UG: { longitude: 32.3, latitude: 1.4, zoom: 5.3 },
+  ZM: { longitude: 27.8, latitude: -13.2, zoom: 4.6 },
+  ZW: { longitude: 29.9, latitude: -19, zoom: 5 },
+};
+const REGION_BY_COUNTRY = new Map(Object.entries(REGIONS).flatMap(([region, countries]) => countries.map(code => [code, region] as const)));
 const list = (value: any, key: string): Row[] => Array.isArray(value?.[key]) ? value[key] : [];
 const age = (value?: string | null) => {
   if (!value) return '—';
@@ -52,7 +79,7 @@ const confidence = (value: unknown) => {
   const number = Number(value);
   return Number.isFinite(number) ? String(number) : '—';
 };
-const validCoordinate = (value: unknown) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+const validCoordinate = (value: unknown, min = -180, max = 180) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max;
 
 function Metric({ label, value, note, tone = 'normal' }: { label: string; value: number | string; note: string; tone?: string }) {
   return <article className={'icv-metric icv-metric-' + tone}><span>{label}</span><strong>{value}</strong><small>{note}</small></article>;
@@ -155,12 +182,34 @@ export default function IntelligenceCommandView() {
     { label: 'Source registry', isError: sourceRegistryQ.isError, isPending: sourceRegistryQ.isPending, data: sourceRegistryQ.data },
     { label: 'Country register', isError: countriesQ.isError, isPending: countriesQ.isPending, data: countriesQ.data },
   ], healthSources);
-  const located = events.filter(event => validCoordinate(event.latitude) && validCoordinate(event.longitude));
+  const located = events.filter(event => validCoordinate(event.latitude, -90, 90) && validCoordinate(event.longitude, -180, 180));
+  const regionFallback = scope.type === 'region'
+    ? REGION_CENTRES[scope.key]
+    : scope.type === 'country'
+      ? REGION_CENTRES[REGION_BY_COUNTRY.get(scope.key) || 'east-africa']
+      : { longitude: 20, latitude: 1, zoom: 3.1 };
   const centre = located[0]
     ? { longitude: Number(located[0].longitude), latitude: Number(located[0].latitude), zoom: 5 }
     : scope.type === 'country'
-      ? { longitude: 37.9, latitude: 0.2, zoom: 5 }
-      : { longitude: 37, latitude: -2, zoom: 3.45 };
+      ? COUNTRY_CENTRES[scope.key] || regionFallback
+      : regionFallback;
+  const mapRef = useRef<any>(null);
+  const hasAutoCentred = useRef(false);
+
+  useEffect(() => {
+    hasAutoCentred.current = false;
+  }, [scope.type, scope.key]);
+
+  useEffect(() => {
+    if (!overviewQ.isSuccess || !located.length || hasAutoCentred.current) return;
+    const first = located[0];
+    mapRef.current?.flyTo({
+      center: [Number(first.longitude), Number(first.latitude)],
+      zoom: scope.type === 'country' ? Math.max(centre.zoom, 5) : Math.max(centre.zoom, 4),
+      duration: 650,
+    });
+    hasAutoCentred.current = true;
+  }, [overviewQ.isSuccess, scope.type, scope.key, located.length, events.length, centre.zoom]);
   const visibleCountries = countries.filter(row => {
     const code = String(row.country_code || '').toUpperCase();
     if (scope.type === 'country') return code === scope.key;
@@ -236,12 +285,12 @@ export default function IntelligenceCommandView() {
       <section className="icv-panel icv-map-panel">
         <header className="icv-panel-head"><div><span>01 / SPATIAL CONTEXT</span><h2>Geographic event picture</h2><p>Only event records with stored coordinates are plotted.</p></div><div className="icv-map-legend"><span><i className="critical"/> Critical</span><span><i className="high"/> High</span><span><i className="other"/> Other / unclassified</span></div></header>
         <div className="icv-map-canvas">
-          <Map key={scope.type + ':' + scope.key} initialViewState={centre} mapStyle={STREET_STYLE} style={{ width: '100%', height: '100%' }} attributionControl>
+          <MapLibreMap ref={mapRef} key={scope.type + ':' + scope.key} initialViewState={centre} mapStyle={STREET_STYLE} style={{ width: '100%', height: '100%' }} attributionControl>
             <NavigationControl position="top-right" showCompass={false}/>
             {located.slice(0, 250).map((event, index) => <Marker key={event.id || index} longitude={Number(event.longitude)} latitude={Number(event.latitude)} anchor="center" onClick={click => { click.originalEvent.stopPropagation(); setSelectedEvent(event); setSelectedWarning(null); }}>
               <button type="button" className={'icv-map-marker icv-severity-' + severity(event.severity)} title={event.title || 'Intelligence event'} aria-label={'Open ' + (event.title || 'intelligence event')}><i/></button>
             </Marker>)}
-          </Map>
+          </MapLibreMap>
           <div className="icv-map-readout"><span>GEOLOCATED EVENT OBJECTS</span><strong>{summaryUnavailable ? '—' : located.length}</strong><small>{events.length} event records returned · {Math.max(0, events.length - located.length)} without coordinates</small></div>
         </div>
         <footer className="icv-map-footer"><span><MapPin size={12}/> Geographic placement reflects recorded coordinates only.</span><span>Basemap: Esri World Street Map</span></footer>
@@ -303,7 +352,7 @@ export default function IntelligenceCommandView() {
          <div className="icv-drawer-body">
           <div className="icv-drawer-tags"><span>{String(severity(selected?.severity || selectedEvent?.severity || selectedWarning?.severity)).toUpperCase()}</span><span>{selected?.country_code || selectedEvent?.country_code || selectedWarning?.country_code || 'GEOGRAPHY UNRESOLVED'}</span><span>{selected?.source_count == null ? (selectedWarning ? 'SOURCE COUNT —' : 'SOURCE COUNT —') : String(selected.source_count) + ' LINKED OBSERVATIONS'}</span></div>
           <p>{selected?.summary || selectedEvent?.summary || selectedWarning?.summary || 'No event summary supplied.'}</p>
-          <div className="icv-drawer-fields"><div><small>FIRST OCCURRED</small><b>{time(selected?.occurred_from || selectedEvent?.occurred_from || selectedWarning?.occurred_from)}</b></div><div><small>LAST OBSERVED</small><b>{time(selected?.last_seen_at || selectedEvent?.last_seen_at || selectedWarning?.last_detected_at)}</b></div><div><small>EVENT CONFIDENCE</small><b>{confidence(selected?.confidence ?? selectedEvent?.confidence ?? selectedWarning?.confidence)}</b></div><div><small>COORDINATES</small><b>{validCoordinate(selected?.latitude ?? selectedEvent?.latitude ?? selectedWarning?.latitude) && validCoordinate(selected?.longitude ?? selectedEvent?.longitude ?? selectedWarning?.longitude) ? String(selected?.latitude ?? selectedEvent?.latitude ?? selectedWarning?.latitude) + ', ' + String(selected?.longitude ?? selectedEvent?.longitude ?? selectedWarning?.longitude) : 'Not resolved'}</b></div></div>
+          <div className="icv-drawer-fields"><div><small>FIRST OCCURRED</small><b>{time(selected?.occurred_from || selectedEvent?.occurred_from || selectedWarning?.occurred_from)}</b></div><div><small>LAST OBSERVED</small><b>{time(selected?.last_seen_at || selectedEvent?.last_seen_at || selectedWarning?.last_detected_at)}</b></div><div><small>EVENT CONFIDENCE</small><b>{confidence(selected?.confidence ?? selectedEvent?.confidence ?? selectedWarning?.confidence)}</b></div><div><small>COORDINATES</small><b>{validCoordinate(selected?.latitude ?? selectedEvent?.latitude ?? selectedWarning?.latitude, -90, 90) && validCoordinate(selected?.longitude ?? selectedEvent?.longitude ?? selectedWarning?.longitude, -180, 180) ? String(selected?.latitude ?? selectedEvent?.latitude ?? selectedWarning?.latitude) + ', ' + String(selected?.longitude ?? selectedEvent?.longitude ?? selectedWarning?.longitude) : 'Not resolved'}</b></div></div>
           {selectedWarning ? <>
             <h3>Warning state</h3>
             <div className="icv-assurance-note">A persisted early-warning object is not the raw observation and is not a verified incident by itself.</div>

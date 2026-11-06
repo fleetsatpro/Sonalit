@@ -37,7 +37,7 @@ const Rail=React.memo(function Rail({onClose}:{onClose?:()=>void}){
         <div style={{padding:'6px 20px 4px',fontSize:9,fontFamily:'IBM Plex Mono, monospace',fontWeight:600,letterSpacing:'.12em',textTransform:'uppercase',color:'rgba('+group.hue+',.75)',display:'flex',alignItems:'center',gap:6}}>
           <span style={{width:3,height:8,borderRadius:2,background:'rgba('+group.hue+',.85)',flexShrink:0}}/>{group.label}
         </div>
-        {group.items.map(item=>{
+        {group.items.filter(item => item.path !== '/intelligence' || ['admin', 'super_admin'].includes(String(user?.role || ''))).map(item=>{
           const active=currentPath===item.path||(item.path!=='/'&&item.path!=='/corridor'&&currentPath.startsWith(item.path));
           return <Link key={item.path+'-'+group.label} to={item.path} onClick={onClose} className={'d-rail-navlabel'+(active?' is-active':'')} style={{display:'flex',alignItems:'center',gap:10,padding:'6px 16px',textDecoration:'none',color:active?'rgb('+group.hue+')':'var(--d-t2)',background:active?'linear-gradient(90deg,rgba('+group.hue+',.10),transparent)':'transparent',borderLeft:active?'3px solid rgb('+group.hue+')':'3px solid transparent',boxShadow:active?'inset 4px 0 12px rgba('+group.hue+',.14)':'none',fontSize:14,transition:'all .15s'}}>
             <span className={'son-rail-icon'+(active?' is-active':'')} style={{color:active?'rgb('+group.hue+')':'rgba('+group.hue+',.7)'}} aria-hidden="true">

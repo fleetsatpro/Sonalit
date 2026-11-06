@@ -47,7 +47,7 @@ const isDiscovery = (source: Row) => {
 const runState = (source: Row, run?: Row): RunState => {
   const meta = metadata(source);
   if (isDiscovery(source)) return { label: 'DISCOVERY / LINK-OUT', tone: 'neutral', explanation: 'Registered for discovery and navigation only. It is not ingested as an observation feed.' };
-  if (meta.authorized_only === true && meta.configured === false) return { label: 'AUTHORISED FEED PENDING', tone: 'warning', explanation: 'The authorized ingestion bridge is registered but is not configured. No private group scraping is attempted.' };
+  if (meta.authorized_only === true && meta.configured !== true) return { label: 'AUTHORISED FEED PENDING', tone: 'warning', explanation: 'The authorized ingestion bridge is registered but is not configured. No private group scraping is attempted.' };
   if (source.active === false) return { label: 'INACTIVE', tone: 'neutral', explanation: 'The source is disabled in the source registry.' };
   const record = run?.health || null;
   if (!record) return { label: 'NO VERIFIED RUN', tone: 'neutral', explanation: 'The registry returned no provider run record. Collection health is unknown.' };

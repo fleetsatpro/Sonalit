@@ -20,6 +20,7 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(shell).toContain("art: 'nav-satellite'");
     expect(rail).toContain('export function NavArtwork');
     expect(shell).not.toContain("COLLECTION FABRIC <b>LIVE</b>");
+    expect(rail).toContain("group.items.filter(item => item.path !== '/intelligence'");
   });
 
   it('restricts the frontend route to administrators', () => {
@@ -60,6 +61,7 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(sourceControl).not.toContain('response?.started');
     expect(sourceControl).toContain('DISCOVERY / LINK-OUT');
     expect(sourceControl).toContain('AUTHORISED FEED PENDING');
+    expect(sourceControl).toContain('meta.configured !== true');
   });
 
   it('uses server-side window aggregates and keeps event/warning detail separate', () => {
@@ -69,5 +71,9 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(command).toContain('source_count');
     expect(command).toContain('healthSources');
     expect(command).toContain('observation_ingestion === false');
+    expect(command).toContain('COUNTRY_CENTRES');
+    expect(command).toContain('mapRef.current?.flyTo');
+    expect(command).toContain('validCoordinate(event.latitude, -90, 90)');
+    expect(command).toContain('import MapLibreMap, { Marker, NavigationControl }');
   });
 });
