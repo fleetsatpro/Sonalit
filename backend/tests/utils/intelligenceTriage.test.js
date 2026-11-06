@@ -34,6 +34,7 @@ describe('Intelligence observation text normalization and threat triage',()=>{
  });
  test('does not escalate explicitly negated catastrophic language',()=>{
   expect(assessIncidentSeverity('other','No multiple fatalities were reported').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','No multiple fatalities, but two people were killed in the attack').severity).toBe('critical');
   expect(assessIncidentSeverity('other','No mass-casualty event was reported').severity).toBe('low');
   expect(assessIncidentSeverity('other','No mass-hostage crisis was reported').severity).toBe('low');
   expect(assessIncidentSeverity('other','No nationwide power outage was reported').severity).toBe('low');
