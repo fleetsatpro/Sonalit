@@ -32,7 +32,7 @@ function plainText(value, maxLength = 6000) {
 function incidentCategory(value) {
   const text = plainText(value, 12000).toLowerCase();
   if (/\b(?:ied|improvised explosive device|explosive device|bomb(?:ing)?|explosion|detonat(?:ed|ion))\b/.test(text)) return 'ied';
-  if (/\b(?:armed attack|armed clashes?|intercommunal clashes?|ethnic clashes?|terrorist attack|terror attack|gunfire|shooting|ambush|militia (?:attack|attacks|attacked|ambush|ambushed)|insurgents? (?:attack|attacks|attacked|ambush|ambushed)|insurgency attack|massacre|mass shooting)\b/.test(text)) return 'armed_attack';
+  if (/\b(?:armed attack|armed clashes?|intercommunal clashes?|ethnic clashes?|terrorist attack|terror attack|gunfire|shooting|ambush|militia (?:attack|attacks|attacked|ambush|ambushed)|insurgents? (?:attack|attacks|attacked|ambush|ambushed)|insurgency attack|massacre|mass shooting|mass[- ]casualt(?:y|ies)(?: incident| event| attack))\b/.test(text)) return 'armed_attack';
   if (/\b(?:kidnap(?:ped|ping|pings)?|abduct(?:ed|ion)|taken hostage|held hostage|hostage[- ]taking|hostages? held|hostage crisis)\b/.test(text)) return 'kidnapping';
   if (/\b(?:protests?|protesters?|riots?|rioting|unrest|demonstrations?|demonstrators?|roadblocks?|violent clashes?|clashes? with (?:police|security forces|troops|armed forces))\b/.test(text)) return 'protest';
   if (/\b(?:political rally|rally|campaign gathering)\b/.test(text)) return 'political_rally';
@@ -69,11 +69,12 @@ function securityRelevance(category, value) {
   }
   if (cat === 'fire') return /\b(?:fire|blaze|burning|arson)\b/.test(text) ? 'operationally_relevant' : 'not_security_relevant';
   if (cat === 'natural_hazard') return 'operationally_relevant';
+  if (/\\b(?:power outage|water supply cut|communications outage|hospital evacuation|critical service disruption|airport closed|port closed|widespread infrastructure disruption)\\b/.test(text)) return 'operationally_relevant';
   if (cat === 'political_rally') {
     return /\b(?:large crowd|mass gathering|thousands|tens of thousands|clash|violence|unrest|road closure|security alert|security concerns|heavy security|disruption)\b/.test(text)
       ? 'potential_security_relevant' : 'not_security_relevant';
   }
-  const explicit = /\b(?:security incident|security alert|security threat|credible threat|imminent threat|threat to (?:life|personal safety|public safety)|suspicious (?:package|device|vehicle|activity)|explosive device|bomb threat|terror plot|terrorist cell|hostage (?:taking|crisis)|armed incursion|border incursion|cross[- ]border attack|sabotage|arson attack|targeted attack|armed men (?:seen|reported|approached)|weapons cache|arms cache|cyber[- ]attack|ransomware attack|data breach|critical infrastructure attack|embassy attack|attack on (?:police|civilians|security forces|checkpoint|convoy)|kidnapp(?:ed|ing)|abduct(?:ed|ion))\b/.test(text);
+  const explicit = /\b(?:security incident|security alert|security threat|credible threat|imminent threat|threat to (?:life|personal safety|public safety)|suspicious (?:package|device|vehicle|activity)|explosive device|bomb threat|terror plot|terrorist cell|hostage (?:taking|crisis)|armed incursion|border incursion|cross[- ]border attack|sabotage|arson attack|targeted attack|armed men (?:seen|reported|approached)|weapons cache|arms cache|cyber[- ]attack|ransomware attack|data breach|critical infrastructure attack|embassy attack|attack on (?:police|civilians|security forces|checkpoint|convoy)|kidnapp(?:ed|ing)|abduct(?:ed|ion)|mass[- ]casualt(?:y|ies)|massacre|mass killing|mass shooting|genocide)\b/.test(text);
   return explicit ? 'potential_security_relevant' : 'not_security_relevant';
 }
 
@@ -129,7 +130,7 @@ function assessIncidentSeverity(category, value) {
 
   const nonEvent = /\b(?:false alarm|hoax|fictional|movie|film|documentary|training exercise|security drill|simulation|tabletop exercise)\b/.test(text);
   const fatalityCount = countBeforeTerms(text, '(?:killed|dead|died|fatalities|deaths)');
-  const hostageCount = countBeforeTerms(text, '(?:hostages?|hostage(?:-taking)?)');
+  const hostageCount = countBeforeTerms(text, '(?:(?:taken|held)\\s+)?hostages?');
   const noFatalityClaim = /\b(?:no|zero|0|without)\s+(?:reported\s+)?(?:deaths?|fatalities|casualties|people killed)\b|\bno\s+(?:one|people|persons|civilians|victims)\s+(?:was|were\s+)?(?:killed|dead|injured)\b/.test(text);
   const affirmativeFatality = /\b(?:killed|dead|died|death|fatalit(?:y|ies)|fatal (?:crash|collision|attack|shooting|explosion|stabbing|assault|accident|incident))\b/.test(text);
   const fatal = (fatalityCount != null && fatalityCount > 0) || (affirmativeFatality && !noFatalityClaim);
@@ -138,7 +139,7 @@ function assessIncidentSeverity(category, value) {
   const massFatalityLabel = /\b(?:mass[- ]casualt(?:y|ies)(?:\s+(?:incident|event|attack))?|massacre|mass killing|genocide|dozens (?:of )?(?:people )?(?:killed|dead|died)|scores (?:of )?(?:people )?(?:killed|dead|died))\b/.test(text);
   const prospectiveMassEvent = /\b(?:threat|risk|fear|warning|warns?|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|preventing|averted|averting)\b.{0,80}\b(?:mass[- ]casualt|massacre|mass killing|genocide|mass hostage|hostage crisis|widespread|nationwide)\b/.test(text)
     || /\b(?:mass[- ]casualt|massacre|mass killing|genocide|mass hostage|hostage crisis|widespread|nationwide)\b.{0,80}\b(?:threat|risk|fear|warning|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|averted)\b/.test(text);
-  const massFatalities = (fatalityCount != null && fatalityCount >= 10)
+  const massFatalities = (fatalityCount != null && fatalityCount >= 10 && fatal && !prospectiveMassEvent)
     || (massFatalityLabel && !prospectiveMassEvent);
 
   const noInjuryClaim = /\b(?:no|zero|0|without)\s+(?:reported\s+)?injur(?:y|ies)\b/.test(text);
