@@ -44,6 +44,18 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(securityRelevance('other','Police investigate suspicious package near an embassy')).toBe('potential_security_relevant');
   expect(securityRelevance('other','Confirmed cyber attack against hospital systems')).toBe('potential_security_relevant');
  });
+ test('does not inflate generic armed-group and prevention language',()=>{
+  expect(incidentCategory('Militia leaders attend peace talks')).toBe('other');
+  expect(assessIncidentSeverity('other','Militia leaders attend peace talks').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','Police launch an anti-kidnapping prevention campaign').severity).toBe('low');
+  expect(assessIncidentSeverity('ied','Bomb disposal team removes an unexploded device').severity).toBe('medium');
+  expect(assessIncidentSeverity('armed_attack','A militia group announces a political meeting').severity).toBe('low');
+ });
+ test('reserves Critical hostage classification for catastrophic-scale cases',()=>{
+  expect(incidentCategory('One person taken hostage during a robbery')).toBe('kidnapping');
+  expect(assessIncidentSeverity('kidnapping','One person taken hostage during a robbery').severity).toBe('high');
+  expect(assessIncidentSeverity('kidnapping','Armed men take multiple hostages at a school').severity).toBe('critical');
+ });
  test('keeps an unverified bomb threat below Critical',()=>{
   const threat=assessIncidentSeverity('ied','Police investigate a bomb threat; no device found and no injuries');expect(threat.severity).toBe('medium');expect(threat.preliminary).toBe(true);expect(threat.caveat).toMatch(/does not establish that the report is true/i);
  });
