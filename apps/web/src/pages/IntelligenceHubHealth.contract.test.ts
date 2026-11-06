@@ -71,6 +71,8 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(visualSystem).toContain('.sonalit-intelligence-workspace .icv-metric strong');
     expect(visualSystem).toContain('prefers-reduced-motion: reduce');
     expect(visualSystem).toContain('.sonalit-intelligence-workspace .icd-nav button b');
+    expect(visualSystem).toContain('.sonalit-intelligence-workspace .icd-sev');
+    expect(visualSystem).toContain('font-size: 10.5px;');
     expect(command).toContain("basemap === 'dark' ? DARK_STREET_STYLE : STREET_STYLE");
     expect(command).toContain('icv-basemap-toggle');
   });

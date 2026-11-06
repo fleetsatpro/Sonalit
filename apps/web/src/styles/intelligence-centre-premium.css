@@ -653,3 +653,71 @@
     transition-duration:.01ms !important;
   }
 }
+
+
+/* Last-mile legibility audit: metadata remains readable at working distance. */
+.sonalit-intelligence-workspace .icd-top-readout,
+.sonalit-intelligence-workspace .icd-theatre label > span,
+.sonalit-intelligence-workspace .icd-theatre-id span,
+.sonalit-intelligence-workspace .icd-theatre-id small,
+.sonalit-intelligence-workspace .icd-query kbd,
+.sonalit-intelligence-workspace .icd-nav button span,
+.sonalit-intelligence-workspace .icd-filterbar,
+.sonalit-intelligence-workspace .icd-filterbar select,
+.sonalit-intelligence-workspace .scope-chip,
+.sonalit-intelligence-workspace .icd-hero-pills span,
+.sonalit-intelligence-workspace .icd-orbit small,
+.sonalit-intelligence-workspace .icd-kpi span,
+.sonalit-intelligence-workspace .icd-kpi small,
+.sonalit-intelligence-workspace .icd-panel > header span,
+.sonalit-intelligence-workspace .icd-panel > header small,
+.sonalit-intelligence-workspace .icd-row .index,
+.sonalit-intelligence-workspace .icd-row aside em,
+.sonalit-intelligence-workspace .icd-row aside small,
+.sonalit-intelligence-workspace .icd-sev,
+.sonalit-intelligence-workspace .icd-empty b,
+.sonalit-intelligence-workspace .icd-country > div span,
+.sonalit-intelligence-workspace .icd-country small,
+.sonalit-intelligence-workspace .icd-country em,
+.sonalit-intelligence-workspace .icd-drawer header span,
+.sonalit-intelligence-workspace .icd-drawer-meta > span,
+.sonalit-intelligence-workspace .icd-field-grid small,
+.sonalit-intelligence-workspace .icd-evidence > b,
+.sonalit-intelligence-workspace .icd-open,
+.sonalit-intelligence-workspace .icd-drawer footer,
+.sonalit-intelligence-workspace .icd-drawer pre,
+.sonalit-intelligence-workspace .in-live,
+.sonalit-intelligence-workspace .in-subbar,
+.sonalit-intelligence-workspace .in-card-top,
+.sonalit-intelligence-workspace .in-card-meta,
+.sonalit-intelligence-workspace .in-card-foot,
+.sonalit-intelligence-workspace .in-feed-state b,
+.sonalit-intelligence-workspace .ia-head-posture,
+.sonalit-intelligence-workspace .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-alert-top em,
+.sonalit-intelligence-workspace .ia-unverified,
+.sonalit-intelligence-workspace .ia-meta,
+.sonalit-intelligence-workspace .ia-posture-grid span,
+.sonalit-intelligence-workspace .ipd-handling-head small,
+.sonalit-intelligence-workspace .ipd-handling-head > span,
+.sonalit-intelligence-workspace .ipd-handling-fields label,
+.sonalit-intelligence-workspace .ipd-handling-fields button,
+.sonalit-intelligence-workspace .ipd-template-open,
+.sonalit-intelligence-workspace .ipd-template-use {
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.sonalit-intelligence-workspace .icd-nav button b { font-size: 11px; }
+.sonalit-intelligence-workspace .icd-viewhead > strong { font-size: 11px; }
+.sonalit-intelligence-workspace .icd-country > div span { font-weight: 850; letter-spacing: .07em; }
+.sonalit-intelligence-workspace .icd-field-grid span { font-size: 12px; line-height: 1.5; }
+.sonalit-intelligence-workspace .icv-map-legend,
+.sonalit-intelligence-workspace .icv-map-footer { font-size: 11px; }
+.sonalit-intelligence-workspace .icv-drawer-tags span { font-size: 10.5px; }
+.sonalit-intelligence-workspace .ics-state-pill { font-size: 10.5px; }
+.sonalit-intelligence-workspace .ics-source-type { font-size: 10.5px; }
+
+@media (max-width: 680px) {
+  .sonalit-intelligence-workspace .icd-nav button b { font-size: 10.5px; }
+  .sonalit-intelligence-workspace .icd-nav button span { font-size: 10px; }
+}
