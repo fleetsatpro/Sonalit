@@ -393,3 +393,63 @@
 .sonalit-intelligence-workspace .icw-motion-paused *,
 .sonalit-intelligence-workspace .icw-motion-paused *::before,
 .sonalit-intelligence-workspace .icw-motion-paused *::after{animation-play-state:paused!important}
+
+
+/* Forecast craft: separate probability, confidence, status and validity in a decision-ready register. */
+.sonalit-intelligence-workspace .icd-forecast-layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.72fr);gap:11px;align-items:start}
+.sonalit-intelligence-workspace .icd-forecast-register{min-width:0;overflow:hidden;border:1px solid rgba(145,172,210,.17);border-radius:12px;background:linear-gradient(150deg,rgba(12,24,42,.97),rgba(6,14,26,.98));box-shadow:inset 0 1px rgba(255,255,255,.035),0 8px 20px rgba(0,0,0,.1)}
+.sonalit-intelligence-workspace .icd-forecast-register-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;border-bottom:1px solid rgba(145,172,210,.13);background:linear-gradient(110deg,rgba(19,38,62,.8),rgba(9,19,34,.65))}
+.sonalit-intelligence-workspace .icd-forecast-register-head span{color:#93adcc;font-size:8px;font-weight:900;letter-spacing:.14em}
+.sonalit-intelligence-workspace .icd-forecast-register-head h3{margin:4px 0;color:#edf4ff;font-family:"Space Grotesk",sans-serif;font-size:16px;font-weight:760;letter-spacing:-.025em}
+.sonalit-intelligence-workspace .icd-forecast-register-head p{margin:0;color:#a1b3cd;font-size:10px;line-height:1.45}
+.sonalit-intelligence-workspace .icd-forecast-register-head>b{flex:0 0 auto;color:#c7e7f0;font:750 10px/1 "IBM Plex Mono",monospace;letter-spacing:.04em}
+.sonalit-intelligence-workspace .icd-forecast-list{display:flex;flex-direction:column;gap:8px;padding:9px}
+.sonalit-intelligence-workspace .icd-forecast-card{display:block;width:100%;padding:14px;border:1px solid rgba(145,172,210,.14);border-radius:10px;background:linear-gradient(145deg,rgba(15,30,51,.96),rgba(7,16,29,.97));color:#e8f1ff;text-align:left;transition:transform .18s,border-color .18s,background .18s,box-shadow .18s}
+.sonalit-intelligence-workspace .icd-forecast-card:hover{transform:translateY(-1px);border-color:rgba(108,207,227,.34);background:linear-gradient(145deg,rgba(18,38,64,.98),rgba(8,18,33,.98));box-shadow:0 11px 22px rgba(0,0,0,.15)}
+.sonalit-intelligence-workspace .icd-forecast-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sonalit-intelligence-workspace .icd-forecast-card-head>span{color:#90a8c7;font:750 8px/1.2 "IBM Plex Mono",monospace;letter-spacing:.09em}
+.sonalit-intelligence-workspace .icd-forecast-card-head em{padding:4px 7px;border:1px solid rgba(145,172,210,.18);border-radius:5px;background:rgba(8,19,35,.65);color:#b3c4dc;font:800 8px/1 "Inter",sans-serif;letter-spacing:.07em;font-style:normal}
+.sonalit-intelligence-workspace .icd-forecast-card-head em[data-state=verified]{border-color:rgba(96,205,172,.28);color:#91dfc1;background:rgba(23,83,67,.2)}
+.sonalit-intelligence-workspace .icd-forecast-card-head em[data-state=expired],.sonalit-intelligence-workspace .icd-forecast-card-head em[data-state=superseded]{border-color:rgba(211,150,133,.25);color:#dba99e;background:rgba(86,43,48,.18)}
+.sonalit-intelligence-workspace .icd-forecast-card h3{margin:9px 0 5px;color:#f2f7ff;font-family:"Space Grotesk",sans-serif;font-size:15px;font-weight:720;line-height:1.3;letter-spacing:-.015em}
+.sonalit-intelligence-workspace .icd-forecast-card>p{margin:0;color:#aebed5;font-size:11px;line-height:1.5}
+.sonalit-intelligence-workspace .icd-forecast-measures{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:13px}
+.sonalit-intelligence-workspace .icd-forecast-measure>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.sonalit-intelligence-workspace .icd-forecast-measure small{color:#8fa6c4;font-size:8px;font-weight:850;letter-spacing:.09em}
+.sonalit-intelligence-workspace .icd-forecast-measure strong{color:#eef5ff;font:750 13px/1 "Space Grotesk",sans-serif;white-space:nowrap}
+.sonalit-intelligence-workspace .icd-forecast-track{height:6px;overflow:hidden;border-radius:99px;background:rgba(125,153,190,.14)}
+.sonalit-intelligence-workspace .icd-forecast-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#397fbd,#85d7ef);box-shadow:0 0 10px rgba(85,172,214,.2)}
+.sonalit-intelligence-workspace .icd-forecast-track.confidence i{background:linear-gradient(90deg,#348f91,#83d9c6);box-shadow:0 0 10px rgba(81,190,167,.16)}
+.sonalit-intelligence-workspace .icd-forecast-track[data-missing=true]{background:repeating-linear-gradient(115deg,rgba(132,159,193,.12) 0 4px,transparent 4px 8px);border:1px dashed rgba(145,172,210,.22)}
+.sonalit-intelligence-workspace .icd-forecast-footprint{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:13px;padding:9px 0;border-top:1px solid rgba(145,172,210,.11);border-bottom:1px solid rgba(145,172,210,.11)}
+.sonalit-intelligence-workspace .icd-forecast-footprint span{display:flex;flex-direction:column;gap:3px;color:#8ea4c2;font-size:7px;font-weight:850;line-height:1.25;letter-spacing:.065em}
+.sonalit-intelligence-workspace .icd-forecast-footprint b{color:#e2edfc;font:750 14px/1 "Space Grotesk",sans-serif;letter-spacing:0}
+.sonalit-intelligence-workspace .icd-forecast-validity{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:9px}
+.sonalit-intelligence-workspace .icd-forecast-validity>span{display:flex;flex-direction:column;gap:3px;color:#8b9fbb;font:750 7px/1.3 "IBM Plex Mono",monospace;letter-spacing:.08em}
+.sonalit-intelligence-workspace .icd-forecast-validity b{color:#b9c9df;font-size:8px;font-weight:650;letter-spacing:0}
+.sonalit-intelligence-workspace .icd-forecast-aside{display:flex;flex-direction:column;gap:9px;min-width:0}
+.sonalit-intelligence-workspace .icd-probability-distribution{padding:13px 14px}
+.sonalit-intelligence-workspace .icd-probability-bin{display:grid;grid-template-columns:55px minmax(0,1fr) 20px;align-items:center;gap:8px;margin:8px 0}
+.sonalit-intelligence-workspace .icd-probability-bin>span{color:#a4b8d3;font:700 8px/1 "IBM Plex Mono",monospace}
+.sonalit-intelligence-workspace .icd-probability-bin>div{height:8px;overflow:hidden;border-radius:20px;background:rgba(132,159,193,.13)}
+.sonalit-intelligence-workspace .icd-probability-bin>div i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#387db8,#8edcf0)}
+.sonalit-intelligence-workspace .icd-probability-bin>b{color:#e8f1ff;text-align:right;font:750 10px/1 "IBM Plex Mono",monospace}
+.sonalit-intelligence-workspace .icd-probability-distribution>p{margin:12px 0 0;padding-top:10px;border-top:1px solid rgba(145,172,210,.11);color:#91a5c0;font-size:9px;line-height:1.5}
+.sonalit-intelligence-workspace .icd-forecast-status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:12px}
+.sonalit-intelligence-workspace .icd-forecast-status-grid>div{display:flex;flex-direction:column;gap:5px;padding:9px;border:1px solid rgba(145,172,210,.12);border-radius:7px;background:rgba(7,17,31,.56)}
+.sonalit-intelligence-workspace .icd-forecast-status-grid small{color:#91a7c3;font-size:7px;font-weight:850;letter-spacing:.08em}
+.sonalit-intelligence-workspace .icd-forecast-status-grid b{color:#eff5ff;font:760 20px/1 "Space Grotesk",sans-serif}
+.sonalit-intelligence-workspace .icd-forecast-governance-note{margin:0;padding:0 13px 13px;color:#9eafc9;font-size:9px;line-height:1.5}
+.sonalit-intelligence-workspace .icd-forecast-detail{display:flex;flex-direction:column;gap:10px;margin:12px 0;padding:0 0 12px;border-bottom:1px solid rgba(145,172,210,.15)}
+.sonalit-intelligence-workspace .icd-forecast-detail-measures{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:rgba(145,172,210,.14);border:1px solid rgba(145,172,210,.14)}
+.sonalit-intelligence-workspace .icd-forecast-detail-measures>div{display:flex;flex-direction:column;gap:5px;min-width:0;padding:10px;background:#0a1729}
+.sonalit-intelligence-workspace .icd-forecast-detail-measures small{color:#8fa6c4;font-size:8px;font-weight:850;letter-spacing:.09em}
+.sonalit-intelligence-workspace .icd-forecast-detail-measures b{color:#eaf3ff;font-size:11px;line-height:1.35;overflow-wrap:anywhere}
+.sonalit-intelligence-workspace .icd-forecast-detail-section{padding:11px;border:1px solid rgba(145,172,210,.13);border-radius:8px;background:rgba(8,19,34,.72)}
+.sonalit-intelligence-workspace .icd-forecast-detail-section h4{display:flex;justify-content:space-between;gap:10px;margin:0 0 7px;color:#b5cbe5;font-size:8px;font-weight:900;letter-spacing:.1em}
+.sonalit-intelligence-workspace .icd-forecast-detail-section h4 span{color:#e6f1ff;font:750 10px/1 "IBM Plex Mono",monospace}
+.sonalit-intelligence-workspace .icd-forecast-detail-section p{margin:0;color:#a7b9d2;font-size:10px;line-height:1.55}
+.sonalit-intelligence-workspace .icd-forecast-detail-section ol{display:flex;flex-direction:column;gap:6px;margin:0;padding-left:19px;color:#b6c6dc;font-size:10px;line-height:1.5}
+.sonalit-intelligence-workspace .icd-forecast-detail-section li{padding-left:3px;overflow-wrap:anywhere}
+@media(max-width:1040px){.sonalit-intelligence-workspace .icd-forecast-layout{grid-template-columns:1fr}.sonalit-intelligence-workspace .icd-forecast-aside{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){.sonalit-intelligence-workspace .icd-forecast-measures{grid-template-columns:1fr}.sonalit-intelligence-workspace .icd-forecast-footprint{grid-template-columns:repeat(2,minmax(0,1fr))}.sonalit-intelligence-workspace .icd-forecast-validity{grid-template-columns:1fr}.sonalit-intelligence-workspace .icd-forecast-aside{grid-template-columns:1fr}.sonalit-intelligence-workspace .icd-forecast-register-head{align-items:flex-start;flex-direction:column}}

@@ -106,6 +106,14 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(alerts).toContain('LAST SUCCESSFUL READ');
     expect(deep).toContain("const NAV_GROUPS:[string,string,View[]][]=");
     expect(deep).toContain("['governance','GOVERNANCE',['watchlists','publications']]");
+    expect(deep).toContain('function percentValue(value:any):number|null');
+    expect(deep).toContain("if(value===null||value===undefined||value==='')return null");
+    expect(deep).toContain('SCENARIO PROBABILITY');
+    expect(deep).toContain('ANALYST CONFIDENCE');
+    expect(deep).toContain('PROBABILITY DISTRIBUTION');
+    expect(deep).toContain('valid_until');
+    expect(deep).toContain('invalidation_triggers');
+    expect(deep).toContain('No value is inferred when a field is absent');
     expect(deep).toContain("event.key!=='/'");
     expect(deep).toContain('queryInputRef.current?.focus()');
   });
