@@ -152,7 +152,7 @@ function assessIncidentSeverity(category, value) {
   const widespread = /\b(?:nationwide|countrywide|region[- ]wide|widespread|multiple provinces|multiple counties|several counties|several provinces|across multiple cities|throughout the country|entire region)\b/.test(text)
     && /\b(?:power outage|water supply|communications|hospital|airport|port|transport network|critical infrastructure|evacuat|disruption|shutdown|essential services?)\b/.test(text);
 
-  const massHostageLabel = /\b(?:mass hostage[- ]taking|large[- ]scale hostage crisis|multiple hostages? killed|dozens of hostages?)\b/.test(text);
+  const massHostageLabel = /\b(?:mass hostage[- ]taking|large[- ]scale hostage crisis|mass hostage crisis|dozens of hostages?)\b/.test(text);
   const massHostageCrisis = (hostageCount != null && hostageCount >= 5 && /\b(?:hostages?|hostage crisis|hostage[- ]taking)\b/.test(text))
     || (massHostageLabel && !prospectiveMassEvent);
   const hostage = /\b(?:hostage crisis|hostage[- ]taking|hostages? held|taken hostage|held hostage|kidnapped|abducted)\b/.test(text);
