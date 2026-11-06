@@ -13,7 +13,7 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(assessIncidentSeverity('protest','Peaceful protest in Nairobi with no reported injuries').severity).toBe('low');expect(assessIncidentSeverity('political_rally','Political rally held peacefully').severity).toBe('low');expect(assessIncidentSeverity('traffic','Heavy traffic congestion in CBD').severity).toBe('low');expect(assessIncidentSeverity('accident','Minor road accident; no injuries').severity).toBe('low');
  });
  test('raises bounded disruption/injury without inflating it to Critical',()=>{
-  const result=assessIncidentSeverity('protest','Protesters block the main highway, disrupting access to the airport');expect(result.severity).toBe('medium');expect(result.impact).toBe('material');expect(assessIncidentSeverity('accident','Multi-vehicle collision leaves several injured').severity).toBe('medium');
+  const result=assessIncidentSeverity('protest','Protesters block the main highway, disrupting access to the airport');expect(result.severity).toBe('medium');expect(result.impact).toBe('material');expect(assessIncidentSeverity('accident','Multi-vehicle collision leaves several injured').severity).toBe('medium');expect(assessIncidentSeverity('accident','Multi-vehicle collision leaves several seriously injured').severity).toBe('high');
  });
  test('reserves High/Critical for explicit serious impact',()=>{
   expect(assessIncidentSeverity('armed_attack','Ongoing armed attack reported near the town').severity).toBe('high');expect(assessIncidentSeverity('kidnapping','Two people kidnapped from their home').severity).toBe('high');
