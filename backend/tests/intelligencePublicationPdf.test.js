@@ -26,7 +26,7 @@ describe('ultra publication PDF invariants',()=>{
 
   test('PDF source totals use the fused independent-publisher count',()=>{
     const s=source();
-    expect(s).toContain('COALESCE(e.source_count,0)::int AS source_count');
+    expect(s).toContain('source_count:new Set((Array.isArray(event.observations)?event.observations:[]).filter(o=>o&&o.source_id).map(independentSourceKey)).size');
     expect(s).toContain('COUNT(DISTINCT o.source_id)::int AS feed_source_count');
   });
   test('successful regeneration stamps the renderer version checked by PDF delivery',()=>{

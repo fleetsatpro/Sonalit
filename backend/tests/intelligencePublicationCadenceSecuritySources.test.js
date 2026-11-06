@@ -42,7 +42,7 @@ describe('Intel Hub publication contract',()=>{
 
   test('publication corroboration counts independent publishers, not feed IDs',()=>{
     const s=agents();
-    expect(s).toContain("COALESCE(e.source_count,0)::int AS source_count");
+    expect(s).toContain('source_count:publishers.size');
     expect(s).toContain("'provider',s.provider,'raw_metadata',o.raw_metadata");
     expect(s).toContain('sourceKeys.add(independentSourceKey(obs))');
     expect(s).not.toContain('sourceIds.size');

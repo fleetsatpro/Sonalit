@@ -301,7 +301,7 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
       e.assessment,e.key_facts,e.why_it_matters,e.caveats,e.synthesis_confidence,e.synthesis_provider,
       e.latitude,e.longitude,e.region,e.risk_velocity,e.occurred_from,e.occurred_to,e.last_seen_at,e.updated_at,
       COUNT(DISTINCT eo.observation_id)::int AS observation_count,
-      COALESCE(e.source_count,0)::int AS source_count,
+      COUNT(DISTINCT o.source_id)::int AS feed_source_count,
       COALESCE(
         json_agg(DISTINCT jsonb_build_object(
           'id',o.id,'source_id',o.source_id,'source_name',s.name,
@@ -318,7 +318,10 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
       ORDER BY CASE e.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'moderate' THEN 2 ELSE 1 END DESC,e.last_seen_at DESC
       LIMIT 160`,[orgId,country,start,end]
   );
-  const events=rawEvents.filter(isSecurityRelevantEvent);
+  const events=rawEvents.filter(isSecurityRelevantEvent).map(event=>{
+    const publishers=new Set((Array.isArray(event.evidence)?event.evidence:[]).filter(obs=>obs&&obs.source_id).map(independentSourceKey));
+    return {...event,source_count:publishers.size};
+  });
 
   const evidenceCount=events.reduce((n,e)=>n+Number(e.observation_count||0),0);
   const sourceKeys=new Set();

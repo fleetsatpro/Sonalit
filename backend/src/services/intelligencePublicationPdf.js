@@ -7,6 +7,7 @@ const { query } = require('../config/database');
 const { runWithOrgContext } = require('../utils/tenantContext');
 const logger = require('../utils/logger');
 const { buildProfessionalPdf, PDF_RENDERER_VERSION } = require('./intelligencePublicationPdfProfessional');
+const { independentSourceKey } = require('../utils/intelligenceTriage');
 const { safeFetchPublicResearch, MAX_RESPONSE_BYTES: MAX_PDF_IMAGE_BYTES } = require('../utils/publicResearchFetch');
 const PDF_IMAGE_CONTENT_TYPES = new Set(['image/jpeg','image/png','image/webp','image/avif','image/tiff']);
 
@@ -639,7 +640,8 @@ async function renderAndStorePublicationPdfUnsafe(orgId, publicationId){
     };
   }
   try{
-    const {rows:events}=await query("SELECT e.id,COALESCE(e.canonical_headline,e.title) AS headline,COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,e.latitude,e.longitude,e.last_seen_at,COUNT(DISTINCT eo.observation_id)::int AS observation_count,COALESCE(e.source_count,0)::int AS source_count,COUNT(DISTINCT o.source_id)::int AS feed_source_count,array_agg(DISTINCT o.source_id) FILTER (WHERE o.source_id IS NOT NULL) AS source_ids,array_agg(DISTINCT jsonb_build_object('id',o.id,'title',o.title,'url',o.url,'raw_metadata',o.raw_metadata)) FILTER (WHERE o.id IS NOT NULL) AS observations FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id WHERE e.org_id=$1 AND e.country_code=$2 AND COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant' AND e.last_seen_at>=$3 AND e.last_seen_at<$4 GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 120",[orgId,publication.country_code,publication.period_start,publication.period_end]);
+    const {rows:rawEvents}=await query("SELECT e.id,COALESCE(e.canonical_headline,e.title) AS headline,COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,e.latitude,e.longitude,e.last_seen_at,COUNT(DISTINCT eo.observation_id)::int AS observation_count,COUNT(DISTINCT o.source_id)::int AS feed_source_count,array_agg(DISTINCT o.source_id) FILTER (WHERE o.source_id IS NOT NULL) AS source_ids,array_agg(DISTINCT jsonb_build_object('id',o.id,'source_id',o.source_id,'source_name',s.name,'provider',s.provider,'title',o.title,'url',o.url,'raw_metadata',o.raw_metadata)) FILTER (WHERE o.id IS NOT NULL) AS observations FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id LEFT JOIN intel_sources s ON s.id=o.source_id WHERE e.org_id=$1 AND e.country_code=$2 AND COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant' AND e.last_seen_at>=$3 AND e.last_seen_at<$4 GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 120",[orgId,publication.country_code,publication.period_start,publication.period_end]);
+    const events=rawEvents.map(event=>({...event,source_count:new Set((Array.isArray(event.observations)?event.observations:[]).filter(o=>o&&o.source_id).map(independentSourceKey)).size}));
     const observationRows=[];for(const e of events){for(const o of e.observations||[])observationRows.push(o)}
     const researchSources=(Array.isArray(publication.body?.incident_dossiers)?publication.body.incident_dossiers:[]).flatMap(e=>Array.isArray(e?.research_sources)?e.research_sources:[]);
     const images=await fetchImages(observationRows,researchSources); const pdf=await buildProfessionalPdf(publication,events,images);
