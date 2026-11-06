@@ -24,7 +24,7 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(incidentCategory(title)).toBe('other');
   expect(assessIncidentSeverity(incidentCategory(title),title).severity).toBe('low');
   expect(incidentCategory('Protesters clash with police in Nairobi')).toBe('protest');
-  expect(incidentCategory('Armed clashes reported near the border')).toBe('protest');
+  expect(incidentCategory('Armed clashes reported near the border')).toBe('armed_attack');
   expect(incidentCategory('Terrorist attack reported in the region')).toBe('armed_attack');
  });
  test('keeps an unverified bomb threat below Critical',()=>{
