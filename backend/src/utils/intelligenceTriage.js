@@ -195,7 +195,7 @@ function assessIncidentSeverity(category, value) {
       severity = 'low';
       basis.push('Preventive, denied or exercise context; no active incident is established');
       reasonCodes.push('PREVENTIVE_OR_DENIED_CONTEXT');
-    } else if (prospectiveThreat) {
+    } else if (prospectiveThreat || prospectiveMassEvent) {
       severity = 'medium';
       basis.push('Reported prospective threat, warning or plot; no completed high-impact incident is established');
       reasonCodes.push('PROSPECTIVE_THREAT_REPORTED');
@@ -316,6 +316,10 @@ function assessIncidentSeverity(category, value) {
     severity = 'medium';
     basis.push('Potential security-related event requires categorisation and corroboration');
     reasonCodes.push('SECURITY_EVENT_NEEDS_CLASSIFICATION');
+  } else if (!nonEvent && (prospectiveThreat || prospectiveMassEvent)) {
+    severity = 'medium';
+    basis.push('Reported prospective threat or disruption; no completed high-impact event is established');
+    reasonCodes.push('PROSPECTIVE_THREAT_REPORTED');
   } else {
     basis.push('No high-impact security indicator is established by the supplied text');
     reasonCodes.push(nonEvent ? 'NON_EVENT_OR_EXERCISE' : 'NO_MATERIAL_IMPACT_INDICATOR');
