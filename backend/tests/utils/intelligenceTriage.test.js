@@ -37,6 +37,8 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(assessIncidentSeverity('armed_attack','No multiple fatalities, but two people were killed in the attack').severity).toBe('critical');
   expect(assessIncidentSeverity('other','No mass-casualty event was reported').severity).toBe('low');
   expect(assessIncidentSeverity('other','No mass-hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','No mass hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','No mass hostage-taking was reported').severity).toBe('low');
   expect(assessIncidentSeverity('other','No nationwide power outage was reported').severity).toBe('low');
   expect(assessIncidentSeverity('other','There were no deaths reported after the incident').severity).toBe('low');
   expect(assessIncidentSeverity('other','Massacre reported near the town').severity).toBe('critical');
