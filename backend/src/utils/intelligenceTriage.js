@@ -7,6 +7,7 @@ function securityRelevance(category,value){
  const text=plainText(value,12000).toLowerCase();
  const cat=String(category||incidentCategory(text)||'other').toLowerCase();
  const securityCategories=['ied','armed_attack','kidnapping','protest','crime'];
+ if(cat==='protest' && /\\b(?:roadblock|blocked road|road closed|highway closed|airport access blocked)\\b/.test(text) && !/\\b(?:protest|protester|demonstration|riot|unrest|clash|police|security forces)\\b/.test(text))return 'operationally_relevant';
  if(securityCategories.includes(cat))return 'security_relevant';
  if(cat==='traffic')return /\b(?:roadblock|blocked road|road closed|highway closed|gridlock|major congestion|airport access blocked|transport disruption|protest route)\b/.test(text)?'operationally_relevant':'not_security_relevant';
  if(cat==='accident')return /\b(?:fatal|fatality|killed|dead|serious(?:ly)? injured|multiple injured|multi[- ]vehicle|major collision|bus crash|train crash|derailment|road closed|highway blocked)\b/.test(text)?'operationally_relevant':'not_security_relevant';
