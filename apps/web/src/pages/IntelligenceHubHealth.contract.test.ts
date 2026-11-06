@@ -54,7 +54,7 @@ describe('Intel Hub product and evidence-truth contract', () => {
   it('normalizes legacy RSS markup and presents severity as preliminary impact/urgency triage', () => {
     const text = read('../lib/intelligenceText.js');
     expect(text).toContain('function displayText');
-    expect(text).toContain('&nbsp;');
+    expect(text).toContain("nbsp:' '");
     expect(alerts).toContain('PRELIMINARY');
     expect(alerts).toContain('WHY THIS LEVEL');
     expect(alerts).toContain('severity_assessment');

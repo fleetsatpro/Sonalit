@@ -19,6 +19,14 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(assessIncidentSeverity('armed_attack','Ongoing armed attack reported near the town').severity).toBe('high');expect(assessIncidentSeverity('kidnapping','Two people kidnapped from their home').severity).toBe('high');
   const critical=assessIncidentSeverity('armed_attack','Terrorist attack with at least 8 people killed');expect(critical.severity).toBe('critical');expect(critical.impact).toBe('catastrophic');expect(critical.urgency).toBe('immediate');
  });
+ test('does not mistake a sports fixture clash for a protest/security incident',()=>{
+  const title='Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash';
+  expect(incidentCategory(title)).toBe('other');
+  expect(assessIncidentSeverity(incidentCategory(title),title).severity).toBe('low');
+  expect(incidentCategory('Protesters clash with police in Nairobi')).toBe('protest');
+  expect(incidentCategory('Armed clashes reported near the border')).toBe('protest');
+  expect(incidentCategory('Terrorist attack reported in the region')).toBe('armed_attack');
+ });
  test('keeps an unverified bomb threat below Critical',()=>{
   const threat=assessIncidentSeverity('ied','Police investigate a bomb threat; no device found and no injuries');expect(threat.severity).toBe('medium');expect(threat.preliminary).toBe(true);expect(threat.caveat).toMatch(/does not establish that the report is true/i);
  });
