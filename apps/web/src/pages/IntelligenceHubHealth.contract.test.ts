@@ -46,7 +46,7 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(alerts).toContain("setStatus(s?.status||null)");
     expect(alerts).toContain('ALERT QUERY FAILED — INCIDENT STATE UNKNOWN');
     expect(alerts).toContain('An empty result is not evidence of zero incidents');
-    expect(alerts).toContain("a.source_count==null?'—':a.source_count");
+    expect(alerts).toContain("sources==null?'—':sources");
     expect(alerts).toContain('RETURNED LEADS · 180M');
     expect(alerts).not.toContain('COLLECTOR<b>5 MIN');
   });
