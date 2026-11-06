@@ -6,6 +6,7 @@ import { RootErrorComponent } from './components/ErrorBoundary.js';
 import { useCDSStore } from './pages/cds/store.js';
 const rootRoute=createRootRoute({component:Outlet,errorComponent:RootErrorComponent});
 const authCheck=()=>{if(!getAccessToken()&&!useAuthStore.getState().user)throw redirect({to:'/login',search:{redirect:window.location.pathname+window.location.search}})};
+const intelligenceAdminCheck=()=>{authCheck();const role=useAuthStore.getState().user?.role;if(!['admin','super_admin'].includes(String(role||'')))throw redirect({to:'/home'})};
 const authRoute=createRoute({getParentRoute:()=>rootRoute,id:'auth',beforeLoad:authCheck,component:AppShell});
 function FullscreenShell(){return <><GlobalPanicAlarm/><Outlet/></>}
 const authFullscreenRoute=createRoute({getParentRoute:()=>rootRoute,id:'auth-fullscreen',beforeLoad:authCheck,component:FullscreenShell});
@@ -48,8 +49,8 @@ const fuelRoute=createRoute({getParentRoute:()=>authRoute,path:'/fuel',component
 const shiftsRoute=createRoute({getParentRoute:()=>authRoute,path:'/shifts',component:lazyRouteComponent(()=>import('./pages/Shifts.js'))});
 const claimsRoute=createRoute({getParentRoute:()=>authRoute,path:'/claims',component:lazyRouteComponent(()=>import('./pages/Claims.js'))});
 const geofencesRoute=createRoute({getParentRoute:()=>authRoute,path:'/geofences',component:lazyRouteComponent(()=>import('./pages/Geofences.js'))});
-const intelligenceCentreRoute=createRoute({getParentRoute:()=>authRoute,path:'/intelligence',component:lazyRouteComponent(()=>import('./pages/IntelligenceCentre.jsx'))});
-const riskIntelRoute=createRoute({getParentRoute:()=>authRoute,path:'/risk-intel',component:lazyRouteComponent(()=>import('./pages/RiskIntel.js'))});
+const intelligenceCentreRoute=createRoute({getParentRoute:()=>authRoute,path:'/intelligence',beforeLoad:intelligenceAdminCheck,component:lazyRouteComponent(()=>import('./pages/IntelligenceCentre.jsx'))});
+const riskIntelRoute=createRoute({getParentRoute:()=>authRoute,path:'/risk-intel',beforeLoad:()=>{intelligenceAdminCheck();throw redirect({to:'/intelligence',search:{module:'analysis'},replace:true})}});
 const rulesRoute=createRoute({getParentRoute:()=>authRoute,path:'/rules',component:lazyRouteComponent(()=>import('./pages/Rules.js'))});
 const fieldOfficersRoute=createRoute({getParentRoute:()=>authRoute,path:'/field-officers',component:lazyRouteComponent(()=>import('./pages/FieldOfficers.js'))});
 const executiveRoute=createRoute({getParentRoute:()=>authRoute,path:'/executive',component:lazyRouteComponent(()=>import('./pages/Executive.js'))});

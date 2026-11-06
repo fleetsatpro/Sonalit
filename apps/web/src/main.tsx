@@ -8,6 +8,7 @@ import './styles/dashboard.css';
 import './styles/theme-system.css';
 import './styles/intelligence-centre-3d.css';
 import './styles/intelligence-centre-command.css';
+import './styles/intelligence-centre-workspace.css';
 // Public marketing site design system. Every rule is scoped under
 // .sonalit-public, so it is inert on every application route — it lives here
 // rather than in the marketing components because scripts/prerender.tsx has to

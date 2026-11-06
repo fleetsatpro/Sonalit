@@ -42,7 +42,7 @@ export default function IntelligenceCentreDeep(){
  const [country,setCountry]=useState('');
  const params=scope.type==='global'?{scope_type:'global',scope_key:'global'}:{scope_type:scope.type,scope_key:scope.key,...(scope.type==='country'?{country_code:scope.key}:{})};
  const useIntel=(path:string,extra:Row={})=>useQuery({queryKey:['icd',path,params,extra],queryFn:async()=>{const r=await api.get(path,{params:{...params,...extra}});return r.data},staleTime:15_000,refetchInterval:30_000,retry:1});
- const eventsQ=useIntel(ENDPOINTS.events,{limit:500});
+ const eventsQ=useIntel(ENDPOINTS.events,{limit:500,window_hours:windowHours});
  const storiesQ=useIntel(ENDPOINTS.storylines);
  const gapsQ=useIntel(ENDPOINTS.gaps);
  const forecastsQ=useIntel(ENDPOINTS.forecasts);

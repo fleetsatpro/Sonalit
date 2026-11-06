@@ -8,74 +8,66 @@ const priorityRank = `CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WH
 const scope = req => normaliseScope(req);
 
 router.get('/overview', asyncHandler(async (req,res)=>{
-  const s=scope(req);
-  const eventsGeo=countryClause(s,'e',2);
-  const observationsGeo=countryClause(s,'o',2);
-  const warningsGeo=scopedObjectClause(s,'w',2);
-  const gapsGeo=scopedObjectClause(s,'g',2);
-
-  const [eventsR, eventSummaryR, observationsR, warningsR, gapsR] = await Promise.all([
+  const allowedWindows=[1,6,24,72,168];
+  const rawWindow=req.query.window_hours==null?24:Number(req.query.window_hours);
+  if(!Number.isInteger(rawWindow)||!allowedWindows.includes(rawWindow))return res.status(400).json({error:'invalid_window_hours',allowed:allowedWindows});
+  const windowHours=rawWindow,s=scope(req);
+  const eventsGeo=countryClause(s,'e',3),observationsGeo=countryClause(s,'o',3);
+  const warningsGeo=scopedObjectClause(s,'w',2),gapsGeo=scopedObjectClause(s,'g',2);
+  const [eventsR,eventSummaryR,observationsR,warningsR,gapsR]=await Promise.all([
     req.db(
-      `SELECT e.*,
-              COUNT(DISTINCT eo.observation_id)::int AS source_count
-         FROM intel_events e
-         LEFT JOIN intel_event_observations eo ON eo.event_id=e.id
-        WHERE e.org_id=$1
-          AND ${eventsGeo.clause}
-        GROUP BY e.id
-        ORDER BY e.last_seen_at DESC
-        LIMIT 50`,
-      [req.user.org_id,...eventsGeo.params],
+      `SELECT e.*,COUNT(DISTINCT eo.observation_id)::int AS source_count
+         FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id
+        WHERE e.org_id=$1 AND e.last_seen_at>=now()-($2::int * interval '1 hour') AND ${eventsGeo.clause}
+        GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 50`,
+      [req.user.org_id,windowHours,...eventsGeo.params],
     ),
     req.db(
-      `SELECT
-          COUNT(*) FILTER (WHERE e.last_seen_at>=now()-interval '24 hours')::int AS events_24h,
-          COUNT(*) FILTER (
-            WHERE e.last_seen_at>=now()-interval '24 hours'
-              AND e.severity IN ('high','critical')
-          )::int AS high_critical_events_24h
+      `SELECT COUNT(*) FILTER(WHERE e.last_seen_at>=now()-($2::int * interval '1 hour'))::int AS events_in_window,
+              COUNT(*) FILTER(WHERE e.last_seen_at>=now()-($2::int * interval '1 hour') AND e.severity IN ('high','critical'))::int AS priority_events_in_window,
+              COUNT(*) FILTER(WHERE e.last_seen_at>=now()-interval '24 hours')::int AS events_24h,
+              COUNT(*) FILTER(WHERE e.last_seen_at>=now()-interval '24 hours' AND e.severity IN ('high','critical'))::int AS high_critical_events_24h,
+              MAX(e.last_seen_at) FILTER(WHERE e.last_seen_at>=now()-($2::int * interval '1 hour')) AS latest_event_at
          FROM intel_events e
-        WHERE e.org_id=$1
-          AND ${eventsGeo.clause}`,
-      [req.user.org_id,...eventsGeo.params],
+        WHERE e.org_id=$1 AND ${eventsGeo.clause}`,
+      [req.user.org_id,windowHours,...eventsGeo.params],
     ),
     req.db(
-      `SELECT COUNT(*)::int AS observations_24h
+      `SELECT COUNT(*) FILTER(WHERE o.observed_at>=now()-($2::int * interval '1 hour'))::int AS observations_in_window,
+              COUNT(*) FILTER(WHERE o.observed_at>=now()-interval '24 hours')::int AS observations_24h,
+              MAX(o.observed_at) FILTER(WHERE o.observed_at>=now()-($2::int * interval '1 hour')) AS latest_observation_at
          FROM intel_observations o
-        WHERE o.org_id=$1
-          AND o.observed_at>=now()-interval '24 hours'
-          AND ${observationsGeo.clause}`,
-      [req.user.org_id,...observationsGeo.params],
+        WHERE o.org_id=$1 AND ${observationsGeo.clause}`,
+      [req.user.org_id,windowHours,...observationsGeo.params],
     ),
     req.db(
-      `SELECT COUNT(*)::int AS active_warnings
-         FROM intel_early_warnings w
-        WHERE w.org_id=$1
-          AND w.status IN ('open','review','acknowledged')
-          AND ${warningsGeo.clause}`,
+      `SELECT COUNT(*)::int AS active_warnings FROM intel_early_warnings w
+        WHERE w.org_id=$1 AND w.status IN ('open','review','acknowledged') AND ${warningsGeo.clause}`,
       [req.user.org_id,...warningsGeo.params],
     ),
     req.db(
-      `SELECT COUNT(*)::int AS open_gaps
-         FROM intel_gaps g
-        WHERE g.org_id=$1
-          AND g.status IN ('open','tasked','monitoring')
-          AND ${gapsGeo.clause}`,
+      `SELECT COUNT(*)::int AS open_gaps FROM intel_gaps g
+        WHERE g.org_id=$1 AND g.status IN ('open','tasked','monitoring') AND ${gapsGeo.clause}`,
       [req.user.org_id,...gapsGeo.params],
     ),
   ]);
-
+  const es=eventSummaryR.rows?.[0]||{},os=observationsR.rows?.[0]||{};
   res.json({
     events:eventsR.rows||[],
     summary:{
-      events_24h:Number(eventSummaryR.rows?.[0]?.events_24h||0),
-      high_critical_events_24h:Number(eventSummaryR.rows?.[0]?.high_critical_events_24h||0),
-      observations_24h:Number(observationsR.rows?.[0]?.observations_24h||0),
+      analytic_window_hours:windowHours,
+      events_in_window:Number(es.events_in_window||0),
+      priority_events_in_window:Number(es.priority_events_in_window||0),
+      observations_in_window:Number(os.observations_in_window||0),
+      events_24h:Number(es.events_24h||0),
+      high_critical_events_24h:Number(es.high_critical_events_24h||0),
+      observations_24h:Number(os.observations_24h||0),
       active_warnings:Number(warningsR.rows?.[0]?.active_warnings||0),
       open_gaps:Number(gapsR.rows?.[0]?.open_gaps||0),
+      latest_event_at:es.latest_event_at||null,
+      latest_observation_at:os.latest_observation_at||null,
     },
-    scope:s,
-    generated_at:new Date().toISOString(),
+    scope:s,generated_at:new Date().toISOString(),
   });
 }));
 
@@ -146,7 +138,24 @@ router.post('/publications/:id/review', asyncHandler(async(req,res)=>{const {act
 
 router.get('/quality', asyncHandler(async(req,res)=>{const s=scope(req),oq=countryClause(s,'o',2),eq=countryClause(s,'e',2),gq=scopedObjectClause(s,'g',2);const {rows:[q]}=await req.db(`SELECT COUNT(*)::int AS observations_30d,COUNT(DISTINCT o.source_id)::int AS sources_30d,ROUND(AVG(o.credibility))::int AS avg_credibility,ROUND(AVG(o.manipulation_score))::int AS avg_manipulation,COUNT(*) FILTER(WHERE o.manipulation_score>=40)::int AS manipulation_flags FROM intel_observations o WHERE o.org_id=$1 AND o.observed_at>=now()-interval '30 days' AND ${oq.clause}`,[req.user.org_id,...oq.params]);const {rows:[e]}=await req.db(`SELECT COUNT(*)::int AS events_30d,ROUND(AVG(e.confidence))::int AS avg_event_confidence,COUNT(*) FILTER(WHERE e.severity IN ('critical','high'))::int AS high_critical_events FROM intel_events e WHERE e.org_id=$1 AND e.last_seen_at>=now()-interval '30 days' AND ${eq.clause}`,[req.user.org_id,...eq.params]);const {rows:[g]}=await req.db(`SELECT COUNT(*) FILTER(WHERE g.status IN ('open','tasked','monitoring'))::int AS open_gaps,COUNT(*) FILTER(WHERE g.status='resolved')::int AS resolved_gaps FROM intel_gaps g WHERE g.org_id=$1 AND ${gq.clause}`,[req.user.org_id,...gq.params]);res.json({quality:{...q,...e,...g,scope:s,checked_at:new Date().toISOString()}});}));
 
-router.get('/events', asyncHandler(async(req,res)=>{const limit=Math.min(500,Math.max(1,Number(req.query.limit)||200)),severity=req.query.severity||null,status=req.query.status||null,s=scope(req),geo=countryClause(s,'e',4),limitIndex=4+geo.params.length;const {rows}=await req.db(`SELECT e.*,COUNT(eo.observation_id)::int AS source_count FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id WHERE e.org_id=$1 AND ($2::text IS NULL OR e.severity=$2) AND ($3::text IS NULL OR e.status=$3) AND ${geo.clause} GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $${limitIndex}`,[req.user.org_id,severity,status,...geo.params,limit]);res.json({events:rows,scope:s,generated_at:new Date().toISOString()});}));
+router.get('/events', asyncHandler(async(req,res)=>{
+  const limit=Math.min(500,Math.max(1,Number(req.query.limit)||200));
+  const severity=req.query.severity||null,status=req.query.status||null;
+  const windowHours=req.query.window_hours==null?null:Number(req.query.window_hours);
+  const allowedWindows=[1,6,24,72,168];
+  if(windowHours!==null&&(!Number.isInteger(windowHours)||!allowedWindows.includes(windowHours)))return res.status(400).json({error:'invalid_window_hours',allowed:allowedWindows});
+  const s=scope(req),geo=countryClause(s,'e',5),limitIndex=5+geo.params.length;
+  const {rows}=await req.db(
+    `SELECT e.*,COUNT(eo.observation_id)::int AS source_count
+       FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id
+      WHERE e.org_id=$1 AND ($2::text IS NULL OR e.severity=$2) AND ($3::text IS NULL OR e.status=$3)
+        AND ($4::int IS NULL OR e.last_seen_at>=now()-($4::int * interval '1 hour'))
+        AND ${geo.clause}
+      GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $${limitIndex}`,
+    [req.user.org_id,severity,status,windowHours,...geo.params,limit],
+  );
+  res.json({events:rows,scope:s,window_hours:windowHours,generated_at:new Date().toISOString()});
+}));
 router.get('/events/:id', asyncHandler(async(req,res)=>{const s=scope(req),geoE=countryClause(s,'e',3),geoO=countryClause(s,'o',3),geoX=countryClause(s,'x',3);const {rows}=await req.db(`SELECT e.*,COALESCE((SELECT json_agg(json_build_object('id',o.id,'title',o.title,'body',o.body,'url',o.url,'observed_at',o.observed_at,'credibility',o.credibility,'manipulation_score',o.manipulation_score,'relationship',eo.relationship,'weight',eo.weight,'source',json_build_object('id',s.id,'name',s.name,'source_type',s.source_type,'provider',s.provider,'reliability',s.reliability))) FROM intel_event_observations eo JOIN intel_observations o ON o.id=eo.observation_id LEFT JOIN intel_sources s ON s.id=o.source_id WHERE eo.event_id=e.id AND o.org_id=$2 AND ${geoO.clause}),'[]') AS evidence,COALESCE((SELECT json_agg(json_build_object('event_id',x.id,'title',x.title,'relationship',l.relationship,'confidence',l.confidence)) FROM intel_event_links l JOIN intel_events x ON x.id=CASE WHEN l.from_event_id=e.id THEN l.to_event_id ELSE l.from_event_id END WHERE (l.from_event_id=e.id OR l.to_event_id=e.id) AND x.org_id=$2 AND ${geoX.clause}),'[]') AS related_events FROM intel_events e WHERE e.id=$1 AND e.org_id=$2 AND ${geoE.clause} GROUP BY e.id`,[req.params.id,req.user.org_id,...geoE.params]);if(!rows.length)return res.status(404).json({error:'Event not found'});res.json({event:rows[0],scope:s});}));
 
 router.get('/sources', asyncHandler(async(req,res)=>{const active=req.query.active==null?null:req.query.active==='true',s=scope(req),geo=countryClause(s,'o',3);const sourceGeo=s.type==='global' ? 'TRUE' : `(COALESCE(src.metadata->>'role','')='discovery' OR EXISTS (SELECT 1 FROM intel_observations os WHERE os.org_id=src.org_id AND os.source_id=src.id AND ${geo.clause.replace(/\bo\./g,'os.')}) )`;const {rows}=await req.db(`SELECT src.*,COUNT(DISTINCT o.id)::int AS observation_count,MAX(o.observed_at) AS latest_observation FROM intel_sources src LEFT JOIN intel_observations o ON o.source_id=src.id WHERE src.org_id=$1 AND ($2::boolean IS NULL OR src.active=$2) AND ${sourceGeo} GROUP BY src.id ORDER BY src.last_seen_at DESC NULLS LAST,src.name LIMIT 300`,[req.user.org_id,active,...geo.params]);res.json({sources:rows,scope:s,generated_at:new Date().toISOString()});}));
