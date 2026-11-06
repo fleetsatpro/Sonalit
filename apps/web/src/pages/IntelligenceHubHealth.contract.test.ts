@@ -9,12 +9,13 @@ const command = read('./IntelligenceCommandView.tsx');
 const sourceControl = read('./IntelligenceSourceCommand.tsx');
 const rail = read('../components/layout/Rail.tsx');
 const router = read('../router.tsx');
+const mainEntry = read('../main.tsx');
 
 describe('Intel Hub product and evidence-truth contract', () => {
   it('exposes one command, analysis, collection and dissemination shell', () => {
     for (const module of ['command', 'analysis', 'alerts', 'newsroom', 'collection', 'publications']) expect(shell).toContain("id: '" + module + "'");
     expect(shell).toContain("value === 'core') return 'analysis'");
-    expect(shell).toContain("import '../styles/intelligence-centre-workspace.css'");
+    expect(mainEntry).toContain("import './styles/intelligence-centre-workspace.css'");
     expect(shell).toContain("import { NavArtwork } from '../components/layout/Rail.js'");
     expect(shell).toContain("art: 'nav-satellite'");
     expect(rail).toContain('export function NavArtwork');

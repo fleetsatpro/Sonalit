@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { Activity, Clock3, ShieldCheck } from 'lucide-react';
 import { NavArtwork } from '../components/layout/Rail.js';
-import '../styles/intelligence-centre-workspace.css';
 
 const IntelligenceCommandView = lazy(() => import('./IntelligenceCommandView.js'));
 const IntelligenceCentreDeep = lazy(() => import('./IntelligenceCentreDeep.tsx'));
