@@ -25,6 +25,9 @@ describe('Intelligence observation text normalization and threat triage',()=>{
  test('does not treat generic fatal wording as evidence of a fatality',()=>{
   expect(assessIncidentSeverity('other','A fatal flaw in the county allocation process').severity).toBe('low');
   expect(assessIncidentSeverity('protest','No one was killed during a peaceful protest').severity).toBe('low');
+  expect(assessIncidentSeverity('protest','No one killed during the peaceful protest').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','No civilians died during the armed incident').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','No people were killed during the armed incident').severity).toBe('low');
   expect(assessIncidentSeverity('armed_attack','No deaths were reported after an armed incident').severity).toBe('low');
   expect(assessIncidentSeverity('armed_attack','Zero fatalities were reported after an armed incident').severity).toBe('low');
   expect(assessIncidentSeverity('accident','Fatal crash reported on the highway').severity).toBe('high');
