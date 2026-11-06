@@ -36,7 +36,7 @@ describe('intelligence fused-event persistence contract', () => {
         provider: 'test-source',
         reliability: 80,
         country_code: 'KE',
-        title: 'Test security incident',
+        title: 'Armed attack reported near Nairobi',
         body: 'Test incident body',
         observed_at: observedAt,
         content_hash: 'hash-1',

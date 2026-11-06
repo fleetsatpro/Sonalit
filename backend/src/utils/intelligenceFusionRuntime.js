@@ -2,7 +2,7 @@
 const { query } = require('../config/database');
 const logger = require('./logger');
 const { buildExtendedAdapters } = require('./intelligenceExtendedProviders');
-const { plainText, incidentCategory, assessIncidentSeverity } = require('./intelligenceTriage');
+const { plainText, incidentCategory, assessIncidentSeverity, securityRelevance } = require('./intelligenceTriage');
 
 const SEVERITY_RANK={low:1,moderate:2,high:3,critical:4};
 function clamp(v,min=0,max=100){return Math.max(min,Math.min(max,Number(v)||0));}
@@ -30,6 +30,8 @@ async function recordQuality(orgId,eventId,severity,confidence,quality,contradic
 async function fuseOrg(orgId){const extended=await collectExtendedProviders(orgId);const {rows}=await query(`SELECT io.*,s.reliability,s.provider FROM intel_observations io LEFT JOIN intel_sources s ON s.id=io.source_id WHERE io.org_id=$1 AND io.observed_at>=now()-interval '48 hours' ORDER BY io.observed_at DESC LIMIT 5000`,[orgId]);const groups=new Map();for(const o of rows){if(!o.country_code)continue;const key=`${o.country_code}:${normalizeTitle(o.title||o.body)}`;if(!key.split(':')[1])continue;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(o);}let created=0,linked=0,contradictions=0;
  for(const observations of groups.values()){
   const latest=observations[0],sourceCount=new Set(observations.map(sourceKey)).size;
+  const relevances=observations.map(o=>{const text=plainText((o.title||'')+' '+(o.body||''),12000);return securityRelevance(incidentCategory(text),text)});
+  const securityEligible=relevances.some(value=>value!=='not_security_relevant');
   const pairs=observations.filter(o=>o.id!==latest.id&&explicitContradiction(o,latest)),contradictionScore=clamp((pairs.length/Math.max(1,observations.length-1))*100);
   const decisions=observations.map(o=>{const text=plainText((o.title||'')+' '+(o.body||''),12000);return assessIncidentSeverity(incidentCategory(text),text)});
   const rank=v=>SEVERITY_RANK[v==='medium'?'moderate':v]||0;
@@ -39,11 +41,15 @@ async function fuseOrg(orgId){const extended=await collectExtendedProviders(orgI
   const confidence=confidenceFor(observations,sourceCount,contradictionScore),quality=qualityFor(observations,sourceCount,contradictionScore),velocity=velocityFor(observations),manipulation=manipulationScore(observations);
   const drivers=[{type:'source_reliability',value:Math.round(sourceQuality(observations))},{type:'corroboration',value:sourceCount},{type:'freshness',value:Math.round(observations.reduce((sum,o)=>sum+freshnessScore(o.observed_at),0)/Math.max(1,observations.length))},{type:'contradiction',value:Math.round(contradictionScore)},{type:'manipulation',value:Math.round(manipulation)},{type:'velocity',value:velocity}];
   const confidenceCeiling=sourceCount<=1?45:sourceCount===2?65:85,severityRecord={...severityDecision,severity,source_count:sourceCount,verification_state:'unverified',confidence_cap:confidenceCeiling};
-  const eventAssessment={providers:[...new Set(observations.map(o=>o.provider).filter(Boolean))],fusion:'deterministic',version:4,verification_state:'unverified',confidence_basis:{independent_source_count:sourceCount,source_quality:Math.round(sourceQuality(observations)),contradiction_score:Math.round(contradictionScore),confidence_ceiling:confidenceCeiling},severity_assessment:severityRecord};
+  const eventAssessment={providers:[...new Set(observations.map(o=>o.provider).filter(Boolean))],fusion:'deterministic',version:4,verification_state:'unverified',triage_disposition:'retain_for_security_triage',security_relevance:relevances.includes('security_relevant')?'security_relevant':'potential_security_relevant',confidence_basis:{independent_source_count:sourceCount,source_quality:Math.round(sourceQuality(observations)),contradiction_score:Math.round(contradictionScore),confidence_ceiling:confidenceCeiling},severity_assessment:severityRecord};
   const {rows:existing}=await query(`SELECT id FROM intel_events WHERE org_id=$1 AND country_code=$2 AND title=$3 AND last_seen_at>=now()-interval '48 hours' LIMIT 1`,[orgId,latest.country_code,title]);
   let eventId=existing[0]?.id;
+  if(!securityEligible){
+   if(eventId)await query(`UPDATE intel_events SET last_seen_at=GREATEST(last_seen_at,$2),assessment=COALESCE(assessment,'{}'::jsonb)||$3::jsonb,updated_at=now() WHERE id=$1 AND status='fused' AND COALESCE(assessment->>'verification_state','unverified')='unverified' AND COALESCE(assessment->>'analyst_override','false')<>'true' AND COALESCE(assessment->>'severity_locked','false')<>'true`,[eventId,latest.observed_at,JSON.stringify({triage_disposition:'not_security_relevant',security_relevance:'not_security_relevant',verification_state:'unverified'})]);
+   continue;
+  }
   if(!eventId){const r=await query(`INSERT INTO intel_events (org_id,event_type,title,summary,status,severity,confidence,country_code,first_seen_at,last_seen_at,risk_velocity,indicators,assessment,quality_score,contradiction_score,source_count,observation_count,manipulation_score) VALUES ($1,'fused_osint',$2,$3,'fused',$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,[orgId,title,summary,severity,confidence,latest.country_code,latest.observed_at,velocity,JSON.stringify(drivers),JSON.stringify(eventAssessment),quality,contradictionScore,sourceCount,observations.length,manipulation]);eventId=r.rows[0].id;created++;}
-  else await query(`UPDATE intel_events SET title=$2,summary=$3,severity=$4,confidence=$5,last_seen_at=GREATEST(last_seen_at,$6),status='fused',risk_velocity=$7,quality_score=$8,contradiction_score=$9,source_count=$10,observation_count=$11,manipulation_score=$12,indicators=$13,assessment=$14,updated_at=now() WHERE id=$1`,[eventId,title,summary,severity,confidence,latest.observed_at,velocity,quality,contradictionScore,sourceCount,observations.length,manipulation,JSON.stringify(drivers),JSON.stringify(eventAssessment)]);
+  else await query(`UPDATE intel_events SET title=$2,summary=$3,severity=$4,confidence=$5,last_seen_at=GREATEST(last_seen_at,$6),status='fused',risk_velocity=$7,quality_score=$8,contradiction_score=$9,source_count=$10,observation_count=$11,manipulation_score=$12,indicators=$13,assessment=$14,updated_at=now() WHERE id=$1 AND status='fused' AND COALESCE(assessment->>'verification_state','unverified')='unverified' AND COALESCE(assessment->>'analyst_override','false')<>'true' AND COALESCE(assessment->>'severity_locked','false')<>'true`,[eventId,title,summary,severity,confidence,latest.observed_at,velocity,quality,contradictionScore,sourceCount,observations.length,manipulation,JSON.stringify(drivers),JSON.stringify(eventAssessment)]);
   const links=await linkObservations(eventId,observations,latest);linked+=links.linked;contradictions+=links.contradictions;
   await recordQuality(orgId,eventId,severity,confidence,quality,contradictionScore,velocity,sourceCount,observations.length,drivers);
  }

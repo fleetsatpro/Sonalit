@@ -18,7 +18,7 @@ router.get('/overview', asyncHandler(async (req,res)=>{
     req.db(
       `SELECT e.*,COUNT(DISTINCT eo.observation_id)::int AS source_count
          FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id
-        WHERE e.org_id=$1 AND e.last_seen_at>=now()-($2::int * interval '1 hour') AND ${eventsGeo.clause}
+        WHERE e.org_id=$1 AND e.last_seen_at>=now()-($2::int * interval '1 hour') AND COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant' AND ${eventsGeo.clause}
         GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 50`,
       [req.user.org_id,windowHours,...eventsGeo.params],
     ),
@@ -29,7 +29,7 @@ router.get('/overview', asyncHandler(async (req,res)=>{
               COUNT(*) FILTER(WHERE e.last_seen_at>=now()-interval '24 hours' AND e.severity IN ('high','critical'))::int AS high_critical_events_24h,
               MAX(e.last_seen_at) FILTER(WHERE e.last_seen_at>=now()-($2::int * interval '1 hour')) AS latest_event_at
          FROM intel_events e
-        WHERE e.org_id=$1 AND ${eventsGeo.clause}`,
+        WHERE e.org_id=$1 AND COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant' AND ${eventsGeo.clause}`,
       [req.user.org_id,windowHours,...eventsGeo.params],
     ),
     req.db(
@@ -150,13 +150,13 @@ router.get('/events', asyncHandler(async(req,res)=>{
        FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id
       WHERE e.org_id=$1 AND ($2::text IS NULL OR e.severity=$2) AND ($3::text IS NULL OR e.status=$3)
         AND ($4::int IS NULL OR e.last_seen_at>=now()-($4::int * interval '1 hour'))
-        AND ${geo.clause}
+        AND COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant' AND ${geo.clause}
       GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $${limitIndex}`,
     [req.user.org_id,severity,status,windowHours,...geo.params,limit],
   );
   res.json({events:rows,scope:s,window_hours:windowHours,generated_at:new Date().toISOString()});
 }));
-router.get('/events/:id', asyncHandler(async(req,res)=>{const s=scope(req),geoE=countryClause(s,'e',3),geoO=countryClause(s,'o',3),geoX=countryClause(s,'x',3);const {rows}=await req.db(`SELECT e.*,COALESCE((SELECT json_agg(json_build_object('id',o.id,'title',o.title,'body',o.body,'url',o.url,'observed_at',o.observed_at,'credibility',o.credibility,'manipulation_score',o.manipulation_score,'relationship',eo.relationship,'weight',eo.weight,'source',json_build_object('id',s.id,'name',s.name,'source_type',s.source_type,'provider',s.provider,'reliability',s.reliability))) FROM intel_event_observations eo JOIN intel_observations o ON o.id=eo.observation_id LEFT JOIN intel_sources s ON s.id=o.source_id WHERE eo.event_id=e.id AND o.org_id=$2 AND ${geoO.clause}),'[]') AS evidence,COALESCE((SELECT json_agg(json_build_object('event_id',x.id,'title',x.title,'relationship',l.relationship,'confidence',l.confidence)) FROM intel_event_links l JOIN intel_events x ON x.id=CASE WHEN l.from_event_id=e.id THEN l.to_event_id ELSE l.from_event_id END WHERE (l.from_event_id=e.id OR l.to_event_id=e.id) AND x.org_id=$2 AND ${geoX.clause}),'[]') AS related_events FROM intel_events e WHERE e.id=$1 AND e.org_id=$2 AND ${geoE.clause} GROUP BY e.id`,[req.params.id,req.user.org_id,...geoE.params]);if(!rows.length)return res.status(404).json({error:'Event not found'});res.json({event:rows[0],scope:s});}));
+router.get('/events/:id', asyncHandler(async(req,res)=>{const s=scope(req),geoE=countryClause(s,'e',3),geoO=countryClause(s,'o',3),geoX=countryClause(s,'x',3);const {rows}=await req.db(`SELECT e.*,COALESCE((SELECT json_agg(json_build_object('id',o.id,'title',o.title,'body',o.body,'url',o.url,'observed_at',o.observed_at,'credibility',o.credibility,'manipulation_score',o.manipulation_score,'relationship',eo.relationship,'weight',eo.weight,'source',json_build_object('id',s.id,'name',s.name,'source_type',s.source_type,'provider',s.provider,'reliability',s.reliability))) FROM intel_event_observations eo JOIN intel_observations o ON o.id=eo.observation_id LEFT JOIN intel_sources s ON s.id=o.source_id WHERE eo.event_id=e.id AND o.org_id=$2 AND ${geoO.clause}),'[]') AS evidence,COALESCE((SELECT json_agg(json_build_object('event_id',x.id,'title',x.title,'relationship',l.relationship,'confidence',l.confidence)) FROM intel_event_links l JOIN intel_events x ON x.id=CASE WHEN l.from_event_id=e.id THEN l.to_event_id ELSE l.from_event_id END WHERE (l.from_event_id=e.id OR l.to_event_id=e.id) AND x.org_id=$2 AND ${geoX.clause}),'[]') AS related_events FROM intel_events e WHERE e.id=$1 AND e.org_id=$2 AND COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant' AND ${geoE.clause} GROUP BY e.id`,[req.params.id,req.user.org_id,...geoE.params]);if(!rows.length)return res.status(404).json({error:'Event not found'});res.json({event:rows[0],scope:s});}));
 
 router.get('/sources', asyncHandler(async(req,res)=>{const active=req.query.active==null?null:req.query.active==='true',s=scope(req),geo=countryClause(s,'o',3);const sourceGeo=s.type==='global' ? 'TRUE' : `(COALESCE(src.metadata->>'role','')='discovery' OR EXISTS (SELECT 1 FROM intel_observations os WHERE os.org_id=src.org_id AND os.source_id=src.id AND ${geo.clause.replace(/\bo\./g,'os.')}) )`;const {rows}=await req.db(`SELECT src.*,COUNT(DISTINCT o.id)::int AS observation_count,MAX(o.observed_at) AS latest_observation FROM intel_sources src LEFT JOIN intel_observations o ON o.source_id=src.id WHERE src.org_id=$1 AND ($2::boolean IS NULL OR src.active=$2) AND ${sourceGeo} GROUP BY src.id ORDER BY src.last_seen_at DESC NULLS LAST,src.name LIMIT 300`,[req.user.org_id,active,...geo.params]);res.json({sources:rows,scope:s,generated_at:new Date().toISOString()});}));
 router.get('/observations', asyncHandler(async(req,res)=>{const limit=Math.min(500,Math.max(1,Number(req.query.limit)||200)),s=scope(req),geo=countryClause(s,'o',2),limitIndex=2+geo.params.length;const {rows}=await req.db(`SELECT o.*,s.name AS source_name,s.source_type,s.provider FROM intel_observations o LEFT JOIN intel_sources s ON s.id=o.source_id WHERE o.org_id=$1 AND ${geo.clause} ORDER BY o.observed_at DESC LIMIT $${limitIndex}`,[req.user.org_id,...geo.params,limit]);res.json({observations:rows,scope:s,generated_at:new Date().toISOString()});}));
