@@ -114,7 +114,7 @@ function countBeforeTerms(value, terms) {
   const number = '(\\d{1,5}|' + Object.keys(NUMBER_WORDS).join('|') + ')';
   const qualifiers = '(?:(?:at least|more than|over|about|around|approximately)\\s+)?';
   const people = '(?:(?:people|persons|civilians|victims)\\s+)?';
-  const verb = '(?:(?:were|are|have been|taken|held)\\s+)?';
+  const verb = '(?:(?:(?:were|are|have been)(?:\\s+(?:taken|held))?|taken|held)\\s+)?';
   const forward = new RegExp('\\b' + qualifiers + number + '\\s+' + people + verb + '(?:' + terms + ')\\b', 'i');
   const reverse = new RegExp('\\b(?:' + terms + ')\\s+' + qualifiers + number + '\\s+(?:people|persons|civilians|victims)\\b', 'i');
   const match = text.match(forward) || text.match(reverse);
@@ -131,7 +131,7 @@ function assessIncidentSeverity(category, value) {
 
   const nonEvent = /\b(?:false alarm|hoax|fictional|movie|film|documentary|training exercise|security drill|simulation|tabletop exercise)\b/.test(text);
   const fatalityCount = countBeforeTerms(text, '(?:killed|dead|died|fatalities|deaths)');
-  const hostageCount = countBeforeTerms(text, '(?:(?:taken|held)\\s+)?hostages?');
+  const hostageCount = countBeforeTerms(text, 'hostages?');
   const noFatalityClaim = /\b(?:no|zero|0|without)\s+(?:reported\s+)?(?:deaths?|fatalities|casualties|people killed)\b|\bno\s+(?:one|people|persons|civilians|victims)\s+(?:was|were\s+)?(?:killed|dead|injured)\b/.test(text);
   const affirmativeFatality = /\b(?:killed|dead|died|death|fatalit(?:y|ies)|fatal (?:crash|collision|attack|shooting|explosion|stabbing|assault|accident|incident))\b/.test(text);
   const fatal = (fatalityCount != null && fatalityCount > 0) || (affirmativeFatality && !noFatalityClaim);
