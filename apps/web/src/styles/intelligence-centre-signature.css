@@ -183,3 +183,28 @@
     transition: none !important;
   }
 }
+
+/* Analytical workspaces: a two-row instrument deck, not ten squeezed toolbar icons. */
+.sonalit-intelligence-workspace .icd-root .icd-nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;padding:9px;border:1px solid rgba(126,169,230,.22);border-radius:15px;background:radial-gradient(ellipse at 6% 0%,rgba(69,197,211,.09),transparent 42%),linear-gradient(112deg,rgba(8,21,43,.94),rgba(15,20,48,.94));box-shadow:inset 0 1px rgba(255,255,255,.045),0 12px 34px rgba(0,0,0,.16)}
+.sonalit-intelligence-workspace .icd-root .icd-nav button{position:relative;display:grid;grid-template-columns:25px minmax(0,1fr);grid-template-rows:14px 27px;align-items:center;justify-content:stretch;gap:1px 9px;min-height:67px;padding:9px 11px;overflow:hidden;border:1px solid rgba(126,167,224,.12);border-radius:10px;border-right:1px solid rgba(126,167,224,.12);background:linear-gradient(145deg,rgba(18,33,60,.62),rgba(8,18,37,.66));color:#aebfdc;text-align:left;transition:transform .22s ease,border-color .22s ease,background .22s ease,box-shadow .22s ease}
+.sonalit-intelligence-workspace .icd-root .icd-nav button::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;background:linear-gradient(118deg,transparent 22%,rgba(107,224,246,.07) 48%,transparent 73%);transform:translateX(-110%);transition:opacity .2s ease}
+.sonalit-intelligence-workspace .icd-root .icd-nav button:hover{transform:translateY(-2px);border-color:rgba(111,216,243,.34);background:linear-gradient(145deg,rgba(20,52,78,.8),rgba(26,28,69,.76));box-shadow:0 7px 20px rgba(0,0,0,.16)}
+.sonalit-intelligence-workspace .icd-root .icd-nav button:hover::after,.sonalit-intelligence-workspace .icd-root .icd-nav button.active::after{opacity:1;transform:translateX(110%)}
+.sonalit-intelligence-workspace .icd-root .icd-nav button.active{border-color:rgba(105,231,248,.43);background:linear-gradient(145deg,rgba(20,76,91,.76),rgba(35,35,83,.79));box-shadow:inset 0 1px rgba(255,255,255,.08),0 0 22px rgba(61,182,220,.09)}
+.sonalit-intelligence-workspace .icd-root .icd-nav button>span:first-child{grid-column:1;grid-row:1;align-self:end;color:#7590b6;font:800 9px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.1em}
+.sonalit-intelligence-workspace .icd-root .icd-nav .icd-nav-glyph{grid-column:1;grid-row:2;display:grid;place-items:center;width:25px;height:27px;color:#91b9dc}
+.sonalit-intelligence-workspace .icd-root .icd-nav button.active .icd-nav-glyph{color:#b8f4ff}
+.sonalit-intelligence-workspace .icd-workbench-glyph{width:24px;height:24px;overflow:visible;stroke:currentColor;stroke-width:1.5}
+.sonalit-intelligence-workspace .icd-workbench-glyph .iwg-wire{opacity:.7}
+.sonalit-intelligence-workspace .icd-workbench-glyph .iwg-node{fill:#0b172b;stroke:currentColor}
+.sonalit-intelligence-workspace .icd-workbench-glyph .iwg-core{fill:currentColor;stroke:none;transform-box:fill-box;transform-origin:center}
+.sonalit-intelligence-workspace .icd-workbench-glyph .iwg-orbit{stroke-dasharray:70 22;transform-box:fill-box;transform-origin:center}
+.sonalit-intelligence-workspace .icd-workbench-glyph .iwg-sweep{stroke-dasharray:3 4;stroke:#c2f8ff}
+.sonalit-intelligence-workspace .icd-nav button.active .iwg-orbit,.sonalit-intelligence-workspace .icd-nav button:hover .iwg-orbit{animation:intel-orbit-clockwise 28s linear infinite}
+.sonalit-intelligence-workspace .icd-nav button.active .iwg-core,.sonalit-intelligence-workspace .icd-nav button:hover .iwg-core{animation:intel-core-breathe 4.2s ease-in-out infinite}
+.sonalit-intelligence-workspace .icd-nav button.active .iwg-sweep,.sonalit-intelligence-workspace .icd-nav button:hover .iwg-sweep{animation:intel-icon-trace 5.5s ease-in-out infinite}
+.sonalit-intelligence-workspace .icd-root .icd-nav button>b{grid-column:2;grid-row:1/span 2;align-self:center;color:#c6d6ee;font-size:10px;line-height:1.3;letter-spacing:.075em}
+.sonalit-intelligence-workspace .icd-root .icd-nav button.active>b{color:#f1fcff}
+.sonalit-intelligence-workspace .icd-root .icd-nav button:nth-child(n).active{box-shadow:inset 0 1px rgba(255,255,255,.08),0 0 22px rgba(61,182,220,.09)}
+@media(max-width:680px){.sonalit-intelligence-workspace .icd-root .icd-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.sonalit-intelligence-workspace .icd-root .icd-nav button{min-height:64px;padding:8px 9px}}
+@media(prefers-reduced-motion:reduce){.sonalit-intelligence-workspace .icd-root .icd-nav button,.sonalit-intelligence-workspace .icd-root .icd-nav button::after{transition:none!important}.sonalit-intelligence-workspace .icd-workbench-glyph .iwg-orbit,.sonalit-intelligence-workspace .icd-workbench-glyph .iwg-core,.sonalit-intelligence-workspace .icd-workbench-glyph .iwg-sweep{animation:none!important}}

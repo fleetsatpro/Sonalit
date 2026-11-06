@@ -80,6 +80,11 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(signatureSystem).toContain('.icw-motion-paused *');
     expect(signatureSystem).toContain('transform:translate3d');
     expect(signatureSystem).toContain('@keyframes intel-aurora-drift');
+    expect(deep).toContain('function WorkbenchGlyph');
+    expect(deep).toContain('aria-label="Analysis workspaces"');
+    for (const glyph of ['situation', 'signals', 'operations', 'atlas', 'countries', 'investigations', 'forecasts', 'publications', 'watchlists', 'sources']) expect(deep).toContain("'" + glyph + "'");
+    expect(deep).not.toContain('<Icon size={14}/>');
+    expect(signatureSystem).toContain('grid-template-columns:repeat(5,minmax(0,1fr))');
     expect(signatureSystem).toContain('animation-iteration-count:1');
     expect(signatureSystem).toContain('prefers-reduced-motion:reduce');
     expect(command).toContain("basemap === 'dark' ? DARK_STREET_STYLE : STREET_STYLE");
