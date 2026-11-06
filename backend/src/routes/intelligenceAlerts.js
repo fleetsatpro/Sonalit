@@ -32,7 +32,7 @@ router.get('/status', asyncHandler(async (req,res)=>{
 }));
 
 router.get('/:id', asyncHandler(async (req,res)=>{
-  const {rows}=await req.db(`SELECT a.*,s.name AS source_name,s.provider,io.url AS source_url,io.body AS source_text,io.raw_metadata FROM intel_alerts a LEFT JOIN intel_sources s ON s.id=a.source_id LEFT JOIN intel_observations io ON io.id=a.observation_id WHERE a.org_id=$1 AND a.id=$2 LIMIT 1`,[req.user.org_id,req.params.id]);
+  const {rows}=await req.db(`SELECT a.*,s.name AS source_name,s.provider,io.url AS source_url,io.body AS source_text,io.raw_metadata FROM intel_alerts a LEFT JOIN intel_sources s ON s.id=a.source_id LEFT JOIN intel_observations io ON io.id=a.observation_id WHERE a.org_id=$1 AND a.id=$2 AND COALESCE(a.metadata->>'triage_disposition','')<>'not_security_relevant' LIMIT 1`,[req.user.org_id,req.params.id]);
   if(!rows[0])return res.status(404).json({error:'Alert not found'});
   res.json({alert:rows[0]});
 }));

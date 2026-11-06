@@ -60,6 +60,13 @@ describe('intelligence operations read endpoints', () => {
     expect(sql).toContain("COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant'");
   });
 
+  test('event detail cannot be fetched after triage excludes a non-security public signal', async () => {
+    const res = await request(app).get('/intelligence/events/33333333-3333-4333-8333-333333333333');
+    expect(res.status).toBe(404);
+    const [sql] = mockDbQuery.mock.calls[0];
+    expect(sql).toContain("COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant'");
+  });
+
   test('global requirements does not leave untyped unused scope parameters', async () => {
     const res = await request(app).get('/intelligence/requirements');
     expect(res.status).toBe(200);

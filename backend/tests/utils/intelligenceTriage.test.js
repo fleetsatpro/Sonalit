@@ -33,6 +33,12 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(securityRelevance(incidentCategory(sports),sports)).toBe('not_security_relevant');
   expect(securityRelevance(incidentCategory(journalism),journalism)).toBe('not_security_relevant');
   expect(securityRelevance('protest','Peaceful protest announced in Nairobi')).toBe('security_relevant');
+  expect(securityRelevance('traffic','Traffic congestion reported in the CBD')).toBe('not_security_relevant');
+  expect(securityRelevance('traffic','Road blocked after a roadblock closes airport access')).toBe('operationally_relevant');
+  expect(securityRelevance('accident','Minor fender-bender; no injuries')).toBe('not_security_relevant');
+  expect(securityRelevance('accident','Multi-vehicle collision leaves several seriously injured')).toBe('operationally_relevant');
+  expect(securityRelevance('political_rally','Candidate announces a campaign rally')).toBe('not_security_relevant');
+  expect(securityRelevance('political_rally','Thousands gather for a rally as roads close and clashes erupt')).toBe('potential_security_relevant');
   expect(securityRelevance('other','Police investigate suspicious package near an embassy')).toBe('potential_security_relevant');
   expect(securityRelevance('other','Confirmed cyber attack against hospital systems')).toBe('potential_security_relevant');
  });

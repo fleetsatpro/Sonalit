@@ -6,7 +6,13 @@ function incidentCategory(value){const s=plainText(value,12000).toLowerCase();if
 function securityRelevance(category,value){
  const text=plainText(value,12000).toLowerCase();
  const cat=String(category||incidentCategory(text)||'other').toLowerCase();
- if(cat!=='other')return 'security_relevant';
+ const securityCategories=['ied','armed_attack','kidnapping','protest','crime'];
+ if(securityCategories.includes(cat))return 'security_relevant';
+ if(cat==='traffic')return /\b(?:roadblock|blocked road|road closed|highway closed|gridlock|major congestion|airport access blocked|transport disruption|protest route)\b/.test(text)?'operationally_relevant':'not_security_relevant';
+ if(cat==='accident')return /\b(?:fatal|fatality|killed|dead|serious(?:ly)? injured|multiple injured|multi[- ]vehicle|major collision|bus crash|train crash|derailment|road closed|highway blocked)\b/.test(text)?'operationally_relevant':'not_security_relevant';
+ if(cat==='fire')return /\b(?:fire|blaze|burning|arson)\b/.test(text)?'operationally_relevant':'not_security_relevant';
+ if(cat==='natural_hazard')return 'operationally_relevant';
+ if(cat==='political_rally')return /\b(?:large crowd|mass gathering|thousands|tens of thousands|clash|violence|unrest|road closure|security alert|security concerns|heavy security|disruption)\b/.test(text)?'potential_security_relevant':'not_security_relevant';
  const explicit=/\b(?:security incident|security alert|security threat|credible threat|imminent threat|threat to (?:life|personal safety|public safety)|suspicious (?:package|device|vehicle|activity)|explosive device|bomb threat|terror plot|terrorist cell|hostage (?:taking|crisis)|armed incursion|border incursion|cross[- ]border attack|sabotage|arson attack|targeted attack|armed men (?:seen|reported|approached)|weapons cache|arms cache|cyber[- ]attack|ransomware attack|data breach|critical infrastructure attack|embassy attack|attack on (?:police|civilians|security forces|checkpoint|convoy)|kidnapp(?:ed|ing)|abduct(?:ed|ion))\b/.test(text);
  return explicit?'potential_security_relevant':'not_security_relevant';
 }
