@@ -100,12 +100,12 @@ The current operational thresholds are:
 
 | Level | Impact rule |
 |---|---|
-| **CRITICAL** | An explicitly reported mass-casualty incident, 10 or more reported fatalities, a large-scale hostage crisis (five or more hostages), or widespread failure/disruption of essential services. |
-| **HIGH** | A reported fatality below the critical threshold; serious/life-threatening injury; an actual armed attack, ambush, gunfire, kidnapping/abduction or explosive detonation; or violent disorder with material harm/disruption. |
+| **CRITICAL** | An explicitly reported mass-casualty incident, two or more reported fatalities, a large-scale hostage crisis (five or more hostages) or an explicit multi-hostage seizure at a sensitive public facility (for example, a school, hospital or embassy), or widespread failure/disruption of essential services. |
+| **HIGH** | A single reported fatality; serious/life-threatening injury; an actual armed attack, ambush, gunfire, kidnapping/abduction or explosive detonation; or violent disorder with material harm/disruption. |
 | **MODERATE** | A credible but prospective threat, foiled/disrupted plot, explosive device/threat without detonation, limited-impact violent disorder, significant local disruption, or material but non-catastrophic hazard/crime. |
 | **LOW** | Peaceful protest/mobilisation without harm or material disruption, generic actor/weapon terminology without an incident, routine traffic/crime, or an event reference without demonstrated material impact. |
 
-These are Sonalit's conservative triage thresholds, not a universal casualty taxonomy. An explicitly described mass-casualty incident can qualify as critical even when a casualty count is not supplied; a handful of reported fatalities alone does not. A report of a possible attack or foiled plot is not treated as a completed mass-casualty event.
+These are Sonalit's conservative triage thresholds, not a universal casualty taxonomy. Two or more reported fatalities from an actual incident meet the critical threshold; a single reported fatality remains high. An explicitly described mass-casualty incident or high-risk multi-hostage seizure can qualify as critical even when a count is not supplied. A report of a possible attack or foiled plot is not treated as a completed mass-casualty event.
 
 **Confidence stays separate.** Independent source diversity, source reliability, freshness, manipulation indicators and contradictions affect the confidence/quality measures, not the severity label. The existing fusion confidence ceiling remains 45% for one independent source, 65% for two and 85% for three or more; additional repetitions from the same publisher/source family do not count as independent corroboration.
 
