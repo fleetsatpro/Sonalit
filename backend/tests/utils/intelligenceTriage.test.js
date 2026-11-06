@@ -55,6 +55,7 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(assessIncidentSeverity('other','Police investigate suspicious package near an embassy').severity).toBe('medium');
   expect(securityRelevance('other','Police investigate suspicious package near an embassy')).toBe('potential_security_relevant');
   expect(securityRelevance('other','Confirmed cyber attack against hospital systems')).toBe('potential_security_relevant');
+  expect(securityRelevance(incidentCategory('Nationwide power outage across multiple cities'),'Nationwide power outage across multiple cities')).toBe('operationally_relevant');
  });
  test('does not inflate generic armed-group and prevention language',()=>{
   expect(incidentCategory('Militia leaders attend peace talks')).toBe('other');
@@ -67,6 +68,7 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(incidentCategory('One person taken hostage during a robbery')).toBe('kidnapping');
   expect(assessIncidentSeverity('kidnapping','One person taken hostage during a robbery').severity).toBe('high');
   expect(assessIncidentSeverity('kidnapping','Armed men take multiple hostages at a school').severity).toBe('critical');
+  expect(incidentCategory('Armed men take multiple hostages at a school')).toBe('kidnapping');
  });
  test('counts independent publishers rather than feed records',()=>{
   const a=independentSourceKey({provider:'newsmesh',source_id:'feed-a',url:'https://www.example-news.test/story/one'});
