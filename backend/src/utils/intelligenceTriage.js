@@ -113,7 +113,7 @@ function countBeforeTerms(value, terms) {
   const text = plainText(value, 12000).toLowerCase();
   const number = '(\\d{1,5}|' + Object.keys(NUMBER_WORDS).join('|') + ')';
   const qualifiers = '(?:(?:at least|more than|over|about|around|approximately)\\s+)?';
-  const people = '(?:(?:people|person|persons|individuals?|civilians|victims)\s+)?';
+  const people = '(?:(?:people|person|persons|individuals?|civilians|victims)\\s+)?';
   const verb = '(?:(?:(?:were|are|have been)(?:\\s+(?:taken|held))?|taken|held)\\s+)?';
   const forward = new RegExp('\\b' + qualifiers + number + '\\s+' + people + verb + '(?:' + terms + ')\\b', 'i');
   const reverse = new RegExp('\\b(?:' + terms + ')\\s+' + qualifiers + number + '\\s+(?:people|persons|civilians|victims)\\b', 'i');
