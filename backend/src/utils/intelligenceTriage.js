@@ -158,7 +158,6 @@ function assessIncidentSeverity(category, value) {
 
   const massHostageLabel = !noMassHostageClaim && /\b(?:mass hostage[- ]taking|large[- ]scale hostage crisis|mass hostage crisis|dozens of hostages?|multiple hostages? at (?:a )?(?:school|hospital|embassy|airport|public venue))\b/.test(text);
   const massHostageCrisis = ((hostageCount != null && hostageCount >= 5 && /\b(?:hostages?|hostage crisis|hostage[- ]taking)\b/.test(text)) || (massHostageLabel && !noMassHostageClaim)) && !prospectiveMassEvent;
-    || (massHostageLabel && !prospectiveMassEvent));
   const hostage = (hostageCount != null && hostageCount > 0) || (!noMassHostageClaim && /\b(?:hostage crisis|hostage[- ]taking|hostages? held|taken hostage|held hostage|take(?:s|n|ing)? (?:multiple )?hostages?|kidnapped|abducted)\b/.test(text));
   const foiled = /\b(?:foiled|thwarted|intercepted|prevented)\b/.test(text);
   const prospectiveThreat = /\b(?:threat|risk|warning|warns?|possible|potential|suspected|planned|plan|plot|attempt)\b.{0,80}\b(?:attack|ambush|kidnap(?:ping)?|abduct(?:ion)?|hostage|bomb|explosion|massacre|terrorist|armed incursion)\b/.test(text)
