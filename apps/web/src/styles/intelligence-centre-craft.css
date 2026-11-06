@@ -453,3 +453,43 @@
 .sonalit-intelligence-workspace .icd-forecast-detail-section li{padding-left:3px;overflow-wrap:anywhere}
 @media(max-width:1040px){.sonalit-intelligence-workspace .icd-forecast-layout{grid-template-columns:1fr}.sonalit-intelligence-workspace .icd-forecast-aside{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){.sonalit-intelligence-workspace .icd-forecast-measures{grid-template-columns:1fr}.sonalit-intelligence-workspace .icd-forecast-footprint{grid-template-columns:repeat(2,minmax(0,1fr))}.sonalit-intelligence-workspace .icd-forecast-validity{grid-template-columns:1fr}.sonalit-intelligence-workspace .icd-forecast-aside{grid-template-columns:1fr}.sonalit-intelligence-workspace .icd-forecast-register-head{align-items:flex-start;flex-direction:column}}
+
+/* Incident Fabric precision pass: readable mobile flow, no metadata collisions. */
+.sonalit-intelligence-workspace .ia-alert{grid-template-columns:38px minmax(0,1fr) 66px;align-items:start;gap:11px;padding:14px 14px;min-height:unset}
+.sonalit-intelligence-workspace .ia-alert-main{min-width:0;max-width:100%}
+.sonalit-intelligence-workspace .ia-alert-main h3{font-size:13px;line-height:1.38;margin:6px 0 5px;overflow-wrap:anywhere}
+.sonalit-intelligence-workspace .ia-alert-main p{font-size:11px;line-height:1.52;white-space:normal;overflow-wrap:anywhere;word-break:normal;margin:0 0 7px;max-width:100%}
+.sonalit-intelligence-workspace .ia-alert-top b{font-size:8.5px;letter-spacing:.09em;color:#d9e9fa}
+.sonalit-intelligence-workspace .ia-alert.critical .ia-alert-top b{color:#ffaaa4}
+.sonalit-intelligence-workspace .ia-alert.high .ia-alert-top b{color:#f0bd91}
+.sonalit-intelligence-workspace .ia-unverified{display:block;max-width:100%;font-size:8px;line-height:1.35;letter-spacing:.075em;overflow-wrap:anywhere}
+.sonalit-intelligence-workspace .ia-meta{min-width:58px;max-width:66px;padding-top:3px;white-space:nowrap}
+.sonalit-intelligence-workspace .ia-meta-age{display:flex;align-items:center;gap:4px}
+.sonalit-intelligence-workspace .ia-meta small{font-size:8px}
+.sonalit-intelligence-workspace .ia-severity-assessment{margin:14px 0;padding:14px;border:1px solid rgba(133,178,216,.22);border-radius:11px;background:linear-gradient(145deg,rgba(14,31,51,.92),rgba(8,17,30,.94))}
+.sonalit-intelligence-workspace .ia-severity-assessment>header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:10px;border-bottom:1px solid rgba(145,172,210,.15)}
+.sonalit-intelligence-workspace .ia-severity-assessment>header span,.sonalit-intelligence-workspace .ia-assessment-grid small,.sonalit-intelligence-workspace .ia-assessment-basis>small{font-size:8px;letter-spacing:.13em;color:#92abc8;font-weight:800}
+.sonalit-intelligence-workspace .ia-severity-assessment>header b{font-size:11px;letter-spacing:.08em;color:#f0d3ac}
+.sonalit-intelligence-workspace .ia-assessment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px 0}
+.sonalit-intelligence-workspace .ia-assessment-grid>div{display:grid;gap:4px;min-width:0}
+.sonalit-intelligence-workspace .ia-assessment-grid strong{font-size:11px;color:#e7f0fc;overflow-wrap:anywhere}
+.sonalit-intelligence-workspace .ia-assessment-basis ul{margin:8px 0;padding-left:18px;color:#d1dff0;font-size:11px;line-height:1.55}
+.sonalit-intelligence-workspace .ia-assessment-basis p,.sonalit-intelligence-workspace .ia-assessment-caveat{display:block;margin:7px 0;color:#9fb1c9;font-size:10px;line-height:1.5}
+.sonalit-intelligence-workspace .icd-severity-brief{margin:12px 0 16px;padding:14px;border:1px solid rgba(129,181,217,.22);border-radius:11px;background:linear-gradient(145deg,rgba(14,30,50,.92),rgba(7,16,29,.96))}
+.sonalit-intelligence-workspace .icd-severity-brief>header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px solid rgba(145,172,210,.14)}
+.sonalit-intelligence-workspace .icd-severity-brief>header b,.sonalit-intelligence-workspace .icd-severity-brief>header span{font-size:8px;letter-spacing:.12em;color:#a9c1dc;font-weight:800}
+.sonalit-intelligence-workspace .icd-severity-brief>header span{color:#e8c59e}
+.sonalit-intelligence-workspace .icd-severity-measures{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 0}
+.sonalit-intelligence-workspace .icd-severity-measures>div{display:grid;gap:4px;min-width:0}
+.sonalit-intelligence-workspace .icd-severity-measures small,.sonalit-intelligence-workspace .icd-severity-basis>b{font-size:8px;letter-spacing:.11em;color:#94aac5}
+.sonalit-intelligence-workspace .icd-severity-measures strong{font-size:10px;color:#e7effb;overflow-wrap:anywhere}
+.sonalit-intelligence-workspace .icd-severity-basis ul{margin:7px 0;padding-left:18px;color:#d3e1f2;font-size:11px;line-height:1.55}
+.sonalit-intelligence-workspace .icd-severity-basis p{color:#9eafc8;font-size:10px;line-height:1.5;margin:7px 0 0}
+@media(max-width:680px){
+ .sonalit-intelligence-workspace .ia-alert{grid-template-columns:36px minmax(0,1fr);column-gap:10px;row-gap:7px;padding:14px 12px;align-items:start}
+ .sonalit-intelligence-workspace .ia-alert-icon{grid-column:1;grid-row:1 / span 2;width:35px;height:35px}
+ .sonalit-intelligence-workspace .ia-alert-main{grid-column:2;grid-row:1}
+ .sonalit-intelligence-workspace .ia-meta{grid-column:2;grid-row:2;display:flex;align-items:center;justify-content:flex-start;flex-direction:row;gap:12px;min-width:0;max-width:none;padding:0;margin:0 0 1px;font-size:9px}
+ .sonalit-intelligence-workspace .ia-assessment-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .sonalit-intelligence-workspace .icd-severity-measures{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

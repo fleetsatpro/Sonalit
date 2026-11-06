@@ -51,6 +51,20 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(alerts).not.toContain('COLLECTOR<b>5 MIN');
   });
 
+  it('normalizes legacy RSS markup and presents severity as preliminary impact/urgency triage', () => {
+    const text = fs.readFileSync(path.join(__dirname, '../lib/intelligenceText.js'), 'utf8');
+    expect(text).toContain('function displayText');
+    expect(text).toContain('&nbsp;');
+    expect(alerts).toContain('PRELIMINARY');
+    expect(alerts).toContain('WHY THIS LEVEL');
+    expect(alerts).toContain('severity_assessment');
+    expect(deep).toContain('PRELIMINARY THREAT ASSESSMENT');
+    expect(deep).toContain('displayText(JSON.stringify(v,null,2),2400)');
+    expect(newsroom).toContain('SOURCE EXCERPT');
+    expect(craftSystem).toContain('.ia-alert-main p');
+    expect(craftSystem).toContain('.ia-meta-age');
+  });
+
   it('labels Newsroom keyword matching as lexical triage, never assessed severity', () => {
     expect(newsroom).toContain('const triageCue=');
     expect(newsroom).toContain('STRONG TEXT CUE');
