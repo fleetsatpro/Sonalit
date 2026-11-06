@@ -29,6 +29,7 @@ describe('Intelligence observation text normalization and threat triage',()=>{
  test('reserves High/Critical for explicit serious impact',()=>{
   expect(assessIncidentSeverity('armed_attack','Ongoing armed attack reported near the town').severity).toBe('high');expect(assessIncidentSeverity('kidnapping','Two people kidnapped from their home').severity).toBe('high');
   const critical=assessIncidentSeverity('armed_attack','Terrorist attack with at least 8 people killed');expect(critical.severity).toBe('critical');expect(critical.impact).toBe('catastrophic');expect(critical.urgency).toBe('immediate');
+  expect(assessIncidentSeverity('other','A mass-casualty attack is only a possible future threat')).toMatchObject({severity:'medium',urgency:'routine'});
  });
  test('does not mistake a sports fixture clash for a protest/security incident',()=>{
   const title='Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash';
