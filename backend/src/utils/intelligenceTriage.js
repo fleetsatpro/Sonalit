@@ -130,7 +130,7 @@ function assessIncidentSeverity(category, value) {
   const cat = String(category || incidentCategory(text) || 'other').toLowerCase();
 
   const nonEvent = /\b(?:false alarm|hoax|fictional|movie|film|documentary|training exercise|security drill|simulation|tabletop exercise)\b/.test(text);
-  const noFatalityClaim = /\b(?:no|zero|0|without)\s+(?:reported\s+)?(?:deaths?|fatalities|casualties|people killed)\b|\bno\s+(?:one|people|persons|civilians|victims)\s+(?:was|were\s+)?(?:killed|dead|injured)\b/.test(text);
+  const noFatalityClaim = /\b(?:no|zero|0|without)\s+(?:reported\s+)?(?:deaths?|fatalities|casualties|people killed)\b|\bno\s+(?:one|people|persons|civilians|victims)\s+(?:(?:was|were|has been|have been)\s+)?(?:killed|dead|died|injured)\b/.test(text);
   const fatalityCount = noFatalityClaim ? null : countBeforeTerms(text, '(?:killed|dead|died|fatalities|deaths)');
   const hostageCount = countBeforeTerms(text, 'hostages?');
   const affirmativeFatality = /\b(?:killed|dead|died|death|fatalit(?:y|ies)|fatal (?:crash|collision|attack|shooting|explosion|stabbing|assault|accident|incident))\b/.test(text);
