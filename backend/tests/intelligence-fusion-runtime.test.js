@@ -13,12 +13,27 @@ const OBS = '00000000-0000-0000-0000-000000000003';
 describe('intelligence fused-event persistence contract', () => {
   beforeEach(() => query.mockReset());
 
-  test('applies impact-based severity and caps confidence by independent publisher count',()=>{
+  test('uses impact thresholds for threat severity while keeping confidence separate',()=>{
     const {severityFor,confidenceFor,sourceKey}=require('../src/utils/intelligenceFusionRuntime');
+    const {assessIncidentSeverity}=require('../src/utils/intelligenceTriage');
+
     expect(severityFor('Peaceful protest held in Nairobi')).toBe('low');
     expect(severityFor('Routine traffic congestion on the highway')).toBe('low');
     expect(severityFor('Ongoing armed attack reported near town')).toBe('high');
-    expect(severityFor('Terrorist attack with at least 8 people killed')).toBe('critical');
+    expect(severityFor('Terrorist attack with at least 8 people killed')).toBe('high');
+    expect(severityFor('Terrorist attack with at least 10 people killed')).toBe('critical');
+    expect(severityFor('Two people were killed during an armed attack')).toBe('high');
+    expect(severityFor('Massacre reported near the town')).toBe('critical');
+    expect(severityFor('Ongoing bomb threat at a public venue')).toBe('moderate');
+    expect(severityFor('Foiled bomb plot before a device was deployed')).toBe('moderate');
+    expect(severityFor('A mass-casualty attack is only a possible future threat')).not.toBe('critical');
+
+    const preliminary=assessIncidentSeverity('armed_attack','Ongoing armed attack reported near town');
+    expect(preliminary.verification_state).toBe('unverified');
+    expect(preliminary.preliminary).toBe(true);
+    expect(preliminary.reason_codes).toContain('ARMED_ATTACK_REPORTED');
+    expect(preliminary.thresholds.critical_fatalities).toBe(10);
+
     const observations=[{reliability:95,observed_at:new Date().toISOString(),source_id:'a'}];
     expect(confidenceFor(observations,1,0)).toBeLessThanOrEqual(45);
     expect(sourceKey({provider:'newsmesh',source_id:'a',raw_metadata:{aggregator_source:'The Star'}})).toBe('the star');
