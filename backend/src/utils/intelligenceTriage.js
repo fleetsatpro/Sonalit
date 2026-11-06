@@ -139,12 +139,12 @@ function assessIncidentSeverity(category, value) {
   const hostageCount = countBeforeTerms(text, 'hostages?');
   const affirmativeFatality = /\b(?:killed|dead|died|death|fatalit(?:y|ies)|fatal (?:crash|collision|attack|shooting|explosion|stabbing|assault|accident|incident))\b/.test(text);
   const fatal = (fatalityCount != null && fatalityCount > 0) || (affirmativeFatality && !noFatalityClaim && !noMultipleFatalityClaim);
-  const multipleFatalities = !noMultipleFatalityClaim && (/\b(?:multiple fatalities|several (?:people )?(?:killed|dead|died|fatalities)|dozens (?:of )?(?:people )?(?:killed|dead|died)|scores (?:of )?(?:people )?(?:killed|dead|died))\b/.test(text)
-    || (fatalityCount != null && fatalityCount >= 2));
+  const multipleFatalities = (fatalityCount != null && fatalityCount >= 2)
+    || (!noMultipleFatalityClaim && /\b(?:multiple fatalities|several (?:people )?(?:killed|dead|died|fatalities)|dozens (?:of )?(?:people )?(?:killed|dead|died)|scores (?:of )?(?:people )?(?:killed|dead|died))\b/.test(text));
   const massFatalityLabel = !noMassCasualtyClaim && /\b(?:mass[- ]casualt(?:y|ies)(?:\s+(?:incident|event|attack))?|massacre|mass killing|genocide|dozens (?:of )?(?:people )?(?:killed|dead|died)|scores (?:of )?(?:people )?(?:killed|dead|died))\b/.test(text);
   const prospectiveMassEvent = /\b(?:threat|risk|fear|warning|warns?|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|preventing|averted|averting)\b.{0,80}\b(?:mass[- ]casualt(?:y|ies)|massacre|mass killing|genocide|mass hostage|multiple hostages?|hostage crisis|widespread|nationwide)\b/.test(text)
     || /\b(?:mass[- ]casualt(?:y|ies)|massacre|mass killing|genocide|mass hostage|multiple hostages?|hostage crisis|widespread|nationwide)\b.{0,80}\b(?:threat|risk|fear|warning|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|averted)\b/.test(text);
-  const massFatalities = ((fatal && (multipleFatalities || (fatalityCount != null && fatalityCount >= 2))) || massFatalityLabel) && !prospectiveMassEvent && !noMassCasualtyClaim;
+  const massFatalities = (fatal && multipleFatalities) || (massFatalityLabel && !prospectiveMassEvent && !noMassCasualtyClaim);
 
   const noInjuryClaim = /\b(?:no|zero|0|without)\s+(?:reported\s+)?injur(?:y|ies)\b/.test(text);
   const seriousInjury = !noInjuryClaim && /\b(?:seriously injured|severely injured|critical condition|serious injuries|life[- ]threatening injuries)\b/.test(text);
@@ -157,9 +157,9 @@ function assessIncidentSeverity(category, value) {
     && /\b(?:power outage|water supply|communications|hospital|airport|port|transport network|critical infrastructure|evacuat|disruption|shutdown|essential services?)\b/.test(text);
 
   const massHostageLabel = !noMassHostageClaim && /\b(?:mass hostage[- ]taking|large[- ]scale hostage crisis|mass hostage crisis|dozens of hostages?|multiple hostages? at (?:a )?(?:school|hospital|embassy|airport|public venue))\b/.test(text);
-  const massHostageCrisis = !noMassHostageClaim && ((hostageCount != null && hostageCount >= 5 && /\b(?:hostages?|hostage crisis|hostage[- ]taking)\b/.test(text))
+  const massHostageCrisis = ((hostageCount != null && hostageCount >= 5 && /\b(?:hostages?|hostage crisis|hostage[- ]taking)\b/.test(text)) || (massHostageLabel && !noMassHostageClaim)) && !prospectiveMassEvent;
     || (massHostageLabel && !prospectiveMassEvent));
-  const hostage = !noMassHostageClaim && /\b(?:hostage crisis|hostage[- ]taking|hostages? held|taken hostage|held hostage|take(?:s|n|ing)? (?:multiple )?hostages?|kidnapped|abducted)\b/.test(text);
+  const hostage = (hostageCount != null && hostageCount > 0) || (!noMassHostageClaim && /\b(?:hostage crisis|hostage[- ]taking|hostages? held|taken hostage|held hostage|take(?:s|n|ing)? (?:multiple )?hostages?|kidnapped|abducted)\b/.test(text));
   const foiled = /\b(?:foiled|thwarted|intercepted|prevented)\b/.test(text);
   const prospectiveThreat = /\b(?:threat|risk|warning|warns?|possible|potential|suspected|planned|plan|plot|attempt)\b.{0,80}\b(?:attack|ambush|kidnap(?:ping)?|abduct(?:ion)?|hostage|bomb|explosion|massacre|terrorist|armed incursion)\b/.test(text)
     || /\b(?:attack|ambush|kidnap(?:ping)?|abduct(?:ion)?|hostage|bomb|explosion)\b.{0,80}\b(?:threat|risk|warning|possible|potential|suspected|foiled|thwarted)\b/.test(text);
@@ -233,7 +233,7 @@ function assessIncidentSeverity(category, value) {
         reasonCodes.push('ARMED_GROUP_REFERENCE_UNSPECIFIED');
       }
     } else {
-      const abductionEvent = !noMassHostageClaim && /\b(?:kidnapped|abducted|taken hostage|held hostage|hostage[- ]taking|hostages? held|take(?:s|n|ing) (?:multiple )?hostages?|hostage crisis|kidnapping(?:s)? reported|abduction reported|kidnapping of|kidnapping)\b/.test(text);
+      const abductionEvent = /\b(?:kidnapped|abducted|kidnapping(?:s)? reported|abduction reported|kidnapping of|kidnapping)\b/.test(text) || (!noMassHostageClaim && /\b(?:taken hostage|held hostage|hostage[- ]taking|hostages? held|take(?:s|n|ing) (?:multiple )?hostages?|hostage crisis)\b/.test(text));
       if (abductionEvent && !foiled && !preventive) {
         severity = 'high';
         basis.push('Reported kidnapping, abduction or hostage-taking; scale and victim status remain separate questions');
@@ -312,7 +312,7 @@ function assessIncidentSeverity(category, value) {
     severity = 'medium';
     basis.push('Reported multiple injuries without explicit serious or life-threatening harm');
     reasonCodes.push('MULTIPLE_INJURIES_REPORTED');
-  } else if (!nonEvent && !noMassHostageClaim && !noMassCasualtyClaim && !noWidespreadDisruptionClaim && /\b(?:suspicious package|suspicious device|credible threat|imminent threat|security threat|hostage crisis|armed incursion|border incursion|sabotage|data breach|ransomware attack|critical infrastructure attack)\b/.test(text)) {
+  } else if (!nonEvent && (/\b(?:suspicious package|suspicious device|credible threat|imminent threat|security threat|armed incursion|border incursion|sabotage|data breach|ransomware attack|critical infrastructure attack)\b/.test(text) || (/\bhostage crisis\b/.test(text) && !noMassHostageClaim))) {
     severity = 'medium';
     basis.push('Reported security-risk indicator requires corroboration and impact assessment');
     reasonCodes.push('SECURITY_THREAT_INDICATOR');
