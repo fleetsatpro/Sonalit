@@ -232,7 +232,7 @@ function assessIncidentSeverity(category, value) {
         reasonCodes.push('ARMED_GROUP_REFERENCE_UNSPECIFIED');
       }
     } else {
-      const abductionEvent = /\b(?:kidnapped|abducted|kidnapping(?:s)? reported|abduction reported|kidnapping of|kidnapping)\b/.test(text) || (!noMassHostageClaim && /\b(?:taken hostage|held hostage|hostage[- ]taking|hostages? held|take(?:s|n|ing) (?:multiple )?hostages?|hostage crisis)\b/.test(text));
+      const abductionEvent = (hostageCount != null && hostageCount > 0) || /\b(?:kidnapped|abducted|kidnapping(?:s)? reported|abduction reported|kidnapping of|kidnapping)\b/.test(text) || (!noMassHostageClaim && /\b(?:taken hostage|held hostage|hostage[- ]taking|hostages? held|take(?:s|n|ing) (?:multiple )?hostages?|hostage crisis)\b/.test(text));
       if (abductionEvent && !foiled && !preventive) {
         severity = 'high';
         basis.push('Reported kidnapping, abduction or hostage-taking; scale and victim status remain separate questions');
