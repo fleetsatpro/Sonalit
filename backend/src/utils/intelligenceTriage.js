@@ -140,8 +140,7 @@ function assessIncidentSeverity(category, value) {
   const massFatalityLabel = /\b(?:mass[- ]casualt(?:y|ies)(?:\s+(?:incident|event|attack))?|massacre|mass killing|genocide|dozens (?:of )?(?:people )?(?:killed|dead|died)|scores (?:of )?(?:people )?(?:killed|dead|died))\b/.test(text);
   const prospectiveMassEvent = /\b(?:threat|risk|fear|warning|warns?|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|preventing|averted|averting)\b.{0,80}\b(?:mass[- ]casualt|massacre|mass killing|genocide|mass hostage|multiple hostages?|hostage crisis|widespread|nationwide)\b/.test(text)
     || /\b(?:mass[- ]casualt|massacre|mass killing|genocide|mass hostage|multiple hostages?|hostage crisis|widespread|nationwide)\b.{0,80}\b(?:threat|risk|fear|warning|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|averted)\b/.test(text);
-  const massFatalities = (fatalityCount != null && fatalityCount >= 2 && fatal && !prospectiveMassEvent)
-    || (massFatalityLabel && !prospectiveMassEvent);
+  const massFatalities = ((fatal && (multipleFatalities || (fatalityCount != null && fatalityCount >= 2))) || massFatalityLabel) && !prospectiveMassEvent;
 
   const noInjuryClaim = /\b(?:no|zero|0|without)\s+(?:reported\s+)?injur(?:y|ies)\b/.test(text);
   const seriousInjury = !noInjuryClaim && /\b(?:seriously injured|severely injured|critical condition|serious injuries|life[- ]threatening injuries)\b/.test(text);
