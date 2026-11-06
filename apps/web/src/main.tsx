@@ -21,6 +21,7 @@ import './styles/sjm-visual-system.css';
 // The aerospace-grade public homepage redesign is scoped to .sonalit-public.
 import './styles/marketing-v6.css';
 import './styles/intelligence-centre-premium.css';
+import './styles/intelligence-centre-signature.css';
 import './i18n/index.js';
 import React from 'react';
 import ReactDOM from 'react-dom/client';

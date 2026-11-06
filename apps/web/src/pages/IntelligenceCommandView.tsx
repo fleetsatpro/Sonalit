@@ -5,7 +5,6 @@ import MapLibreMap, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
 import { DARK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
-import { assessIntelFabricHealth } from './intelligenceFabricHealth.js';
 
 type Row = Record<string, any>;
 type ScopeType = 'global' | 'continent' | 'region' | 'country';
@@ -125,16 +124,6 @@ export default function IntelligenceCommandView() {
     queryFn: async () => (await api.get('/risk/intelligence/overview', { params: { ...scopeParams, window_hours: windowHours } })).data,
     staleTime: 15000, refetchInterval: 30000, retry: 1,
   });
-  const collectionQ = useQuery({
-    queryKey: ['intel-command-collection', scopeParams],
-    queryFn: async () => (await api.get('/risk/intelligence/collection/status', { params: scopeParams })).data,
-    staleTime: 30000, refetchInterval: 60000, retry: 1,
-  });
-  const sourceRegistryQ = useQuery({
-    queryKey: ['intel-command-source-registry'],
-    queryFn: async () => (await api.get('/risk/intelligence/sources')).data,
-    staleTime: 30000, refetchInterval: 60000, retry: 1,
-  });
   const warningsQ = useQuery({
     queryKey: ['intel-command-warnings', scopeParams],
     queryFn: async () => (await api.get('/risk/intelligence/early-warnings', { params: scopeParams })).data,
@@ -161,28 +150,7 @@ export default function IntelligenceCommandView() {
   const overview = overviewQ.data?.summary || null;
   const events = list(overviewQ.data, 'events');
   const warnings = list(warningsQ.data, 'warnings');
-  const sourceRows = list(collectionQ.data?.collection, 'sources');
-  const registryRows = list(sourceRegistryQ.data, 'sources');
-  const registryById = new Map(registryRows.map(source => [String(source.id), source]));
-  const healthSources = sourceRows.filter(source => {
-    const registry = registryById.get(String(source.id));
-    const metadata = registry?.metadata && typeof registry.metadata === 'object'
-      ? registry.metadata
-      : (() => { try { return JSON.parse(String(registry?.metadata || '{}')); } catch { return {}; } })();
-    const discovery = String(metadata.role || '').toLowerCase() === 'discovery'
-      || String(metadata.collection_mode || '').toLowerCase() === 'link_out'
-      || metadata.observation_ingestion === false;
-    const authorizationPending = metadata.authorized_only === true && metadata.configured !== true;
-    return !discovery && !authorizationPending;
-  });
   const countries = list(countriesQ.data, 'countries');
-  const health = assessIntelFabricHealth([
-    { label: 'Operating picture', isError: overviewQ.isError, isPending: overviewQ.isPending, data: overviewQ.data },
-    { label: 'Early warnings', isError: warningsQ.isError, isPending: warningsQ.isPending, data: warningsQ.data },
-    { label: 'Collection status', isError: collectionQ.isError, isPending: collectionQ.isPending, data: collectionQ.data },
-    { label: 'Source registry', isError: sourceRegistryQ.isError, isPending: sourceRegistryQ.isPending, data: sourceRegistryQ.data },
-    { label: 'Country register', isError: countriesQ.isError, isPending: countriesQ.isPending, data: countriesQ.data },
-  ], healthSources);
   const located = events.filter(event => validCoordinate(event.latitude, -90, 90) && validCoordinate(event.longitude, -180, 180));
   const regionFallback = scope.type === 'region'
     ? REGION_CENTRES[scope.key]
@@ -223,7 +191,7 @@ export default function IntelligenceCommandView() {
   const selected = selectedWarning || eventDetailQ.data || selectedEvent;
 
   const refresh = () => {
-    void overviewQ.refetch(); void collectionQ.refetch(); void sourceRegistryQ.refetch(); void warningsQ.refetch(); void countriesQ.refetch();
+    void overviewQ.refetch(); void warningsQ.refetch(); void countriesQ.refetch();
   };
   const chooseCountry = (code: string) => setScope({ type: 'country', key: code, label: code });
   const clearScope = () => setScope({ type: 'global', key: 'global', label: 'GLOBAL' });
@@ -233,7 +201,7 @@ export default function IntelligenceCommandView() {
       <div className="icv-title-block">
         <div className="icv-eyebrow">SONALIT / INTELLIGENCE / COMMAND</div>
         <h1>Operating picture</h1>
-        <p>Evidence-led security awareness across the selected theatre. Signals, events, warnings and source health remain distinct.</p>
+        <p>Security events, persisted warnings and geographic context across the selected theatre.</p>
       </div>
       <div className="icv-heading-actions">
         <span className="icv-access-tag"><ShieldCheck size={13}/> RESTRICTED · ADMIN</span>
@@ -263,18 +231,6 @@ export default function IntelligenceCommandView() {
       </div>
       <div className="icv-window-note"><Clock3 size={13}/> Exact server window · {windowHours}h · API snapshot {time(overviewQ.data?.generated_at)}</div>
     </section>
-
-    <section className="icv-health-strip" data-tone={health.tone} role={health.tone === 'danger' ? 'alert' : 'status'} aria-live="polite">
-      <div className="icv-health-mark"><i /></div>
-      <div className="icv-health-copy"><span>COLLECTION HEALTH</span><strong>{health.label}</strong><small>{health.detail}</small></div>
-      <div className="icv-health-stats">
-        <span><b>{health.healthySources}</b> recent success</span>
-        <span><b>{health.failedSources}</b> failed</span>
-        <span><b>{health.staleSources}</b> stale</span>
-        <span><b>{health.unknownSources}</b> unknown</span>
-      </div>
-    </section>
-
     <section className="icv-metrics" aria-label="Time-window metrics">
       <Metric label={'EVENTS · ' + windowHours + 'H'} value={summaryUnavailable ? '—' : overview.events_in_window ?? '—'} note="Distinct event objects · selected window" tone="aqua"/>
       <Metric label="HIGH / CRITICAL" value={summaryUnavailable ? '—' : overview.priority_events_in_window ?? '—'} note="Persisted event severity · not keyword cues" tone="amber"/>
@@ -332,7 +288,7 @@ export default function IntelligenceCommandView() {
           {overviewQ.isPending ? <div className="icv-panel-state">Retrieving the operating picture…</div> :
            overviewQ.isError ? <div className="icv-panel-state error">Operating picture request failed. Event state is unknown.</div> :
            events.length ? events.slice(0, 12).map(event => <EventRow key={event.id} event={event} onOpen={setSelectedEvent}/>) :
-           <div className="icv-panel-state">No event objects were returned in this window. Check collection health and coverage before drawing conclusions.</div>}
+           <div className="icv-panel-state">No event records were returned for this time window. This is not confirmation that the theatre is incident-free.</div>}
         </div>
       </section>
       <section className="icv-panel icv-assurance-panel">
@@ -340,7 +296,7 @@ export default function IntelligenceCommandView() {
         <div className="icv-assurance-lines">
           <div><span>Latest event update</span><b>{time(overview?.latest_event_at)}</b></div>
           <div><span>Latest observation</span><b>{time(overview?.latest_observation_at)}</b></div>
-          <div><span>Collection sources</span><b>{collectionQ.isError ? 'Unknown' : sourceRows.length}</b></div>
+          
           <div><span>Geolocated events in returned set</span><b>{summaryUnavailable ? '—' : located.length}</b></div>
         </div>
         <p className="icv-assurance-note">Event severity, event confidence, source reliability and collection freshness are independent fields. A recent successful collection run is not proof that all relevant incidents were collected.</p>

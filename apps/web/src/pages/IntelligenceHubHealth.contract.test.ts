@@ -6,20 +6,21 @@ const shell = read('./IntelligenceCentre.jsx');
 const alerts = read('./IntelligenceAlerts.tsx');
 const newsroom = read('./IntelligenceLiveNews.jsx');
 const command = read('./IntelligenceCommandView.tsx');
+const deep = read('./IntelligenceCentreDeep.tsx');
 const sourceControl = read('./IntelligenceSourceCommand.tsx');
-const rail = read('../components/layout/Rail.tsx');
 const router = read('../router.tsx');
 const mainEntry = read('../main.tsx');
 const visualSystem = read('../styles/intelligence-centre-premium.css');
+const signatureSystem = read('../styles/intelligence-centre-signature.css');
 
 describe('Intel Hub product and evidence-truth contract', () => {
   it('exposes one command, analysis, collection and dissemination shell', () => {
     for (const module of ['command', 'analysis', 'alerts', 'newsroom', 'collection', 'publications']) expect(shell).toContain("id: '" + module + "'");
     expect(shell).toContain("value === 'core') return 'analysis'");
     expect(mainEntry).toContain("import './styles/intelligence-centre-workspace.css'");
-    expect(shell).toContain("import { NavArtwork } from '../components/layout/Rail.js'");
-    expect(shell).toContain("art: 'nav-satellite'");
-    expect(rail).toContain('export function NavArtwork');
+    expect(shell).toContain('function IntelligenceGlyph');
+    expect(shell).not.toContain('NavArtwork');
+    for (const glyph of ['command', 'analysis', 'incident', 'newsroom', 'collection', 'publications']) expect(shell).toContain("glyph: '" + glyph + "'");
     expect(shell).not.toContain("COLLECTION FABRIC <b>LIVE</b>");
     expect(rail).toContain("group.items.filter(item => item.path !== '/intelligence'");
   });
@@ -73,6 +74,9 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(visualSystem).toContain('.sonalit-intelligence-workspace .icd-nav button b');
     expect(visualSystem).toContain('.sonalit-intelligence-workspace .icd-sev');
     expect(visualSystem).toContain('font-size: 10.5px;');
+    expect(signatureSystem).toContain('@keyframes intel-aurora-drift');
+    expect(signatureSystem).toContain('animation-iteration-count:1');
+    expect(signatureSystem).toContain('prefers-reduced-motion:reduce');
     expect(command).toContain("basemap === 'dark' ? DARK_STREET_STYLE : STREET_STYLE");
     expect(command).toContain('icv-basemap-toggle');
   });
@@ -82,8 +86,12 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(command).toContain('selectedWarning');
     expect(command).toContain('warningActionsQ');
     expect(command).toContain('source_count');
-    expect(command).toContain('healthSources');
-    expect(command).toContain('observation_ingestion === false');
+    expect(command).not.toContain('assessIntelFabricHealth');
+    expect(command).not.toContain('icv-health-strip');
+    expect(deep).not.toContain('fabricHealth');
+    expect(deep).not.toContain('icd-fabric-banner');
+    expect(sourceControl).toContain('const record = run?.health || null');
+    expect(sourceControl).toContain("label: 'LATEST RUN FAILED'");
     expect(command).toContain('COUNTRY_CENTRES');
     expect(command).toContain('mapRef.current?.flyTo');
     expect(command).toContain('validCoordinate(event.latitude, -90, 90)');
