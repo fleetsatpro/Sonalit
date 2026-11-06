@@ -40,6 +40,10 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(assessIncidentSeverity('other','There were no deaths reported after the incident').severity).toBe('low');
   expect(assessIncidentSeverity('other','Massacre reported near the town').severity).toBe('critical');
   expect(assessIncidentSeverity('other','Nationwide power outage across multiple cities').severity).toBe('critical');
+  expect(assessIncidentSeverity('armed_attack','Two people were killed in an armed attack, but no mass-casualty event was declared').severity).toBe('critical');
+  expect(assessIncidentSeverity('kidnapping','Five people were taken hostage, but no mass-hostage crisis was declared').severity).toBe('critical');
+  expect(assessIncidentSeverity('kidnapping','One person was taken hostage, but no mass-hostage crisis was declared').severity).toBe('high');
+  expect(assessIncidentSeverity('other','No nationwide power outage was reported, but a suspicious device was found').severity).toBe('medium');
  });
  test('reserves High/Critical for explicit serious impact',()=>{
   expect(assessIncidentSeverity('armed_attack','Ongoing armed attack reported near the town').severity).toBe('high');expect(assessIncidentSeverity('kidnapping','Two people kidnapped from their home').severity).toBe('high');
