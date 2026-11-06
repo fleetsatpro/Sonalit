@@ -17,6 +17,8 @@ describe('Intelligence observation text normalization and threat triage',()=>{
  });
  test('escalates two or more reported deaths to Critical, not mere casualty counts',()=>{
   expect(assessIncidentSeverity('armed_attack','Two people killed in an armed attack').severity).toBe('critical');
+  expect(assessIncidentSeverity('armed_attack','Several people killed in an armed attack').severity).toBe('critical');
+  expect(assessIncidentSeverity('armed_attack','Multiple fatalities reported after an armed attack').severity).toBe('critical');
   expect(assessIncidentSeverity('armed_attack','Armed attack kills one person').severity).toBe('high');
   expect(assessIncidentSeverity('armed_attack','Armed attack leaves two people injured, no deaths').severity).toBe('high');
  });
