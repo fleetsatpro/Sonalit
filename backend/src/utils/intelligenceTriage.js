@@ -138,8 +138,8 @@ function assessIncidentSeverity(category, value) {
   const multipleFatalities = /\b(?:multiple fatalities|several (?:people )?(?:killed|dead|died|fatalities)|dozens (?:of )?(?:people )?(?:killed|dead|died)|scores (?:of )?(?:people )?(?:killed|dead|died))\b/.test(text)
     || (fatalityCount != null && fatalityCount >= 2);
   const massFatalityLabel = /\b(?:mass[- ]casualt(?:y|ies)(?:\s+(?:incident|event|attack))?|massacre|mass killing|genocide|dozens (?:of )?(?:people )?(?:killed|dead|died)|scores (?:of )?(?:people )?(?:killed|dead|died))\b/.test(text);
-  const prospectiveMassEvent = /\b(?:threat|risk|fear|warning|warns?|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|preventing|averted|averting)\b.{0,80}\b(?:mass[- ]casualt|massacre|mass killing|genocide|mass hostage|multiple hostages?|hostage crisis|widespread|nationwide)\b/.test(text)
-    || /\b(?:mass[- ]casualt|massacre|mass killing|genocide|mass hostage|multiple hostages?|hostage crisis|widespread|nationwide)\b.{0,80}\b(?:threat|risk|fear|warning|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|averted)\b/.test(text);
+  const prospectiveMassEvent = /\b(?:threat|risk|fear|warning|warns?|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|preventing|averted|averting)\b.{0,80}\b(?:mass[- ]casualt(?:y|ies)|massacre|mass killing|genocide|mass hostage|multiple hostages?|hostage crisis|widespread|nationwide)\b/.test(text)
+    || /\b(?:mass[- ]casualt(?:y|ies)|massacre|mass killing|genocide|mass hostage|multiple hostages?|hostage crisis|widespread|nationwide)\b.{0,80}\b(?:threat|risk|fear|warning|possible|potential|planned|plan|plot|foiled|thwarted|intercepted|prevented|averted)\b/.test(text);
   const massFatalities = ((fatal && (multipleFatalities || (fatalityCount != null && fatalityCount >= 2))) || massFatalityLabel) && !prospectiveMassEvent;
 
   const noInjuryClaim = /\b(?:no|zero|0|without)\s+(?:reported\s+)?injur(?:y|ies)\b/.test(text);
@@ -326,7 +326,7 @@ function assessIncidentSeverity(category, value) {
   }
 
   const impact = severity === 'critical' ? 'catastrophic' : severity === 'high' ? 'severe' : severity === 'medium' ? 'material' : 'limited_or_unstated';
-  const urgency = severity === 'critical' ? (active ? 'immediate' : 'urgent')
+  const urgency = severity === 'critical' ? 'immediate'
     : severity === 'high' ? (active ? 'immediate' : 'urgent')
       : severity === 'medium' ? (active ? 'elevated' : 'routine') : 'routine';
 
