@@ -1,5 +1,5 @@
 'use strict';
-const {plainText,incidentCategory,assessIncidentSeverity,securityRelevance}=require('../../src/utils/intelligenceTriage');
+const {plainText,incidentCategory,assessIncidentSeverity,securityRelevance,independentSourceKey}=require('../../src/utils/intelligenceTriage');
 describe('Intelligence observation text normalization and threat triage',()=>{
  test('strips RSS attributes and decodes entities retaining visible text',()=>{
   const raw='<a href="https://news.google.com/rss/articles/example?q=protest+Nairobi" target="_blank">Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash</a>&nbsp;<font color="#6f6f6f">Kenya News Agency</font>',text=plainText(raw);
@@ -55,6 +55,15 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(incidentCategory('One person taken hostage during a robbery')).toBe('kidnapping');
   expect(assessIncidentSeverity('kidnapping','One person taken hostage during a robbery').severity).toBe('high');
   expect(assessIncidentSeverity('kidnapping','Armed men take multiple hostages at a school').severity).toBe('critical');
+ });
+ test('counts independent publishers rather than feed records',()=>{
+  const a=independentSourceKey({provider:'newsmesh',source_id:'feed-a',url:'https://www.example-news.test/story/one'});
+  const b=independentSourceKey({provider:'newsmesh',source_id:'feed-b',url:'https://example-news.test/story/two'});
+  expect(a).toBe('example-news.test');expect(b).toBe(a);
+  expect(independentSourceKey({provider:'newsmesh',source_id:'feed-c',raw_metadata:{feed:'The Star Kenya'},url:'https://news.google.com/rss/articles/a'})).toBe('the star kenya');
+  expect(independentSourceKey({provider:'telegram',source_id:'tg-a',raw_metadata:{channel:'security_updates'}})).toBe('telegram:security_updates');
+  expect(independentSourceKey({provider:'telegram',source_id:'tg-b',raw_metadata:{channel:'another_channel'}})).not.toBe('telegram:security_updates');
+  expect(independentSourceKey({provider:'x',source_id:'x-feed',raw_metadata:{author_id:'1001'}})).toBe('x:1001');
  });
  test('keeps an unverified bomb threat below Critical',()=>{
   const threat=assessIncidentSeverity('ied','Police investigate a bomb threat; no device found and no injuries');expect(threat.severity).toBe('medium');expect(threat.preliminary).toBe(true);expect(threat.caveat).toMatch(/does not establish that the report is true/i);
