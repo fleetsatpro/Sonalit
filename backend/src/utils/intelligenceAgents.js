@@ -2,6 +2,7 @@
 const aiClient=require('./aiClient');
 const crypto=require('crypto');
 const {translateItems}=require('./intelligenceTranslation');
+const {independentSourceKey}=require('./intelligenceTriage');
 const {runPublicationEditorialBoard,AGENT_ROLES}=require('./intelligencePublicationEditorialBoard');
 const {query,globalQuery}=require('../config/database');
 const {withOrg}=require('./orgScopedDb');
@@ -300,11 +301,11 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
       e.assessment,e.key_facts,e.why_it_matters,e.caveats,e.synthesis_confidence,e.synthesis_provider,
       e.latitude,e.longitude,e.region,e.risk_velocity,e.occurred_from,e.occurred_to,e.last_seen_at,e.updated_at,
       COUNT(DISTINCT eo.observation_id)::int AS observation_count,
-      COUNT(DISTINCT o.source_id)::int AS source_count,
+      COALESCE(e.source_count,0)::int AS source_count,
       COALESCE(
         json_agg(DISTINCT jsonb_build_object(
           'id',o.id,'source_id',o.source_id,'source_name',s.name,
-          'title',COALESCE(o.title_en,o.title),'url',o.url,
+          'title',COALESCE(o.title_en,o.title),'url',o.url,'provider',s.provider,'raw_metadata',o.raw_metadata,
           'observed_at',o.observed_at,'published_at',o.published_at,'credibility',o.credibility
         )) FILTER (WHERE o.id IS NOT NULL),'[]'::json
       ) AS evidence
@@ -320,9 +321,9 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
   const events=rawEvents.filter(isSecurityRelevantEvent);
 
   const evidenceCount=events.reduce((n,e)=>n+Number(e.observation_count||0),0);
-  const sourceIds=new Set();
-  for(const e of events) for(const obs of Array.isArray(e.evidence)?e.evidence:[]) if(obs&&obs.source_id) sourceIds.add(String(obs.source_id));
-  const sourceCount=sourceIds.size;
+  const sourceKeys=new Set();
+  for(const e of events) for(const obs of Array.isArray(e.evidence)?e.evidence:[]) if(obs&&obs.source_id) sourceKeys.add(independentSourceKey(obs));
+  const sourceCount=sourceKeys.size;
   const evidenceContract=evidenceCount>=3&&sourceCount>=2;
   const periodClosed=end.getTime()<=now.getTime();
   const priorCoverage=existing[0]?.body?.collection_coverage||{};
