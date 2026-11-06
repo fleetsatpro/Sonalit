@@ -57,6 +57,9 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(text).toContain("nbsp:' '");
     expect(alerts).toContain('PRELIMINARY');
     expect(alerts).toContain('WHY THIS LEVEL');
+    expect(alerts).toContain('IMPACT FIRST. URGENCY SEPARATE.');
+    expect(alerts).toContain('OPERATIONAL SIGNAL');
+    expect(deep).toContain('CLASSIFICATION');
     expect(alerts).toContain('severity_assessment');
     expect(deep).toContain('PRELIMINARY THREAT ASSESSMENT');
     expect(deep).toContain('displayText(JSON.stringify(v,null,2),2400)');

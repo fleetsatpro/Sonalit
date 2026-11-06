@@ -493,3 +493,17 @@
  .sonalit-intelligence-workspace .ia-assessment-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  .sonalit-intelligence-workspace .icd-severity-measures{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* Incident Command severity model + clear security/operational classification. */
+.sonalit-intelligence-workspace .ia-unverified strong{color:#c5d9f2;font-weight:800;letter-spacing:.08em}
+.sonalit-intelligence-workspace .ia-severity-guide{padding:14px;border:1px solid rgba(133,178,216,.2);border-radius:10px;background:linear-gradient(145deg,rgba(17,35,58,.88),rgba(7,16,29,.92))}
+.sonalit-intelligence-workspace .ia-severity-guide h3{margin:7px 0 10px;color:#edf4ff;font-family:"Space Grotesk",sans-serif;font-size:12px;letter-spacing:.02em}
+.sonalit-intelligence-workspace .ia-severity-levels{display:grid;gap:7px}
+.sonalit-intelligence-workspace .ia-severity-levels>div{display:grid;grid-template-columns:68px minmax(0,1fr);gap:8px;align-items:start;padding:7px 0;border-top:1px solid rgba(145,172,210,.1)}
+.sonalit-intelligence-workspace .ia-severity-levels b{font:800 8px/1.5 "IBM Plex Mono",monospace;letter-spacing:.08em;color:#d9e9fb}
+.sonalit-intelligence-workspace .ia-severity-levels>div:first-child b{color:#f3aaa5}
+.sonalit-intelligence-workspace .ia-severity-levels span{font-size:9px;line-height:1.45;color:#a9bdd6}
+.sonalit-intelligence-workspace .ia-severity-guide p{margin:9px 0 0;color:#91a7c3;font-size:9px;line-height:1.5}
+.sonalit-intelligence-workspace .ia-severity-kind{display:grid;gap:4px;margin-top:10px;padding:8px;border:1px solid rgba(145,172,210,.12);border-radius:7px;background:rgba(7,17,30,.55)}
+.sonalit-intelligence-workspace .ia-severity-kind small{font-size:8px;letter-spacing:.12em;color:#92abc8;font-weight:800}
+.sonalit-intelligence-workspace .ia-severity-kind strong{font-size:10px;color:#dce9f8}
