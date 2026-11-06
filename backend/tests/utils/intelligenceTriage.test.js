@@ -32,6 +32,15 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(assessIncidentSeverity('armed_attack','Zero fatalities were reported after an armed incident').severity).toBe('low');
   expect(assessIncidentSeverity('accident','Fatal crash reported on the highway').severity).toBe('high');
  });
+ test('does not escalate explicitly negated catastrophic language',()=>{
+  expect(assessIncidentSeverity('other','No multiple fatalities were reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','No mass-casualty event was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','No mass-hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','No nationwide power outage was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','There were no deaths reported after the incident').severity).toBe('low');
+  expect(assessIncidentSeverity('other','Massacre reported near the town').severity).toBe('critical');
+  expect(assessIncidentSeverity('other','Nationwide power outage across multiple cities').severity).toBe('critical');
+ });
  test('reserves High/Critical for explicit serious impact',()=>{
   expect(assessIncidentSeverity('armed_attack','Ongoing armed attack reported near the town').severity).toBe('high');expect(assessIncidentSeverity('kidnapping','Two people kidnapped from their home').severity).toBe('high');
   const critical=assessIncidentSeverity('armed_attack','Terrorist attack with at least 8 people killed');expect(critical.severity).toBe('critical');expect(critical.impact).toBe('catastrophic');expect(critical.urgency).toBe('immediate');
