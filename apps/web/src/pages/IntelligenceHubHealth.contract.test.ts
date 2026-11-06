@@ -42,6 +42,8 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(alerts).toContain("setRequestState('RESPONDING')");
     expect(alerts).toContain("setRequestState('DEGRADED')");
     expect(alerts).toContain("if(!Array.isArray(a.data?.alerts))throw new Error('invalid_alerts_payload')");
+    expect(alerts).toContain("api.get('/risk/intelligence/alerts/status',{params:scopeParams}).then(r=>r.data).catch(()=>null)");
+    expect(alerts).toContain("setStatus(s?.status||null)");
     expect(alerts).toContain('ALERT QUERY FAILED — INCIDENT STATE UNKNOWN');
     expect(alerts).toContain('An empty result is not evidence of zero incidents');
     expect(alerts).toContain("a.source_count==null?'—':a.source_count");
