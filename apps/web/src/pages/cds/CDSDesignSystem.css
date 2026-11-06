@@ -1703,46 +1703,73 @@
   .cds-overview-metric:hover { transform: none; }
 }
 
-/* CDS navigation uses compact textual codes, not pictogram metaphors. */
-.cds-brand-mark span {
-  color: #d9f4ff;
-  font-family: 'Space Grotesk', 'Archivo', sans-serif;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: .09em;
+/* CDS navigation uses the shared high-definition pictorial sprite artwork. */
+.cds-brand-artwork {
+  display: block;
+  width: 34px;
+  height: 34px;
+  filter: drop-shadow(0 2px 5px rgba(73, 205, 245, .34));
 }
-.cds-nav-code {
+
+.cds-nav-artwork-tile {
   display: grid;
-  flex: 0 0 30px;
-  width: 30px;
-  height: 28px;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
   place-items: center;
-  border: 1px solid rgba(131, 189, 255, .19);
-  border-radius: 7px;
-  color: #a8c9ef;
-  background: rgba(64, 104, 154, .12);
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .035em;
-  line-height: 1;
-  transition: color .18s ease, border-color .18s ease, background .18s ease;
+  overflow: visible;
+  border: 1px solid rgba(131, 189, 255, .22);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(108, 210, 245, .17), transparent 62%),
+    linear-gradient(145deg, rgba(39, 68, 103, .62), rgba(9, 20, 36, .9));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.12),
+    inset 0 -1px 0 rgba(0,0,0,.35),
+    0 3px 9px rgba(0,0,0,.2);
+  transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
 }
-.cds-nav-item.is-active .cds-nav-code {
-  color: #bff5fb;
-  border-color: rgba(84, 228, 242, .42);
-  background: rgba(84, 228, 242, .12);
+
+.cds-nav-artwork {
+  display: block;
+  width: 30px;
+  height: 30px;
+  overflow: visible;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.48));
+  transform-origin: 50% 55%;
+  transition: transform .24s cubic-bezier(.2,.8,.2,1), filter .24s ease;
 }
-.cds-nav-item:hover .cds-nav-code {
-  color: #e6f5ff;
-  border-color: rgba(131, 189, 255, .42);
+
+.cds-nav-item:hover .cds-nav-artwork,
+.cds-nav-item:focus-visible .cds-nav-artwork {
+  transform: translateY(-1.5px) scale(1.1) rotate(1deg);
+  filter: drop-shadow(0 3px 5px rgba(72, 218, 244, .38));
 }
+
+.cds-nav-item.is-active .cds-nav-artwork-tile {
+  border-color: rgba(84, 228, 242, .48);
+  background:
+    radial-gradient(circle at 28% 18%, rgba(108, 232, 250, .24), transparent 62%),
+    linear-gradient(145deg, rgba(35, 115, 143, .42), rgba(13, 35, 54, .94));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.17),
+    0 0 16px rgba(84, 228, 242, .13),
+    0 4px 10px rgba(0,0,0,.22);
+}
+
+.cds-nav-item.is-active .cds-nav-artwork {
+  filter: drop-shadow(0 2px 5px rgba(84, 228, 242, .4));
+  animation: cds-nav-artwork-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes cds-nav-artwork-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-1px) scale(1.045); }
+}
+
 .cds-navigation--desktop.is-collapsed .cds-nav-item,
 .cds-navigation--desktop .cds-nav-item[aria-current="page"] {
   gap: 9px;
-}
-@media (min-width: 768px) and (max-width: 1199px) {
-  .cds-navigation--desktop .cds-nav-code { flex-basis: 32px; width: 32px; height: 30px; }
 }
 
 @media (min-width: 1200px) {
@@ -1754,9 +1781,12 @@
     justify-content: center;
     padding-inline: 0;
   }
-  .cds-navigation--desktop.is-collapsed .cds-nav-code {
-    flex-basis: 34px;
-    width: 34px;
-    height: 30px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cds-nav-artwork,
+  .cds-nav-artwork-tile {
+    transition: none !important;
+    animation: none !important;
   }
 }

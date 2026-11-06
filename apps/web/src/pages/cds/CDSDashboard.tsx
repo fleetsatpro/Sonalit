@@ -7,6 +7,7 @@ import './CDSDesignSystem.css';
 import './CDSOverviewVisual.css';
 
 import { useAuthStore } from '../../stores/auth.js';
+import { NavArtwork } from '../../components/layout/Rail.js';
 
 import { CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
@@ -92,19 +93,19 @@ const CDSWorkspace = memo(function CDSWorkspace({ activeView }: { activeView: CD
   );
 });
 
-const VIEW_CODES: Record<string, string> = {
-  dashboard: 'OV',
-  live: 'MV',
-  bookings: 'BK',
-  port: 'PT',
-  pulse: 'BH',
-  containers: 'CT',
-  locks: 'EL',
-  transporters: 'TP',
-  inbox: 'AC',
-  analytics: 'PI',
-  reports: 'RP',
-  settings: 'CF',
+const CDS_NAV_ARTWORK: Record<CDSView, string> = {
+  dashboard: 'nav-command',
+  live: 'nav-gps',
+  bookings: 'nav-dossier',
+  port: 'nav-ship',
+  pulse: 'nav-analytics',
+  containers: 'nav-ship',
+  locks: 'nav-shield',
+  transporters: 'nav-suv',
+  inbox: 'nav-headset',
+  analytics: 'nav-analytics',
+  reports: 'nav-dossier',
+  settings: 'nav-command',
 };
 
 const NAV_SECTIONS: { label: string; ids: string[] }[] = [
@@ -131,7 +132,7 @@ function CDSNavigation({ expanded, activeView, mobile = false, onSelect, onBack,
   return (
     <nav className={`cds-navigation ${mobile ? 'cds-navigation--mobile' : 'cds-navigation--desktop'} ${expanded ? 'is-expanded' : 'is-collapsed'}`} aria-label="Container Management workspaces">
       <div className="cds-nav-brand">
-        <div className="cds-brand-mark" aria-hidden="true"><span>CDS</span></div>
+        <div className="cds-brand-mark" aria-hidden="true"><NavArtwork name="nav-ship" className="cds-brand-artwork" /></div>
         {showLabels && <div className="cds-brand-copy"><strong>CONTAINER MANAGEMENT</strong><span>OPERATIONS SYSTEM <i>/</i> CDS</span></div>}
         {mobile && <button type="button" className="cds-nav-close" onClick={onClose} aria-label="Close navigation"><X size={21} strokeWidth={2.3}/></button>}
       </div>
@@ -145,11 +146,13 @@ function CDSNavigation({ expanded, activeView, mobile = false, onSelect, onBack,
             {section.ids.map(id => {
               const view = CDS_VIEWS.find(item => item.id === id);
               if (!view) return null;
-              const code = VIEW_CODES[id] ?? '—';
+              const art = CDS_NAV_ARTWORK[id as CDSView];
               const active = activeView === id;
               return (
                 <button key={id} type="button" onClick={() => onSelect(id as CDSView)} title={showLabels ? undefined : view.label} aria-label={view.label} aria-current={active ? 'page' : undefined} className={`cds-nav-item ${active ? 'is-active' : ''}`}>
-                  <span className="cds-nav-code" aria-hidden="true">{code}</span>
+                  <span className="cds-nav-artwork-tile" aria-hidden="true">
+                    <NavArtwork name={art} className="cds-nav-artwork" />
+                  </span>
                   {showLabels && <span className="cds-nav-label">{view.label}</span>}
                   {active && <span className="cds-nav-active-marker" aria-hidden="true"/>}
                 </button>
