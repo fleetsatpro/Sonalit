@@ -68,7 +68,7 @@ function detailLabel(value:any){
  if(typeof value==='string')return displayText(value,2000);
  if(value===null||value===undefined)return'Not supplied';
  if(typeof value!=='object')return String(value);
- return value.title||value.label||value.name||value.description||value.statement||value.summary||JSON.stringify(value);
+ return displayText(value.title||value.label||value.name||value.description||value.statement||value.summary||JSON.stringify(value),2000);
 }
 function ForecastCard({item,onSelect,index}:{item:Row;onSelect:(item:Row)=>void;index:number}){
  const probability=percentValue(item.probability),confidence=percentValue(item.confidence),status=String(item.status||'unspecified').toLowerCase();

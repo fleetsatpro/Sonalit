@@ -52,7 +52,7 @@ describe('Intel Hub product and evidence-truth contract', () => {
   });
 
   it('normalizes legacy RSS markup and presents severity as preliminary impact/urgency triage', () => {
-    const text = fs.readFileSync(path.join(__dirname, '../lib/intelligenceText.js'), 'utf8');
+    const text = read('../lib/intelligenceText.js');
     expect(text).toContain('function displayText');
     expect(text).toContain('&nbsp;');
     expect(alerts).toContain('PRELIMINARY');
