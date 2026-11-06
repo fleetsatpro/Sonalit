@@ -40,6 +40,7 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(securityRelevance('accident','Multi-vehicle collision leaves several seriously injured')).toBe('operationally_relevant');
   expect(securityRelevance('political_rally','Candidate announces a campaign rally')).toBe('not_security_relevant');
   expect(securityRelevance('political_rally','Thousands gather for a rally as roads close and clashes erupt')).toBe('potential_security_relevant');
+  expect(assessIncidentSeverity('other','Police investigate suspicious package near an embassy').severity).toBe('medium');
   expect(securityRelevance('other','Police investigate suspicious package near an embassy')).toBe('potential_security_relevant');
   expect(securityRelevance('other','Confirmed cyber attack against hospital systems')).toBe('potential_security_relevant');
  });

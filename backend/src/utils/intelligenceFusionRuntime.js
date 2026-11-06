@@ -31,7 +31,7 @@ async function fuseOrg(orgId){const extended=await collectExtendedProviders(orgI
  for(const observations of groups.values()){
   const latest=observations[0],sourceCount=new Set(observations.map(sourceKey)).size;
   const relevances=observations.map(o=>{const text=plainText((o.title||'')+' '+(o.body||''),12000);return securityRelevance(incidentCategory(text),text)});
-  const securityEligible=relevances.some(value=>value!=='not_security_relevant');
+  const securityEligible=relevances.some(value=>value!=='not_security_relevant');const eventRelevance=relevances.includes('security_relevant')?'security_relevant':relevances.includes('potential_security_relevant')?'potential_security_relevant':'operationally_relevant';
   const pairs=observations.filter(o=>o.id!==latest.id&&explicitContradiction(o,latest)),contradictionScore=clamp((pairs.length/Math.max(1,observations.length-1))*100);
   const decisions=observations.map(o=>{const text=plainText((o.title||'')+' '+(o.body||''),12000);return assessIncidentSeverity(incidentCategory(text),text)});
   const rank=v=>SEVERITY_RANK[v==='medium'?'moderate':v]||0;
@@ -41,7 +41,7 @@ async function fuseOrg(orgId){const extended=await collectExtendedProviders(orgI
   const confidence=confidenceFor(observations,sourceCount,contradictionScore),quality=qualityFor(observations,sourceCount,contradictionScore),velocity=velocityFor(observations),manipulation=manipulationScore(observations);
   const drivers=[{type:'source_reliability',value:Math.round(sourceQuality(observations))},{type:'corroboration',value:sourceCount},{type:'freshness',value:Math.round(observations.reduce((sum,o)=>sum+freshnessScore(o.observed_at),0)/Math.max(1,observations.length))},{type:'contradiction',value:Math.round(contradictionScore)},{type:'manipulation',value:Math.round(manipulation)},{type:'velocity',value:velocity}];
   const confidenceCeiling=sourceCount<=1?45:sourceCount===2?65:85,severityRecord={...severityDecision,severity,source_count:sourceCount,verification_state:'unverified',confidence_cap:confidenceCeiling};
-  const eventAssessment={providers:[...new Set(observations.map(o=>o.provider).filter(Boolean))],fusion:'deterministic',version:4,verification_state:'unverified',triage_disposition:'retain_for_security_triage',security_relevance:relevances.includes('security_relevant')?'security_relevant':'potential_security_relevant',confidence_basis:{independent_source_count:sourceCount,source_quality:Math.round(sourceQuality(observations)),contradiction_score:Math.round(contradictionScore),confidence_ceiling:confidenceCeiling},severity_assessment:severityRecord};
+  const eventAssessment={providers:[...new Set(observations.map(o=>o.provider).filter(Boolean))],fusion:'deterministic',version:4,verification_state:'unverified',triage_disposition:eventRelevance==='operationally_relevant'?'retain_for_operational_triage':'retain_for_security_triage',security_relevance:eventRelevance,confidence_basis:{independent_source_count:sourceCount,source_quality:Math.round(sourceQuality(observations)),contradiction_score:Math.round(contradictionScore),confidence_ceiling:confidenceCeiling},severity_assessment:severityRecord};
   const {rows:existing}=await query(`SELECT id FROM intel_events WHERE org_id=$1 AND country_code=$2 AND title=$3 AND last_seen_at>=now()-interval '48 hours' LIMIT 1`,[orgId,latest.country_code,title]);
   let eventId=existing[0]?.id;
   if(!securityEligible){

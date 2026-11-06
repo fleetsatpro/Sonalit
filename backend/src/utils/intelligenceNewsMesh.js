@@ -36,7 +36,7 @@ let cursor=0;
 
 function sha(v){return crypto.createHash('sha256').update(String(v||'')).digest('hex');}
 function clean(v,n=6000){return plainText(v,n);}
-function triageMetadata(item){const text=clean(`${item?.title||''} ${item?.body||''}`,12000),category=incidentCategory(text),relevance=securityRelevance(category,text);return{...(item?.raw_metadata||{}),incident_category:category,security_relevance:relevance,triage_disposition:relevance==='not_security_relevant'?'not_security_relevant':'retain_for_security_triage'};}
+function triageMetadata(item){const text=clean(`${item?.title||''} ${item?.body||''}`,12000),category=incidentCategory(text),relevance=securityRelevance(category,text);return{...(item?.raw_metadata||{}),incident_category:category,security_relevance:relevance,triage_disposition:relevance==='not_security_relevant'?'not_security_relevant':relevance==='operationally_relevant'?'retain_for_operational_triage':'retain_for_security_triage'};}
 function rssText(v){if(v==null)return'';if(typeof v==='string')return v;if(typeof v==='object')return v['#text']||v.__cdata||v.value||v.text||'';return String(v);}
 function rssLink(v){if(v==null)return null;if(typeof v==='string')return v;if(Array.isArray(v))return rssLink(v[0]);if(typeof v==='object')return v.href||v.url||v['#text']||null;return String(v);}
 async function get(url){return fetch(url,{signal:AbortSignal.timeout(TIMEOUT_MS),headers:{Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9,*/*;q=0.1','User-Agent':'Sonalit-Intelligence/2.0'}});}
