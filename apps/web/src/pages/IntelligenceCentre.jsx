@@ -70,8 +70,8 @@ export default function IntelligenceCentre() {
       <main className="icw-main">
         <header className="icw-topbar">
           <div className="icw-topbar-title">
-            <span>SONALIT / INTELLIGENCE / {active.group}</span>
-            <h1>{active.short}</h1>
+            <span>SONALIT / INTELLIGENCE / {active.group} / {active.short.toUpperCase()}</span>
+            <h1>INTEL HUB</h1>
             <p>{active.caption}</p>
           </div>
           <div className="icw-topbar-meta">

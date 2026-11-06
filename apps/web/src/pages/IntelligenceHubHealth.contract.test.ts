@@ -10,6 +10,7 @@ const sourceControl = read('./IntelligenceSourceCommand.tsx');
 const rail = read('../components/layout/Rail.tsx');
 const router = read('../router.tsx');
 const mainEntry = read('../main.tsx');
+const visualSystem = read('../styles/intelligence-centre-premium.css');
 
 describe('Intel Hub product and evidence-truth contract', () => {
   it('exposes one command, analysis, collection and dissemination shell', () => {
@@ -62,6 +63,16 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(sourceControl).toContain('DISCOVERY / LINK-OUT');
     expect(sourceControl).toContain('AUTHORISED FEED PENDING');
     expect(sourceControl).toContain('meta.configured !== true');
+  });
+
+  it('ships a unified high-legibility command visual system and genuine basemap selection', () => {
+    expect(shell).toContain('<h1>INTEL HUB</h1>');
+    expect(mainEntry).toContain("import './styles/intelligence-centre-premium.css'");
+    expect(visualSystem).toContain('.sonalit-intelligence-workspace .icv-metric strong');
+    expect(visualSystem).toContain('prefers-reduced-motion: reduce');
+    expect(visualSystem).toContain('.sonalit-intelligence-workspace .icd-nav button b');
+    expect(command).toContain("basemap === 'dark' ? DARK_STREET_STYLE : STREET_STYLE");
+    expect(command).toContain('icv-basemap-toggle');
   });
 
   it('uses server-side window aggregates and keeps event/warning detail separate', () => {

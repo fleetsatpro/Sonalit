@@ -4,7 +4,7 @@ import { ArrowUpRight, Clock3, ExternalLink, Globe2, MapPin, RefreshCw, ShieldAl
 import MapLibreMap, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
-import { STREET_STYLE } from '../lib/mapStyles.js';
+import { DARK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
 import { assessIntelFabricHealth } from './intelligenceFabricHealth.js';
 
 type Row = Record<string, any>;
@@ -112,6 +112,7 @@ function WarningRow({ item, onOpen }: { item: Row; onOpen: (row: Row) => void })
 export default function IntelligenceCommandView() {
   const [scope, setScope] = useState<Scope>({ type: 'global', key: 'global', label: 'GLOBAL' });
   const [windowHours, setWindowHours] = useState(24);
+  const [basemap, setBasemap] = useState<'dark' | 'street'>('dark');
   const [selectedEvent, setSelectedEvent] = useState<Row | null>(null);
   const [selectedWarning, setSelectedWarning] = useState<Row | null>(null);
   const scopeParams = useMemo(() => scope.type === 'global'
@@ -217,6 +218,7 @@ export default function IntelligenceCommandView() {
     if (scope.type === 'continent') return Object.values(REGIONS).flat().includes(code);
     return true;
   }).slice(0, 8);
+  const maxCountryEvents = Math.max(1, ...visibleCountries.map(row => Number(row.events_24h) || 0));
   const summaryUnavailable = overviewQ.isError || !overview;
   const selected = selectedWarning || eventDetailQ.data || selectedEvent;
 
@@ -283,9 +285,9 @@ export default function IntelligenceCommandView() {
 
     <div className="icv-main-grid">
       <section className="icv-panel icv-map-panel">
-        <header className="icv-panel-head"><div><span>01 / SPATIAL CONTEXT</span><h2>Geographic event picture</h2><p>Only event records with stored coordinates are plotted.</p></div><div className="icv-map-legend"><span><i className="critical"/> Critical</span><span><i className="high"/> High</span><span><i className="other"/> Other / unclassified</span></div></header>
+        <header className="icv-panel-head"><div><span>01 / SPATIAL CONTEXT</span><h2>Geographic event picture</h2><p>Only event records with stored coordinates are plotted.</p></div><div className="icv-map-tools"><div className="icv-map-legend"><span><i className="critical"/> Critical</span><span><i className="high"/> High</span><span><i className="other"/> Other / unclassified</span></div><div className="icv-basemap-toggle" role="group" aria-label="Map basemap"><button type="button" className={basemap === 'dark' ? 'active' : ''} aria-pressed={basemap === 'dark'} onClick={() => setBasemap('dark')}>DARK</button><button type="button" className={basemap === 'street' ? 'active' : ''} aria-pressed={basemap === 'street'} onClick={() => setBasemap('street')}>STREET</button></div></div></header>
         <div className="icv-map-canvas">
-          <MapLibreMap ref={mapRef} key={scope.type + ':' + scope.key} initialViewState={centre} mapStyle={STREET_STYLE} style={{ width: '100%', height: '100%' }} attributionControl>
+          <MapLibreMap ref={mapRef} key={scope.type + ':' + scope.key} initialViewState={centre} mapStyle={basemap === 'dark' ? DARK_STREET_STYLE : STREET_STYLE} style={{ width: '100%', height: '100%' }} attributionControl>
             <NavigationControl position="top-right" showCompass={false}/>
             {located.slice(0, 250).map((event, index) => <Marker key={event.id || index} longitude={Number(event.longitude)} latitude={Number(event.latitude)} anchor="center" onClick={click => { click.originalEvent.stopPropagation(); setSelectedEvent(event); setSelectedWarning(null); }}>
               <button type="button" className={'icv-map-marker icv-severity-' + severity(event.severity)} title={event.title || 'Intelligence event'} aria-label={'Open ' + (event.title || 'intelligence event')}><i/></button>
@@ -315,6 +317,7 @@ export default function IntelligenceCommandView() {
                <span><b>{row.country_code}</b><small>{countryName(String(row.country_code || '').toUpperCase())}</small></span>
                <strong>{row.events_24h ?? '—'}</strong>
                <small>{row.confidence == null ? 'CONF —' : 'MEAN EVENT CONF. ' + row.confidence + '%'}</small>
+               <span className="icv-country-activity" aria-label={String(row.events_24h ?? 0) + ' events in 24 hours'}><i style={{ width: Math.max(0, Math.min(100, (Number(row.events_24h) || 0) / maxCountryEvents * 100)) + '%' }} /></span>
              </button>) :
              <div className="icv-panel-state">No country-level event aggregates were returned for this theatre.</div>}
           </div>
