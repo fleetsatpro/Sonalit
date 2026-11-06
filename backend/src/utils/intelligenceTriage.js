@@ -156,6 +156,8 @@ function assessIncidentSeverity(category, value) {
     || (massHostageLabel && !prospectiveMassEvent);
   const hostage = /\b(?:hostage crisis|hostage[- ]taking|hostages? held|taken hostage|held hostage|kidnapped|abducted)\b/.test(text);
   const foiled = /\b(?:foiled|thwarted|intercepted|prevented)\b/.test(text);
+  const prospectiveThreat = /\b(?:threat|risk|warning|warns?|possible|potential|suspected|planned|plan|plot|attempt).{0,80}(?:attack|ambush|kidnap(?:ping)?|abduct(?:ion)?|hostage|bomb|explosion|massacre|terrorist|armed incursion)/.test(text)
+    || /\b(?:attack|ambush|kidnap(?:ping)?|abduct(?:ion)?|hostage|bomb|explosion).{0,80}\b(?:threat|risk|warning|possible|potential|suspected|foiled|thwarted)/.test(text);
   const preventive = /\b(?:anti[- ]?kidnapping|anti[- ]?terror(?:ism)?|counter[- ]?terror(?:ism)?|disarmament|peace talks|ceasefire talks|prevention campaign|prevent(?:ed|ing)? kidnapping|security drill|training exercise|simulation|bomb disposal exercise)\b/.test(text);
   const denied = /\b(?:no (?:armed )?attack occurred|attack did not occur|no kidnapping occurred|no abduction occurred|false report(?:s)? of (?:an? )?(?:attack|kidnapping|abduction)|unconfirmed reports? of (?:an? )?(?:attack|kidnapping|abduction))\b/.test(text);
 
@@ -192,6 +194,10 @@ function assessIncidentSeverity(category, value) {
       severity = 'low';
       basis.push('Preventive, denied or exercise context; no active incident is established');
       reasonCodes.push('PREVENTIVE_OR_DENIED_CONTEXT');
+    } else if (prospectiveThreat) {
+      severity = 'medium';
+      basis.push('Reported prospective threat, warning or plot; no completed high-impact incident is established');
+      reasonCodes.push('PROSPECTIVE_THREAT_REPORTED');
     } else if (cat === 'ied') {
       const detonation = /\b(?:bombing|bomb exploded|bomb detonated|ied attack|explosion|exploded|detonated|detonation)\b/.test(text);
       const deviceThreat = /\b(?:bomb threat|suspicious package|suspicious device|explosive device found|bomb found|ied found|device discovered|device confirmed|device defused|bomb disposal|explosive ordnance disposal)\b/.test(text);
