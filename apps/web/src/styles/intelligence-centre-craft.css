@@ -51,6 +51,21 @@
 .sonalit-intelligence-workspace .icw-secure-tag,.sonalit-intelligence-workspace .icw-clock-tag{border-color:rgba(145,172,210,.2);background:rgba(12,25,43,.76);color:#c4d2e6;font-size:9.5px}
 .sonalit-intelligence-workspace .icw-motion-toggle{min-height:33px;border-color:rgba(145,172,210,.17);background:rgba(10,21,37,.7);font-size:8.5px;color:#aebfd7}
 
+/* Keyboard focus is a persistent, high-contrast state rather than a glow-only cue. */
+.sonalit-intelligence-workspace :is(button,a,input,select,textarea,[tabindex]):focus-visible{
+ outline:2px solid #a8eff8;
+ outline-offset:3px;
+ box-shadow:0 0 0 1px rgba(5,13,25,.95);
+}
+.sonalit-intelligence-workspace .icd-nav button,
+.sonalit-intelligence-workspace .icd-subnav>button,
+.sonalit-intelligence-workspace .icw-nav-item{min-height:44px}
+@media (max-width:680px){
+ .sonalit-intelligence-workspace .icw-mobile-nav button,
+ .sonalit-intelligence-workspace .ia-scope-control button,
+ .sonalit-intelligence-workspace .ia-cat-control button{min-height:44px}
+}
+
 /* Command Picture: one spatial anchor, with readable, quiet supporting evidence. */
 .sonalit-intelligence-workspace .icv-root{gap:16px}
 .sonalit-intelligence-workspace .icv-heading{align-items:flex-end;padding:1px 0 2px}
@@ -369,7 +384,7 @@
  .sonalit-intelligence-workspace .icd-root .icd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
  .sonalit-intelligence-workspace .icd-country-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
-@media(prefers-reduced-motion:reduce){
+@media (prefers-reduced-motion: reduce){
  .sonalit-intelligence-workspace::before,.sonalit-intelligence-workspace::after,
  .sonalit-intelligence-workspace *::before,.sonalit-intelligence-workspace *::after{
   animation:none!important;transition:none!important;scroll-behavior:auto!important;

@@ -95,10 +95,19 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(craftSystem).toContain('.intelligence-live');
     expect(craftSystem).toContain('.ia-page');
     expect(craftSystem).toContain('.icd-subnav');
-    expect(craftSystem).toContain('prefers-reduced-motion: reduce');
+    expect(craftSystem).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(craftSystem).toContain(':focus-visible');
     expect(alerts).toContain('function IncidentGlyph');
     expect(alerts).not.toContain('const ICONS:');
     expect(newsroom).toContain('PREVIOUS RESULTS RETAINED');
+    expect(newsroom).toContain("event.key!=='/'");
+    expect(newsroom).toContain('queryInputRef.current?.focus()');
+    expect(alerts).toContain('lastSuccess');
+    expect(alerts).toContain('LAST SUCCESSFUL READ');
+    expect(deep).toContain("const NAV_GROUPS:[string,string,View[]][]=");
+    expect(deep).toContain("['governance','GOVERNANCE',['watchlists','publications']]");
+    expect(deep).toContain("event.key!=='/'");
+    expect(deep).toContain('queryInputRef.current?.focus()');
   });
 
   it('uses server-side window aggregates and keeps event/warning detail separate', () => {
