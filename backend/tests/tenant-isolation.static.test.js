@@ -266,7 +266,10 @@ describe('tenant isolation regression guards', () => {
 
     expect(risk).toContain("router.use(authenticate);");
     expect(risk).not.toContain("router.use(attachOrgDb);");
-    expect(risk).toContain("router.use('/intelligence', intelligenceRouter);");
+    expect(risk).toContain("const intelligenceAdminAccess = (req, res, next) => {");
+    expect(risk).toContain("!['admin', 'super_admin'].includes(String(req.user?.role || ''))");
+    expect(risk).toContain("router.use('/intelligence', intelligenceAdminAccess, intelligenceRouter);");
+    expect(risk).toContain("router.use('/intelligence/alerts', intelligenceAdminAccess, intelligenceAlertsRouter);");
     expect(intelligence).not.toContain("router.use(authenticate);");
     expect(intelligence).not.toContain("router.use(attachOrgDb);");
     expect(intelligenceAlerts).not.toContain("router.use(authenticate, attachOrgDb);");
