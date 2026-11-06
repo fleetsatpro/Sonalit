@@ -98,3 +98,88 @@
 @media(max-width:920px){.sonalit-intelligence-workspace .icw-shell{grid-template-columns:1fr}.sonalit-intelligence-workspace .icw-rail{display:none}.sonalit-intelligence-workspace .icw-main{padding:0 17px 34px}.sonalit-intelligence-workspace .icw-topbar{min-height:110px}.sonalit-intelligence-workspace .icv-main-grid{grid-template-columns:1fr}.sonalit-intelligence-workspace .icv-map-canvas{height:440px}.sonalit-intelligence-workspace .icd-root .icd-nav{grid-template-columns:repeat(5,minmax(0,1fr))}}
 @media(max-width:680px){.sonalit-intelligence-workspace .icw-main{padding:0 12px 25px}.sonalit-intelligence-workspace .icw-topbar{display:block;padding:17px 0 15px}.sonalit-intelligence-workspace .icw-topbar-title>span{font-size:8.5px;letter-spacing:.12em}.sonalit-intelligence-workspace .icw-topbar-title h1{font-size:25px}.sonalit-intelligence-workspace .icw-topbar-meta{justify-content:flex-start;margin-top:10px}.sonalit-intelligence-workspace .icw-mobile-nav{scrollbar-width:thin;gap:7px;padding:10px 0 12px}.sonalit-intelligence-workspace .icw-mobile-nav button{min-height:47px;padding:7px 9px}.sonalit-intelligence-workspace .icw-mobile-nav .icw-signature-glyph{width:22px;height:22px}.sonalit-intelligence-workspace .icv-heading{align-items:flex-start;flex-direction:column}.sonalit-intelligence-workspace .icv-heading-actions{width:100%}.sonalit-intelligence-workspace .icv-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.sonalit-intelligence-workspace .icv-metric{min-height:108px}.sonalit-intelligence-workspace .icv-map-canvas{min-height:340px;height:360px}.sonalit-intelligence-workspace .icd-root .icd-top{align-items:flex-start;flex-direction:column;gap:12px}.sonalit-intelligence-workspace .icd-root .icd-header-actions{width:100%;justify-content:space-between}.sonalit-intelligence-workspace .icd-root .icd-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.sonalit-intelligence-workspace .icd-root .icd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){.sonalit-intelligence-workspace *, .sonalit-intelligence-workspace *::before, .sonalit-intelligence-workspace *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+
+/* Compositor-friendly ambient movement. The scene breathes; it does not repaint a moving gradient every frame. */
+.sonalit-intelligence-workspace::before {
+  will-change: transform;
+}
+.sonalit-intelligence-workspace::after {
+  will-change: transform;
+}
+@keyframes intel-aurora-drift {
+  from { transform: translate3d(-.45%, -.25%, 0) scale(1); }
+  to { transform: translate3d(.45%, .25%, 0) scale(1.025); }
+}
+@keyframes intel-grid-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(58px, 58px, 0); }
+}
+
+/* All non-essential motion can be paused from inside the product, not only via OS settings. */
+.sonalit-intelligence-workspace.icw-motion-paused::before,
+.sonalit-intelligence-workspace.icw-motion-paused::after,
+.sonalit-intelligence-workspace.icw-motion-paused *,
+.sonalit-intelligence-workspace.icw-motion-paused *::before,
+.sonalit-intelligence-workspace.icw-motion-paused *::after {
+  animation-play-state: paused !important;
+}
+.sonalit-intelligence-workspace .icw-motion-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 35px;
+  padding: 0 10px;
+  border: 1px solid rgba(127,169,225,.22);
+  border-radius: 8px;
+  background: linear-gradient(145deg,rgba(15,30,56,.64),rgba(8,17,35,.62));
+  color: #b9c9e2;
+  font: 800 9px/1 inherit;
+  letter-spacing: .13em;
+  cursor: pointer;
+  transition: border-color .2s ease, color .2s ease, background .2s ease, transform .2s ease;
+}
+.sonalit-intelligence-workspace .icw-motion-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(105,231,248,.48);
+  color: #effcff;
+}
+.sonalit-intelligence-workspace .icw-motion-toggle i {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #74edca;
+  box-shadow: 0 0 10px rgba(116,237,202,.65);
+}
+.sonalit-intelligence-workspace .icw-motion-toggle i::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1px solid currentColor;
+  border-color: rgba(116,237,202,.55);
+  border-radius: inherit;
+  animation: intel-core-breathe 3.3s ease-in-out infinite;
+}
+.sonalit-intelligence-workspace.icw-motion-paused .icw-motion-toggle {
+  border-color: rgba(160,173,198,.32);
+  color: #a6b2c8;
+}
+.sonalit-intelligence-workspace.icw-motion-paused .icw-motion-toggle i {
+  background: #8794ad;
+  box-shadow: none;
+}
+.sonalit-intelligence-workspace.icw-motion-paused .icw-motion-toggle i::after { animation: none; }
+@media (max-width: 680px) {
+  .sonalit-intelligence-workspace .icw-topbar-meta { flex-wrap: wrap; }
+  .sonalit-intelligence-workspace .icw-motion-toggle { min-height: 34px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sonalit-intelligence-workspace::before,
+  .sonalit-intelligence-workspace::after,
+  .sonalit-intelligence-workspace *::before,
+  .sonalit-intelligence-workspace *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

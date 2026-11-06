@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
 const shell = read('./IntelligenceCentre.jsx');
+const rail = read('../components/layout/Rail.tsx');
 const alerts = read('./IntelligenceAlerts.tsx');
 const newsroom = read('./IntelligenceLiveNews.jsx');
 const command = read('./IntelligenceCommandView.tsx');
@@ -74,6 +75,10 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(visualSystem).toContain('.sonalit-intelligence-workspace .icd-nav button b');
     expect(visualSystem).toContain('.sonalit-intelligence-workspace .icd-sev');
     expect(visualSystem).toContain('font-size: 10.5px;');
+    expect(shell).toContain('icw-motion-toggle');
+    expect(shell).toContain('Pause decorative motion');
+    expect(signatureSystem).toContain('.icw-motion-paused *');
+    expect(signatureSystem).toContain('transform:translate3d');
     expect(signatureSystem).toContain('@keyframes intel-aurora-drift');
     expect(signatureSystem).toContain('animation-iteration-count:1');
     expect(signatureSystem).toContain('prefers-reduced-motion:reduce');

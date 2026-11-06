@@ -47,6 +47,7 @@ export default function IntelligenceCentre() {
   const module = useMemo(() => readModule(search), [search]);
   const active = MODULES.find(item => item.id === module) || MODULES[0];
   const [clock, setClock] = useState(() => new Date().toLocaleTimeString('en-GB', { timeZone: 'Africa/Nairobi', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }));
+  const [motionEnabled, setMotionEnabled] = useState(() => typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -59,7 +60,7 @@ export default function IntelligenceCentre() {
     void navigate({ search: next === 'command' ? {} : { module: next } });
   };
 
-  return <div className="sonalit-intelligence-workspace">
+  return <div className={`sonalit-intelligence-workspace${motionEnabled ? '' : ' icw-motion-paused'}`}>
     <div className="icw-shell">
       <aside className="icw-rail" aria-label="Intelligence Centre navigation">
         <div className="icw-brand">
@@ -87,6 +88,7 @@ export default function IntelligenceCentre() {
             <p>{active.caption}</p>
           </div>
           <div className="icw-topbar-meta">
+            <button type="button" className="icw-motion-toggle" aria-pressed={motionEnabled} aria-label={motionEnabled ? 'Pause decorative motion' : 'Enable decorative motion'} onClick={() => setMotionEnabled(value => !value)}><i aria-hidden="true"/><span>{motionEnabled ? 'MOTION ON' : 'MOTION PAUSED'}</span></button>
             <span className="icw-secure-tag"><ShieldCheck size={13}/> RESTRICTED WORKSPACE</span>
             <span className="icw-clock-tag"><Clock3 size={13}/> {clock} EAT</span>
           </div>
