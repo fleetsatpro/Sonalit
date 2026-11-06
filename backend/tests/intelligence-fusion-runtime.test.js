@@ -33,6 +33,8 @@ describe('intelligence fused-event persistence contract', () => {
     expect(severityFor('Risk of a nationwide power outage')).toBe('moderate');
     expect(assessIncidentSeverity('kidnapping','Five people were taken hostage')).toMatchObject({severity:'critical'});
     expect(assessIncidentSeverity('kidnapping','Two people were taken hostage')).toMatchObject({severity:'high'});
+    expect(assessIncidentSeverity('kidnapping','Planned armed men take multiple hostages at a school')).toMatchObject({severity:'moderate'});
+    expect(assessIncidentSeverity('kidnapping','Two people were taken hostage')).toMatchObject({severity:'high'});
     expect(assessIncidentSeverity('kidnapping','Armed men take multiple hostages at a school')).toMatchObject({severity:'critical'});
     expect(assessIncidentSeverity('other','No one was killed during a peaceful protest')).toMatchObject({severity:'low'});
 
