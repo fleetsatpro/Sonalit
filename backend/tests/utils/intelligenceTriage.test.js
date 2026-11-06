@@ -1,5 +1,5 @@
 'use strict';
-const {plainText,incidentCategory,assessIncidentSeverity}=require('../../src/utils/intelligenceTriage');
+const {plainText,incidentCategory,assessIncidentSeverity,securityRelevance}=require('../../src/utils/intelligenceTriage');
 describe('Intelligence observation text normalization and threat triage',()=>{
  test('strips RSS attributes and decodes entities retaining visible text',()=>{
   const raw='<a href="https://news.google.com/rss/articles/example?q=protest+Nairobi" target="_blank">Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash</a>&nbsp;<font color="#6f6f6f">Kenya News Agency</font>',text=plainText(raw);
@@ -26,6 +26,15 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(incidentCategory('Protesters clash with police in Nairobi')).toBe('protest');
   expect(incidentCategory('Armed clashes reported near the border')).toBe('armed_attack');
   expect(incidentCategory('Terrorist attack reported in the region')).toBe('armed_attack');
+ });
+ test('separates security-relevant leads from ordinary public news',()=>{
+  const sports='Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash';
+  const journalism='Journalists challenged to tell stories that matter';
+  expect(securityRelevance(incidentCategory(sports),sports)).toBe('not_security_relevant');
+  expect(securityRelevance(incidentCategory(journalism),journalism)).toBe('not_security_relevant');
+  expect(securityRelevance('protest','Peaceful protest announced in Nairobi')).toBe('security_relevant');
+  expect(securityRelevance('other','Police investigate suspicious package near an embassy')).toBe('potential_security_relevant');
+  expect(securityRelevance('other','Confirmed cyber attack against hospital systems')).toBe('potential_security_relevant');
  });
  test('keeps an unverified bomb threat below Critical',()=>{
   const threat=assessIncidentSeverity('ied','Police investigate a bomb threat; no device found and no injuries');expect(threat.severity).toBe('medium');expect(threat.preliminary).toBe(true);expect(threat.caveat).toMatch(/does not establish that the report is true/i);
