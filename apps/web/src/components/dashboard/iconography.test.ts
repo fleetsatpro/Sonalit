@@ -6,6 +6,8 @@ const rail = readFileSync(new URL('../layout/Rail.tsx', import.meta.url), 'utf8'
 const navSprite = readFileSync(new URL('../../../public/assets/nav/sonalit-nav-sprite.svg', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../styles/dashboard.css', import.meta.url), 'utf8');
 const launcher = readFileSync(new URL('../layout/AppLauncherOverlay.tsx', import.meta.url), 'utf8');
+const cdsDashboard = readFileSync(new URL('../../pages/cds/CDSDashboard.tsx', import.meta.url), 'utf8');
+const cdsDesignSystem = readFileSync(new URL('../../pages/cds/CDSDesignSystem.css', import.meta.url), 'utf8');
 const cdsRail = readFileSync(new URL('../../../../container-delivery-system/src/components/layout/Rail.tsx', import.meta.url), 'utf8');
 const cdsCss = readFileSync(new URL('../../../../container-delivery-system/src/index.css', import.meta.url), 'utf8');
 const orbitCss = readFileSync(new URL('../../styles/orbit.css', import.meta.url), 'utf8');
@@ -36,6 +38,18 @@ describe('premium operational iconography', () => {
     expect(launcher).not.toContain('it.icon');
     expect(cdsCss).toContain('.cds-nav-art');
     expect(cdsCss).toContain('cds-nav-art-breathe');
+    expect(cdsDashboard).toContain("import { NavArtwork } from '../../components/layout/Rail.js'");
+    expect(cdsDashboard).toContain('const CDS_NAV_ARTWORK: Record<CDSView, string>');
+    expect(cdsDashboard).toContain('<NavArtwork name={art} className="cds-nav-artwork" />');
+    expect(cdsDashboard).not.toContain('cds-nav-code');
+    expect(cdsDashboard).not.toContain('VIEW_CODES');
+    expect(cdsDashboard).not.toContain('<span>CDS</span>');
+    expect(cdsDesignSystem).toContain('.cds-nav-artwork-tile');
+    expect(cdsDesignSystem).toContain('cds-nav-artwork-breathe');
+    expect(navSprite).toContain('id="nav-ship"');
+    expect(navSprite).toContain('id="nav-command"');
+    expect(navSprite).toContain('id="nav-gps"');
+    expect(navSprite).toContain('id="nav-shield"');
     expect(orbitCss).toContain('.o-app-image');
     expect(css).toContain('.son-icon-tile');
   });
