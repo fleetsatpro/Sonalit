@@ -13,6 +13,17 @@ const OBS = '00000000-0000-0000-0000-000000000003';
 describe('intelligence fused-event persistence contract', () => {
   beforeEach(() => query.mockReset());
 
+  test('applies impact-based severity and caps confidence by independent publisher count',()=>{
+    const {severityFor,confidenceFor,sourceKey}=require('../src/utils/intelligenceFusionRuntime');
+    expect(severityFor('Peaceful protest held in Nairobi')).toBe('low');
+    expect(severityFor('Routine traffic congestion on the highway')).toBe('low');
+    expect(severityFor('Ongoing armed attack reported near town')).toBe('high');
+    expect(severityFor('Terrorist attack with at least 8 people killed')).toBe('critical');
+    const observations=[{reliability:95,observed_at:new Date().toISOString(),source_id:'a'}];
+    expect(confidenceFor(observations,1,0)).toBeLessThanOrEqual(45);
+    expect(sourceKey({provider:'newsmesh',source_id:'a',raw_metadata:{aggregator_source:'The Star'}})).toBe('the star');
+    expect(sourceKey({provider:'newsmesh',source_id:'b',raw_metadata:{aggregator_source:'The Star'}})).toBe('the star');
+  });
   test('inserts a fused intel event with exactly one value per target column', async () => {
     const observedAt = new Date().toISOString();
     query

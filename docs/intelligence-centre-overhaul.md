@@ -9,6 +9,7 @@ The six workspaces are Command Picture, Analysis Workbench, Incident Fabric, New
 - **Geospatial command picture:** map layers, selectable objects, linked overlays, search and temporal controls belong in one connected analytic surface—not a decorative map. Palantir documents these as interacting map capabilities: https://www.palantir.com/docs/foundry/map/overview/ and https://www.palantir.com/docs/foundry/map/timeline/
 - **Investigation-first records:** event/subject records are starting points for investigation, with linked evidence and entity relationships. Recorded Future describes Intelligence Cards as triage and investigation pivots and the Intelligence Graph as a relationship-exploration surface: https://www.recordedfuture.com/platform/intelligence-cards and https://www.recordedfuture.com/platform/intelligence-graph
 - **Analytic integrity:** source evaluation, uncertainty, assumptions and alternative explanations must remain explicit. Keyword matches are not severity judgements. This follows objectivity and analytic-tradecraft principles in ICD 203: https://www.dni.gov/files/ODNI/documents/ICD/ICD-203.pdf
+- **Threat triage:** preliminary severity is based on reported human impact and operational disruption, while urgency is assessed separately. Critical is reserved for explicit mass-casualty/multiple-fatality, active hostage-crisis or widespread critical-service-impact indicators; a generic attack/bomb/protest keyword cannot produce Critical. Peaceful protest, routine traffic and minor crime without stated harm remain Low. Source reliability, independent-source count, confidence and verification state never raise severity by themselves. A single-source lead remains unverified, and an analyst must validate the report before operational use.
 - **Operational consequence:** connect warning and exposure objects to places and operational objects without displacing Sonalit's existing systems of record. Crisis24 illustrates location-centric risk management: https://www.crisis24.com/
 
 ## Information architecture
@@ -65,3 +66,18 @@ The Intelligence Centre is restricted to `admin` and `super_admin`. The frontend
 - No complete time-window total from a capped list.
 - No map marker without persisted coordinates.
 - No cross-tenant record or non-approved role can access intelligence APIs.
+
+## Incident severity model
+
+The deterministic `sonalit-impact-urgency-v1` model is a transparent first-pass triage of visible source text. It records category, severity, impact, urgency, trigger indicators and a human-readable basis in observation/alert/event metadata. It is not a machine probability, fact-verification label or substitute for analyst judgement.
+
+| Level | Threshold principle | Typical examples |
+|---|---|---|
+| Critical | Explicit catastrophic human impact or widespread critical-service consequences | Reported mass-casualty/multiple-fatality incident, active hostage crisis, widespread essential-service disruption |
+| High | Serious direct threat or reported harm | Armed attack/ambush, kidnapping, explosive incident, fatality or serious/multiple injuries |
+| Medium | Material but bounded harm or disruption | Violent disorder without severe injury, road/access disruption, structural fire, significant accident or severe local hazard |
+| Low | Limited or unstated harm | Peaceful protest/rally, routine congestion, minor accident or property crime without serious harm |
+
+Urgency is independent from severity. Severity is not increased by source reliability, source count, negative article tone or a lexical match alone. Confidence measures source/evidence quality and is capped at 45 for one independent source, 65 for two and 85 for three or more; multiple queries/feed URLs from the same publisher or news aggregator are not independent sources. Verification remains `unverified` until a separate analyst/verification workflow records otherwise. Analyst overrides are protected from automated re-triage.
+
+RSS/Atom and other external text is converted to plain text at ingestion: tags and attributes are removed, visible anchor text is retained, and entities such as `&nbsp;` are decoded. Historic records are also normalized at presentation time. Source URLs remain separate, clickable provenance fields; feed markup is never rendered as HTML.

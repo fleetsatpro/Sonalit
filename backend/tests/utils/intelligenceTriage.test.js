@@ -1,0 +1,25 @@
+'use strict';
+const {plainText,incidentCategory,assessIncidentSeverity}=require('../../src/utils/intelligenceTriage');
+describe('Intelligence observation text normalization and threat triage',()=>{
+ test('strips RSS attributes and decodes entities retaining visible text',()=>{
+  const raw='<a href="https://news.google.com/rss/articles/example?q=protest+Nairobi" target="_blank">Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash</a>&nbsp;<font color="#6f6f6f">Kenya News Agency</font>',text=plainText(raw);
+  expect(text).toBe('Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash Kenya News Agency');expect(text).not.toMatch(/href=|target=|<a|&nbsp;|<font/i);expect(incidentCategory(text)).toBe('other');expect(assessIncidentSeverity('other',text).severity).toBe('low');
+ });
+ test('cleans encoded markup and suppresses script/style blocks',()=>{
+  expect(plainText('&lt;a href=&quot;https://example.test/?q=attack&quot;&gt;Local match tickets&lt;/a&gt;&amp;nbsp;')).toBe('Local match tickets');
+  expect(plainText('<style>.x{content:"protest"}</style><script>IED attack</script>Weather report')).toBe('Weather report');expect(plainText('A&nbsp;road&nbsp;closure &mdash; updated')).toBe('A road closure — updated');
+ });
+ test('keeps peaceful protest, rally, routine traffic and minor accident Low',()=>{
+  expect(assessIncidentSeverity('protest','Peaceful protest in Nairobi with no reported injuries').severity).toBe('low');expect(assessIncidentSeverity('political_rally','Political rally held peacefully').severity).toBe('low');expect(assessIncidentSeverity('traffic','Heavy traffic congestion in CBD').severity).toBe('low');expect(assessIncidentSeverity('accident','Minor road accident; no injuries').severity).toBe('low');
+ });
+ test('raises bounded disruption/injury without inflating it to Critical',()=>{
+  const result=assessIncidentSeverity('protest','Protesters block the main highway, disrupting access to the airport');expect(result.severity).toBe('medium');expect(result.impact).toBe('material');expect(assessIncidentSeverity('accident','Multi-vehicle collision leaves several injured').severity).toBe('medium');
+ });
+ test('reserves High/Critical for explicit serious impact',()=>{
+  expect(assessIncidentSeverity('armed_attack','Ongoing armed attack reported near the town').severity).toBe('high');expect(assessIncidentSeverity('kidnapping','Two people kidnapped from their home').severity).toBe('high');
+  const critical=assessIncidentSeverity('armed_attack','Terrorist attack with at least 8 people killed');expect(critical.severity).toBe('critical');expect(critical.impact).toBe('catastrophic');expect(critical.urgency).toBe('immediate');
+ });
+ test('keeps an unverified bomb threat below Critical',()=>{
+  const threat=assessIncidentSeverity('ied','Police investigate a bomb threat; no device found and no injuries');expect(threat.severity).toBe('medium');expect(threat.preliminary).toBe(true);expect(threat.caveat).toMatch(/does not establish that the report is true/i);
+ });
+});
