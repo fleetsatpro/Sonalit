@@ -25,6 +25,8 @@ describe('intelligence fused-event persistence contract', () => {
     expect(severityFor('More than 9 people killed in an armed attack')).toBe('critical');
     expect(severityFor('Hundreds killed in an armed attack')).toBe('critical');
     expect(severityFor('Two people were killed during an armed attack')).toBe('critical');
+    expect(severityFor('Several people killed in an armed attack')).toBe('critical');
+    expect(severityFor('Multiple fatalities reported after an armed attack')).toBe('critical');
     expect(severityFor('Massacre reported near the town')).toBe('critical');
     expect(severityFor('Ongoing bomb threat at a public venue')).toBe('moderate');
     expect(severityFor('Foiled bomb plot before a device was deployed')).toBe('moderate');
