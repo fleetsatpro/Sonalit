@@ -26,6 +26,10 @@ describe('Intel Hub product and evidence-truth contract', () => {
     expect(router).toContain('const intelligenceAdminCheck=');
     expect(router).toContain('beforeLoad:intelligenceAdminCheck');
     expect(router).toContain("['admin','super_admin']");
+    expect(rail).toContain("{path:'/intelligence',art:'nav-analytics',label:'Intelligence Centre'}");
+    expect(rail).not.toContain("label:'Legacy Risk Intel'");
+    expect(router).toContain("path:'/risk-intel',beforeLoad:()=>{intelligenceAdminCheck();throw redirect({to:'/intelligence',search:{module:'analysis'},replace:true})}");
+    expect(router).not.toContain("import('./pages/RiskIntel.js')");
   });
 
   it('distinguishes alert API failure from an empty signal window', () => {
