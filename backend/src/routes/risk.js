@@ -10,8 +10,14 @@ const intelligenceAlertsRouter = require('./intelligenceAlerts');
 const runtimeDiagnosticsRouter = require('./runtimeDiagnostics');
 
 router.use(authenticate);
-router.use('/intelligence/alerts', intelligenceAlertsRouter);
-router.use('/intelligence', intelligenceRouter);
+const intelligenceAdminAccess = (req, res, next) => {
+  if (!['admin', 'super_admin'].includes(String(req.user?.role || ''))) {
+    return res.status(403).json({ error: 'Intelligence Centre access is restricted to administrators' });
+  }
+  next();
+};
+router.use('/intelligence/alerts', intelligenceAdminAccess, intelligenceAlertsRouter);
+router.use('/intelligence', intelligenceAdminAccess, intelligenceRouter);
 router.use('/diagnostics', runtimeDiagnosticsRouter);
 
 router.get('/zones', asyncHandler(async (req, res) => {
