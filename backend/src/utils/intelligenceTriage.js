@@ -6,6 +6,10 @@ function incidentCategory(value){const s=plainText(value,12000).toLowerCase();if
 function securityRelevance(category,value){
  const text=plainText(value,12000).toLowerCase();
  const cat=String(category||incidentCategory(text)||'other').toLowerCase();
+ const rhetoricalObjection=/\\b(?:ignore[sd]?|dismiss(?:es|ed|ing)?|reject(?:s|ed|ing)?|stands? by|defends?)\\b.{0,90}\\b(?:protests?|objections?|outcry)\\b/i.test(text)
+  && /\\b(?:allocation|budget|funding|policy|decision|proposal|bill|plan|appointment|ruling)\\b/i.test(text)
+  && !/\\b(?:protesters?|demonstrators?|march(?:ed|ing)?|rall(?:y|ies)|crowd|gather(?:ed|ing)|roadblock|clash|riot|police|security forces|tear gas|blocked road|thousands|hundreds|mass demonstration)\\b/i.test(text);
+ if(cat==='protest'&&rhetoricalObjection)return 'not_security_relevant';
  const securityCategories=['ied','armed_attack','kidnapping','protest','crime'];
  if(cat==='protest' && ['roadblock','blocked road','road closed','highway closed','airport access blocked'].some(term=>text.includes(term)) && !['protester','demonstration','riot','unrest','clash','police','security forces'].some(term=>text.includes(term)))return 'operationally_relevant';
  if(securityCategories.includes(cat))return 'security_relevant';
