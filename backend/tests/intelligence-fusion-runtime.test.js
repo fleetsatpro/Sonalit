@@ -26,7 +26,12 @@ describe('intelligence fused-event persistence contract', () => {
     expect(severityFor('Massacre reported near the town')).toBe('critical');
     expect(severityFor('Ongoing bomb threat at a public venue')).toBe('moderate');
     expect(severityFor('Foiled bomb plot before a device was deployed')).toBe('moderate');
-    expect(severityFor('A mass-casualty attack is only a possible future threat')).not.toBe('critical');
+    expect(severityFor('A mass-casualty attack is only a possible future threat')).toBe('moderate');
+    expect(severityFor('Nationwide power outage across multiple cities')).toBe('critical');
+    expect(severityFor('Risk of a nationwide power outage')).toBe('moderate');
+    expect(assessIncidentSeverity('kidnapping','Five people were taken hostage')).toMatchObject({severity:'critical'});
+    expect(assessIncidentSeverity('kidnapping','Two people were taken hostage')).toMatchObject({severity:'high'});
+    expect(assessIncidentSeverity('other','No one was killed during a peaceful protest')).toMatchObject({severity:'low'});
 
     const preliminary=assessIncidentSeverity('armed_attack','Ongoing armed attack reported near town');
     expect(preliminary.verification_state).toBe('unverified');
