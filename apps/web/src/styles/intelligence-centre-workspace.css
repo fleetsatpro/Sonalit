@@ -484,3 +484,8 @@
 .icw-nav-artwork { width: 24px; height: 24px; display: block; }
 .icw-nav-item[aria-current="page"] .icw-nav-artwork { filter: drop-shadow(0 0 7px rgba(101,216,232,.2)); }
 .icw-mobile-nav .icw-nav-artwork { width: 19px; height: 19px; flex: 0 0 19px; }
+
+@media (max-width: 960px) {
+  .icw-rail .icw-nav-group,
+  .icw-rail .icw-rail-foot { display: none !important; }
+}

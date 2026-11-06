@@ -18,17 +18,15 @@ const MODULES = [
   { id: 'newsroom', label: 'NEWSROOM', short: 'Newsroom', caption: 'Persisted observations · provenance · source discovery', art: 'nav-dossier', group: 'COLLECTION' },
   { id: 'collection', label: 'COLLECTION CONTROL', short: 'Collection control', caption: 'Source registry · authorized bridges · provider runs', art: 'nav-satellite', group: 'COLLECTION' },
   { id: 'publications', label: 'PUBLICATIONS', short: 'Publication desk', caption: 'Daily · weekly · monthly country intelligence', art: 'nav-dossier', group: 'DISSEMINATION' },
-] as const;
+];
 
-type ModuleId = typeof MODULES[number]['id'];
-
-function readModule(search: string): ModuleId {
+function readModule(search) {
   const value = new URLSearchParams(search).get('module');
   if (value === 'core') return 'analysis';
-  return MODULES.some(module => module.id === value) ? value as ModuleId : 'command';
+  return MODULES.some(module => module.id === value) ? value : 'command';
 }
 
-function IntelligenceFallback({ label }: { label: string }) {
+function IntelligenceFallback({ label }) {
   return <div className="icw-loading" role="status"><Activity size={17}/><span>Opening {label.toLowerCase()}…</span></div>;
 }
 
@@ -46,7 +44,7 @@ export default function IntelligenceCentre() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const selectModule = (next: ModuleId) => {
+  const selectModule = (next) => {
     void navigate({ search: next === 'command' ? {} : { module: next } });
   };
 

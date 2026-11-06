@@ -263,7 +263,7 @@ export default function IntelligenceCommandView() {
             {countriesQ.isPending ? <div className="icv-panel-state">Loading country aggregates…</div> :
              countriesQ.isError ? <div className="icv-panel-state error">Country register unavailable. Coverage is unknown.</div> :
              visibleCountries.length ? visibleCountries.map(row => <button type="button" className="icv-country-row" key={row.country_code} onClick={() => chooseCountry(row.country_code)}>
-               <span><b>{row.country_code}</b><small>{countryName(row.country_code)}</small></span>
+               <span><b>{row.country_code}</b><small>{countryName(String(row.country_code || '').toUpperCase())}</small></span>
                <strong>{row.events_24h ?? '—'}</strong>
                <small>{row.confidence == null ? 'CONF —' : 'MEAN EVENT CONF. ' + row.confidence + '%'}</small>
              </button>) :
