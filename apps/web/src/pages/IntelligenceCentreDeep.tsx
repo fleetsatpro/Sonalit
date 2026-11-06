@@ -29,6 +29,7 @@ function WorkbenchGlyph({name}:{name:WorkbenchGlyphName}){
  case 'publications':return <svg {...p}><path d="M9 5h16l7 7v23H9z"/><path className="iwg-wire" d="M25 5v8h7M14 18h13M14 23h13M14 28h9"/><path className="iwg-spine" d="M5 10v26h20"/></svg>;
  case 'watchlists':return <svg {...p}><circle className="iwg-orbit" cx="20" cy="20" r="15"/><circle cx="20" cy="20" r="9" strokeDasharray="3 3"/><circle cx="20" cy="20" r="3" className="iwg-core"/><path className="iwg-sweep" d="M20 20 32 10"/><circle className="iwg-node" cx="32" cy="10" r="2.5"/></svg>;
  case 'sources':return <svg {...p}><path d="M20 32V18"/><path className="iwg-wire" d="M10 24a14 14 0 0 1 20 0M5 18a21 21 0 0 1 30 0M14 29a8 8 0 0 1 12 0"/><path d="M15 34h10M12 37h16"/><circle className="iwg-core" cx="20" cy="17" r="2.5"/></svg>;
+ default:return <svg {...p}><circle cx="20" cy="20" r="14"/><path d="M20 11v18M11 20h18"/></svg>;
  }
 }
 const REGIONS:Record<string,string[]>={'east-africa':['BI','DJ','ER','ET','KE','KM','MG','MU','MW','MZ','RW','SC','SO','SS','TZ','UG','ZM','ZW'],'west-africa':['BJ','BF','CV','CI','GM','GH','GN','GW','LR','ML','MR','NE','NG','SH','SL','SN','TG'],'central-africa':['AO','CF','CG','CD','CM','GA','GQ','ST','TD'],'north-africa':['DZ','EG','LY','MA','SD','TN'],'southern-africa':['BW','LS','NA','SZ','ZA']};
