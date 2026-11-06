@@ -15,6 +15,10 @@ describe('Intelligence observation text normalization and threat triage',()=>{
  test('raises bounded disruption/injury without inflating it to Critical',()=>{
   const result=assessIncidentSeverity('protest','Protesters block the main highway, disrupting access to the airport');expect(result.severity).toBe('medium');expect(result.impact).toBe('material');expect(assessIncidentSeverity('accident','Multi-vehicle collision leaves several injured').severity).toBe('medium');expect(assessIncidentSeverity('accident','Multi-vehicle collision leaves several seriously injured').severity).toBe('high');
  });
+ test('does not treat generic fatal wording as evidence of a fatality',()=>{
+  expect(assessIncidentSeverity('other','A fatal flaw in the county allocation process').severity).toBe('low');
+  expect(assessIncidentSeverity('accident','Fatal crash reported on the highway').severity).toBe('high');
+ });
  test('reserves High/Critical for explicit serious impact',()=>{
   expect(assessIncidentSeverity('armed_attack','Ongoing armed attack reported near the town').severity).toBe('high');expect(assessIncidentSeverity('kidnapping','Two people kidnapped from their home').severity).toBe('high');
   const critical=assessIncidentSeverity('armed_attack','Terrorist attack with at least 8 people killed');expect(critical.severity).toBe('critical');expect(critical.impact).toBe('catastrophic');expect(critical.urgency).toBe('immediate');
