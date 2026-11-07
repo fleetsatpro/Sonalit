@@ -1231,3 +1231,351 @@
     transition-duration: .01ms !important;
   }
 }
+
+
+/* --------------------------------------------------------------------------
+   SONALIT INTEL HUB — GILDED OBSIDIAN ART DIRECTION
+   Gold is a precision material accent: metallic card rims, warm edge-light,
+   polished navigation details and restrained amber reflections. Information
+   remains cool-white/blue and severity colours retain their own meanings.
+   -------------------------------------------------------------------------- */
+
+.sonalit-intelligence-workspace {
+  --intel-gold: #FFD66E;
+  --intel-gold-highlight: #FFE9A8;
+  --intel-gold-amber: #E6AD45;
+  --intel-gold-edge: rgba(242, 184, 76, .42);
+  --intel-gold-edge-strong: rgba(255, 211, 105, .82);
+  --intel-gold-glow: rgba(231, 158, 39, .14);
+  --intel-gold-glint: rgba(255, 230, 165, .2);
+  background:
+    radial-gradient(ellipse 44% 27% at 92% 0%, rgba(194, 128, 30, .13), transparent 72%),
+    radial-gradient(ellipse 38% 34% at 0% 100%, rgba(126, 81, 20, .1), transparent 74%),
+    radial-gradient(ellipse 62% 36% at 52% -12%, rgba(255, 211, 105, .065), transparent 74%),
+    linear-gradient(145deg, #090b10 0%, #080c14 48%, #0c1019 100%);
+}
+
+/* Shared shell: obsidian glass, gold hairlines and a restrained metallic mark. */
+.sonalit-intelligence-workspace .icw-rail {
+  border-right-color: rgba(224, 171, 75, .32);
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(236, 177, 74, .13), transparent 45%),
+    linear-gradient(180deg, rgba(16, 18, 25, .99), rgba(7, 10, 16, .995));
+  box-shadow:
+    15px 0 48px rgba(0, 0, 0, .34),
+    inset -1px 0 rgba(255, 224, 157, .09);
+}
+
+.sonalit-intelligence-workspace .icw-brand {
+  border-bottom-color: rgba(224, 171, 75, .28);
+}
+
+.sonalit-intelligence-workspace .icw-brand-mark,
+.sonalit-intelligence-workspace .icw-nav-icon {
+  border-color: rgba(255, 215, 126, .58);
+  background:
+    linear-gradient(145deg, rgba(255, 225, 151, .24), rgba(168, 108, 24, .13) 42%, rgba(24, 23, 23, .94)),
+    linear-gradient(145deg, #25221b, #0d1119);
+  box-shadow:
+    inset 0 1px rgba(255, 244, 206, .28),
+    inset 0 -1px rgba(177, 116, 34, .22),
+    0 0 18px rgba(222, 158, 53, .12),
+    0 9px 24px rgba(0, 0, 0, .3);
+}
+
+.sonalit-intelligence-workspace .icw-brand-artwork,
+.sonalit-intelligence-workspace .icw-nav-artwork {
+  filter: drop-shadow(0 0 5px rgba(255, 192, 74, .28));
+}
+
+.sonalit-intelligence-workspace .icw-brand-copy small,
+.sonalit-intelligence-workspace .icw-nav-group-label,
+.sonalit-intelligence-workspace .icw-rail-foot span,
+.sonalit-intelligence-workspace .icw-topbar-title > span {
+  color: var(--intel-gold);
+}
+
+.sonalit-intelligence-workspace .icw-topbar {
+  border-bottom-color: rgba(224, 171, 75, .34);
+  box-shadow: 0 1px 0 rgba(255, 221, 151, .045);
+}
+
+.sonalit-intelligence-workspace .icw-topbar-title h1 {
+  text-shadow: 0 0 26px rgba(229, 169, 66, .1);
+}
+
+.sonalit-intelligence-workspace .icw-nav-item {
+  border-color: rgba(194, 158, 94, .19);
+  background: linear-gradient(115deg, rgba(28, 27, 27, .7), rgba(11, 16, 24, .76));
+}
+
+.sonalit-intelligence-workspace .icw-nav-item:hover {
+  border-color: rgba(255, 205, 105, .5);
+  background:
+    linear-gradient(105deg, rgba(135, 89, 25, .23), rgba(44, 38, 26, .28)),
+    rgba(14, 19, 28, .96);
+  box-shadow: inset 0 1px rgba(255, 233, 183, .1), 0 8px 22px rgba(0, 0, 0, .18);
+}
+
+.sonalit-intelligence-workspace .icw-nav-item[aria-current="page"] {
+  border-color: var(--intel-gold-edge-strong);
+  background:
+    linear-gradient(105deg, rgba(176, 117, 30, .26), rgba(90, 66, 29, .19) 48%, rgba(15, 20, 29, .96)),
+    linear-gradient(145deg, rgba(30, 29, 25, .98), rgba(10, 14, 22, .99));
+  color: #fff9e9;
+  box-shadow:
+    inset 3px 0 var(--intel-gold),
+    inset 0 1px rgba(255, 237, 190, .17),
+    0 0 22px rgba(225, 158, 43, .09),
+    0 10px 24px rgba(0, 0, 0, .24);
+}
+
+.sonalit-intelligence-workspace .icw-nav-item[aria-current="page"] .icw-nav-icon {
+  border-color: rgba(255, 224, 155, .78);
+  box-shadow: inset 0 1px rgba(255,255,255,.24), 0 0 16px rgba(245, 187, 76, .2);
+}
+
+.sonalit-intelligence-workspace .icw-secure-tag,
+.sonalit-intelligence-workspace .icw-clock-tag,
+.sonalit-intelligence-workspace .icw-motion-toggle,
+.sonalit-intelligence-workspace .icw-mobile-nav button {
+  border-color: rgba(219, 169, 82, .38);
+  background: linear-gradient(145deg, rgba(40, 35, 26, .94), rgba(13, 17, 25, .98));
+  box-shadow: inset 0 1px rgba(255, 236, 192, .11), 0 6px 16px rgba(0,0,0,.18);
+}
+
+.sonalit-intelligence-workspace .icw-secure-tag svg,
+.sonalit-intelligence-workspace .icw-clock-tag svg {
+  color: var(--intel-gold);
+}
+
+.sonalit-intelligence-workspace .icw-mobile-nav button[aria-current="page"] {
+  border-color: var(--intel-gold-edge-strong);
+  background: linear-gradient(115deg, rgba(160, 106, 28, .34), rgba(37, 32, 24, .9));
+  color: #fff8e5;
+  box-shadow: inset 0 -2px var(--intel-gold), 0 0 16px rgba(220, 153, 39, .1);
+}
+
+/* The signature material treatment, shared by cards in every workspace. */
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-metric,
+  .icv-root .icv-panel,
+  .icd-root .icd-hero,
+  .icd-root .icd-kpi,
+  .icd-root .icd-panel,
+  .icd-root .icd-country,
+  .icd-root .icd-forecast-card,
+  .ia-page .ia-alert,
+  .ia-page .ia-feed,
+  .ia-page .ia-side > section,
+  .ia-page .ia-metrics > div,
+  .intelligence-live .in-card,
+  .intelligence-live .in-section,
+  .intelligence-live .in-metric,
+  .ics-root .ics-source-card,
+  .ics-root .ics-metrics > div,
+  .ipd-root .ipd-card,
+  .ipd-root .ipd-coverage
+) {
+  border: 1px solid transparent;
+  border-color: rgba(220, 174, 91, .4);
+  background:
+    radial-gradient(ellipse at 13% 0%, rgba(255, 223, 151, .105), transparent 38%),
+    radial-gradient(ellipse at 100% 100%, rgba(183, 119, 29, .1), transparent 46%),
+    linear-gradient(145deg, rgba(29, 29, 31, .985), rgba(10, 14, 22, .99));
+  box-shadow:
+    inset 0 1px rgba(255, 239, 195, .13),
+    inset 0 -1px rgba(176, 122, 46, .1),
+    0 13px 32px rgba(0, 0, 0, .26),
+    0 0 20px rgba(195, 132, 35, .045);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-metric,
+  .icd-root .icd-kpi,
+  .ia-page .ia-metrics > div,
+  .intelligence-live .in-metric,
+  .ics-root .ics-metrics > div
+) {
+  border-color: rgba(229, 181, 93, .36);
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 226, 162, .14), transparent 48%),
+    linear-gradient(145deg, rgba(34, 31, 27, .985), rgba(11, 15, 22, .995));
+  box-shadow:
+    inset 0 1px rgba(255, 241, 207, .16),
+    inset 0 -1px rgba(186, 125, 39, .11),
+    0 10px 26px rgba(0, 0, 0, .23),
+    0 0 18px rgba(226, 164, 60, .06);
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-metric strong,
+  .icd-root .icd-kpi strong,
+  .ia-page .ia-metrics strong,
+  .intelligence-live .in-metric strong,
+  .ics-root .ics-metrics strong
+) {
+  color: var(--intel-gold-highlight);
+  text-shadow: 0 0 20px rgba(220, 157, 46, .13);
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-metric::before {
+  background: linear-gradient(90deg, var(--intel-gold-amber), var(--intel-gold-highlight), rgba(255, 214, 110, .08));
+  box-shadow: 0 0 10px rgba(255, 197, 75, .22);
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-panel-head,
+  .icd-root .icd-panel > header,
+  .intelligence-live .in-section-head,
+  .ia-page .ia-feed-head
+) {
+  border-bottom-color: rgba(223, 177, 93, .32);
+  background:
+    linear-gradient(100deg, rgba(114, 79, 29, .22), rgba(39, 34, 27, .24) 48%, rgba(12, 18, 27, .58));
+  box-shadow: inset 0 1px rgba(255, 236, 189, .07);
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-panel-head > div > span,
+  .icd-root .icd-panel > header span,
+  .intelligence-live .in-section-head .ic-command-eyebrow,
+  .ia-page .ia-feed-head > span
+) {
+  color: var(--intel-gold);
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-panel-head > svg,
+  .icv-root .icv-panel-count,
+  .icd-root .icd-panel > header svg,
+  .ics-root .ics-source-card footer svg
+) {
+  color: var(--intel-gold);
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-metric:hover,
+  .icv-root .icv-panel:hover,
+  .icd-root .icd-kpi:hover,
+  .icd-root .icd-country:hover,
+  .icd-root .icd-forecast-card:hover,
+  .ia-page .ia-alert:hover,
+  .intelligence-live .in-card:hover,
+  .ics-root .ics-source-card:hover,
+  .ipd-root .ipd-card:hover
+) {
+  border-color: var(--intel-gold-edge-strong);
+  box-shadow:
+    inset 0 1px rgba(255, 242, 205, .2),
+    0 17px 38px rgba(0, 0, 0, .34),
+    0 0 26px rgba(235, 169, 55, .13);
+  transform: translateY(-2px);
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-panel-head h2,
+  .icd-root .icd-panel > header b,
+  .intelligence-live .in-section-head b,
+  .ia-page .ia-feed-head b
+) {
+  color: #fff8e9;
+  text-shadow: 0 1px 15px rgba(223, 168, 66, .08);
+}
+
+/* Focus and interaction: gold focus is visible without masking the content. */
+.sonalit-intelligence-workspace .icw-main :is(button, a, input, select, textarea, [tabindex]):focus-visible,
+.sonalit-intelligence-workspace .icw-rail :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--intel-gold);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgba(255, 214, 110, .17), 0 0 22px rgba(219, 153, 42, .13);
+}
+
+.sonalit-intelligence-workspace .icw-main a,
+.sonalit-intelligence-workspace .icd-root a,
+.sonalit-intelligence-workspace .ipd-root a {
+  color: var(--intel-gold-highlight);
+  text-decoration-color: rgba(255, 214, 110, .62);
+  text-underline-offset: 3px;
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-basemap-toggle button.active,
+  .icv-root .icv-heading-actions button[aria-pressed="true"],
+  .icd-root .icd-nav button.active,
+  .intelligence-live .in-controls button.active,
+  .ia-page .ia-scope-control button.active,
+  .ia-page .ia-cat-control button.active
+) {
+  border-color: var(--intel-gold-edge-strong);
+  background: linear-gradient(115deg, rgba(160, 106, 28, .34), rgba(39, 33, 23, .76));
+  color: #fff7e2;
+  box-shadow: inset 0 -2px var(--intel-gold), 0 0 17px rgba(224, 160, 53, .1);
+}
+
+/* Inputs, map readouts and drawers receive the same warm edge, not warm text. */
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-controls,
+  .icd-root .icd-query,
+  .icd-root .icd-filterbar select,
+  .icd-root .icd-theatre > label,
+  .ics-root .ics-search input,
+  .ics-root .ics-register-tools select,
+  .ipd-root .ipd-controls select,
+  .ipd-root .ipd-handling-fields select,
+  .ipd-root .ipd-handling-fields textarea
+) {
+  border-color: rgba(219, 169, 82, .35);
+  background-color: rgba(13, 16, 22, .96);
+  box-shadow: inset 0 1px rgba(255, 231, 181, .055);
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-map-readout,
+  .icd-root .icd-map-overlay,
+  .icv-root .icv-drawer,
+  .icd-root .icd-drawer,
+  .ia-page .ia-drawer,
+  .ics-root .ics-drawer,
+  .intelligence-live .ic-evidence-drawer,
+  .ipd-root .ipd-drawer
+) {
+  border-color: rgba(232, 181, 87, .52);
+  box-shadow: -18px 0 55px rgba(0, 0, 0, .4), inset 1px 0 rgba(255, 236, 188, .09);
+}
+
+.sonalit-intelligence-workspace :is(
+  .icv-root .icv-panel-head,
+  .icd-root .icd-panel > header,
+  .intelligence-live .in-section-head,
+  .ia-page .ia-feed-head
+) :is(button, a) {
+  border-color: rgba(223, 177, 93, .42);
+}
+
+@media (max-width: 680px) {
+  .sonalit-intelligence-workspace .icw-rail {
+    border-bottom-color: rgba(224, 171, 75, .34);
+  }
+  .sonalit-intelligence-workspace .icw-mobile-nav button {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sonalit-intelligence-workspace :is(
+    .icv-root .icv-metric,
+    .icd-root .icd-kpi,
+    .intelligence-live .in-card,
+    .ics-root .ics-source-card,
+    .ipd-root .ipd-card
+  ) {
+    transition:
+      transform .22s cubic-bezier(.2,.75,.25,1),
+      border-color .22s ease,
+      box-shadow .22s ease,
+      background .22s ease;
+  }
+}
