@@ -1639,8 +1639,8 @@ const LOCK_JOINS = `LEFT JOIN cds_containers c ON c.id=t.container_id AND c.org_
       (SELECT le.data->>'temperature' FROM cds_lock_events le
         WHERE le.lock_id=t.id AND le.org_id=t.org_id AND le.type='heartbeat'
           AND le.data ? 'temperature'
-        ORDER BY le.created_at DESC, le.id DESC LIMIT 1) AS reported_temperature
-      ,(SELECT le.data->>'tamper_detected' FROM cds_lock_events le
+        ORDER BY le.created_at DESC, le.id DESC LIMIT 1) AS reported_temperature,
+      (SELECT le.data->>'tamper_detected' FROM cds_lock_events le
         WHERE le.lock_id=t.id AND le.org_id=t.org_id AND le.type='heartbeat'
           AND le.data ? 'tamper_detected'
         ORDER BY le.created_at DESC, le.id DESC LIMIT 1) AS reported_tamper_detected
