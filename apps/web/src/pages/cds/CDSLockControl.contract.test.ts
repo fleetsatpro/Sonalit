@@ -18,7 +18,7 @@ describe('CDS E-Lock Control contract', () => {
     expect(lockConsole).toContain('age > LOCK_HEARTBEAT_STALE_MS');
     expect(lockConsole).toContain('LOCK_HEARTBEAT_STALE_MS = 15 * 60 * 1000');
     expect(lockConsole).toContain('BatteryCharging');
-    expect(lockConsole).not.toMatch(/\\p{Extended_Pictographic}/u);
+    expect(lockConsole).not.toMatch(/\p{Extended_Pictographic}/u);
   });
 
   it('loads event history from the scoped CDS device endpoint', () => {
