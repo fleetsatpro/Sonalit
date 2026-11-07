@@ -23,6 +23,8 @@ import './styles/marketing-v6.css';
 import './styles/intelligence-centre-premium.css';
 import './styles/intelligence-centre-signature.css';
 import './styles/intelligence-centre-craft.css';
+// Final Intel Hub clarity layer: high contrast, readable metadata and crystalline glass surfaces.
+import './styles/intelligence-centre-clarity.css';
 import './i18n/index.js';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
