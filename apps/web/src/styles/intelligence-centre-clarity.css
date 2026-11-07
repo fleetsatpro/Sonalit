@@ -564,6 +564,12 @@
   box-shadow: -28px 0 72px rgba(0,0,0,.45), inset 1px 0 rgba(255,255,255,.08);
 }
 
+.sonalit-intelligence-workspace .icd-root .icd-field-grid span {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
 .sonalit-intelligence-workspace .icd-root .icd-field-grid small,
 .sonalit-intelligence-workspace .icd-root .icd-drawer header span,
 .sonalit-intelligence-workspace .icd-root .icd-drawer-meta > span {
