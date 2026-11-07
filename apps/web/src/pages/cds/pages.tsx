@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, ShieldAlert, Clock3, ArrowUpRight, Battery, BatteryCharging, BatteryWarning, Activity, Signal, Thermometer, Zap, ChevronRight, type LucideIcon } from 'lucide-react';
+import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, ArrowUpRight, Battery, BatteryCharging, BatteryWarning, Activity, Zap, ChevronRight, type LucideIcon } from 'lucide-react';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
@@ -152,7 +152,7 @@ function LockDossier({ lock }: { lock: Row }) {
         <div><small>CONNECTION</small><LockSignalReadout value={lock['signal_strength']} /></div>
         <div><small>LAST HEARTBEAT</small><b>{lockAgeLabel(lock['last_heartbeat'])}</b><span>{lock['last_heartbeat'] ? new Date(String(lock['last_heartbeat'])).toLocaleString() : 'No timestamp'}</span></div>
         <div><small>THERMAL TELEMETRY</small><b>{temperature}</b><span>Reported device temperature</span></div>
-        <div><small>SOLAR INPUT</small><b>{lockFlag(lock['solar_charging']) ? 'CHARGING' : 'NOT REPORTED ACTIVE'}</b><span>Device-reported charging flag</span></div>
+        <div><small>SOLAR INPUT</small><b>{lockFlag(lock['solar_charging']) ? 'CHARGING' : 'NOT CHARGING'}</b><span>Device-reported charging flag</span></div>
       </div>
       <section className="cds-lock-dossier__section">
         <header><b>Assignment & device identity</b><span>Persisted inventory fields</span></header>
@@ -168,7 +168,7 @@ function LockDossier({ lock }: { lock: Row }) {
         </div>
       </section>
       <div className="cds-lock-dossier__notice"><ShieldCheck size={14} aria-hidden="true" /><span>This console presents persisted inventory and device telemetry. Remote lock / unlock actuation is not exposed by the current CDS API, so no hardware command is simulated here.</span></div>
-      <LockEventHistory lockId={lockText(lock['id'])} />
+      <LockEventHistory lockId={lockText(lock['id'], '')} />
     </div>
   );
 }
@@ -310,7 +310,7 @@ export function LocksView() {
                 <div className="cds-lock-device__power">
                   <LockBatteryReadout row={row} />
                   <div className="cds-lock-device__power-track"><i style={{ width: (battery ?? 0) + '%' }} data-missing={battery === null ? 'true' : 'false'} /></div>
-                  <small>{lockFlag(row['solar_charging']) ? 'CHARGING REPORTED' : battery === null ? 'POWER STATE UNKNOWN' : battery < 25 ? 'LOW POWER · REVIEW' : 'REPORTED STATE OF CHARGE'}</small>
+                  <small>{lockFlag(row['solar_charging']) ? 'SOLAR INPUT ACTIVE' : battery === null ? 'POWER STATE UNKNOWN' : battery < 25 ? 'LOW POWER · REVIEW' : 'SOLAR INPUT IDLE'}</small>
                 </div>
                 <div className="cds-lock-device__telemetry">
                   <div><small>LINK</small><LockSignalReadout value={signal} /></div>
