@@ -167,14 +167,14 @@ export function BookingGroup({
   const route = [group.pickup_location, group.delivery_location].filter(Boolean).join(' → ');
 
   return (
-    <section className="rounded-xl overflow-hidden mb-3"
+    <section className="cds-booking-group rounded-xl overflow-hidden mb-3"
       style={{ border: '1px solid rgba(255,255,255,.09)', background: 'rgba(255,255,255,.015)' }}>
       {/* Header. The 3px rail on the left carries direction normally and
           escalates to the worst severity found inside — so a booking with a
           problem is identifiable from the edge of the screen, collapsed. */}
       <button
         onClick={onToggle}
-        className="w-full text-left flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors hover:bg-white/[.03]"
+        className="cds-booking-group__toggle w-full text-left flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors hover:bg-white/[.03]"
         style={{
           borderLeft: `3px solid ${railColor}`,
           background: `linear-gradient(90deg, ${railColor}0f, transparent 40%)`,
