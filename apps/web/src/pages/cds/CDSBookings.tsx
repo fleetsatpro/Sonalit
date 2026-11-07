@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import { ChevronDown, ChevronUp, Plus, Upload, Loader2, X, Package, Pencil } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Upload, Loader2, X, Package, Pencil, ClipboardList, Search } from 'lucide-react';
+import './CDSBookingsVisual.css';
 import { StatusBadge, FilterChip } from './components.js';
 import {
   useBookings, useCreateBooking, useUpdateBooking, useCustomers,
