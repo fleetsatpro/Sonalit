@@ -90,7 +90,7 @@ function PipelineHeader({ stats, anomalyCount }: {
   const total = stats.total || 1;
 
   return (
-    <div className="rounded-xl mb-3 overflow-hidden"
+    <div className="cds-booking-pipeline rounded-xl mb-3 overflow-hidden"
       style={{ border: '1px solid rgba(255,255,255,.09)', background: 'rgba(255,255,255,.02)' }}>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px" style={{ background: 'rgba(255,255,255,.06)' }}>
         {segments.map(s => {
@@ -181,7 +181,7 @@ function ScanStrip({
   const clean = total === 0 && !loading;
 
   return (
-    <div className="rounded-xl px-3 py-2.5 mb-3 flex items-center gap-3 flex-wrap"
+    <div className="cds-booking-integrity rounded-xl px-3 py-2.5 mb-3 flex items-center gap-3 flex-wrap"
       style={{
         border: `1px solid ${clean ? 'rgba(51,214,168,.25)' : 'rgba(255,92,92,.22)'}`,
         background: clean
@@ -441,7 +441,7 @@ export function BookingManifest({ bookingId }: { bookingId?: string }) {
   };
 
   return (
-    <div>
+    <div className="cds-booking-manifest">
       {/* Tier 1: Pipeline Command Center */}
       <PipelineHeader stats={stats} anomalyCount={scan.data?.total ?? anomalies.length} />
 
@@ -467,7 +467,7 @@ export function BookingManifest({ bookingId }: { bookingId?: string }) {
       )}
 
       {/* Tier 2: Filter bar */}
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
+      <div className="cds-booking-manifest-toolbar flex items-center gap-2 mb-2 flex-wrap">
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-2" />
           <input
@@ -551,7 +551,7 @@ export function BookingManifest({ bookingId }: { bookingId?: string }) {
 
       {/* Tier 3: The sheet */}
       {mode === 'grouped' ? (
-        <div style={{ maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
+        <div className="cds-booking-manifest-sheet" style={{ maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
           {sortedGroups.map(g => (
             <BookingGroup
               key={g.booking_id}
@@ -604,7 +604,7 @@ function FlatSheet({ rows, byContainer, onToggleInvoiced, busy, sort, onSort }: 
   onSort: (key: string) => void;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 overflow-x-auto" style={{ maxHeight: 'calc(100vh - 340px)' }}>
+    <div className="cds-booking-flat-sheet rounded-xl border border-white/10 overflow-x-auto" style={{ maxHeight: 'calc(100vh - 340px)' }}>
       <table className="border-collapse" style={{ minWidth: FLAT_COLS.reduce((a, c) => a + c.w, 0) }}>
         <thead className="sticky top-0 z-10">
           <tr>

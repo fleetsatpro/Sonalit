@@ -5,6 +5,7 @@ import {
 import { lazy, memo, Suspense, useState, useEffect, useRef } from 'react';
 import './CDSDesignSystem.css';
 import './CDSOverviewVisual.css';
+import './CDSCosmicVisual.css';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { NavArtwork } from '../../components/layout/Rail.js';
