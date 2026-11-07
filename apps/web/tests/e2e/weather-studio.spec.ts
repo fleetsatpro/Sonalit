@@ -130,7 +130,7 @@ function createMockMapTile(): Buffer {
 
 const TILE_MOCK_PNG = createMockMapTile();
 
-async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', options: { primaryTilesFail?: boolean; mapRendererUnavailable?: boolean } = {}) {
+async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', options: { primaryTilesFail?: boolean; primaryTilesDelayMs?: number; mapRendererUnavailable?: boolean } = {}) {
   await page.addInitScript((rendererUnavailable) => {
     localStorage.setItem('sonalit-auth', JSON.stringify({
       state: { user: { id: 'weather-e2e-user', name: 'Weather QA', email: 'weather-qa@sonalit.test', role: 'admin', org_id: 'weather-e2e-org' } },
@@ -153,9 +153,21 @@ async function openWeatherStudio(page: Page, status: 'AVAILABLE' | 'PARTIAL', op
     body: JSON.stringify({ data: fixture(status) }),
   }));
   // Deterministic primary/fallback tile behavior exercises MapLibre's real error path.
-  await page.route('https://services.arcgisonline.com/**', route => options.primaryTilesFail
-    ? route.fulfill({ status: 503, contentType: 'text/plain', body: 'Simulated primary tile outage' })
-    : route.fulfill({ status: 200, contentType: 'image/png', body: TILE_MOCK_PNG }));
+  await page.route('https://services.arcgisonline.com/**', async route => {
+    if (options.primaryTilesDelayMs) {
+      await new Promise(resolve => setTimeout(resolve, options.primaryTilesDelayMs));
+    }
+    try {
+      if (options.primaryTilesFail) {
+        await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Simulated primary tile outage' });
+      } else {
+        await route.fulfill({ status: 200, contentType: 'image/png', body: TILE_MOCK_PNG });
+      }
+    } catch {
+      // MapLibre may cancel the deliberately delayed primary request after falling back.
+      if (!options.primaryTilesDelayMs) throw new Error('Could not fulfill test map tile request.');
+    }
+  });
   await page.route('https://basemaps.cartocdn.com/**', route => route.fulfill({
     status: 200, contentType: 'image/png',
     body: TILE_MOCK_PNG,
@@ -265,6 +277,63 @@ test.describe('Weather Studio route and operational controls', () => {
     await expect(page.getByRole('button', { name: /Inspect CLEAR \/ MOSTLY CLEAR: Weather Studio test forecast/i })).toBeVisible();
   });
 
+  test('keeps map tile activity visible until delayed tiles have reached idle', async ({ page }) => {
+    await openWeatherStudio(page, 'AVAILABLE', { primaryTilesDelayMs: 1600 });
+    await expect(page.locator('.wx-tile-sync')).toContainText('LOADING MAP TILES', { timeout: 10000 });
+    await expect(page.locator('.wx-tile-sync')).toHaveCount(0, { timeout: 10000 });
+  });
+
+  test('switches to independent cartography when primary tiles do not reach idle', async ({ page }) => {
+    await openWeatherStudio(page, 'AVAILABLE', { primaryTilesDelayMs: 9000 });
+    await expect(page.locator('.wx-map-provider')).toHaveAttribute('data-provider', 'fallback', { timeout: 15000 });
+    await expect(page.locator('.wx-map-provider')).toContainText('RESILIENT BASE');
+    await expect(page.locator('.wx-tile-sync')).toHaveCount(0, { timeout: 10000 });
+  });
+
+  test('uses shipped display fonts and keeps mobile operational labels readable', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    const typography = await page.evaluate(() => {
+      const read = (selector: string) => {
+        const element = document.querySelector(selector);
+        if (!element) throw new Error(`Missing typography target: ${selector}`);
+        const style = getComputedStyle(element);
+        return { size: Number.parseFloat(style.fontSize), family: style.fontFamily };
+      };
+      return {
+        heading: read('.wx-brand-copy h1'),
+        layerLabel: read('.wx-layer-button__copy > span'),
+        layerCaption: read('.wx-layer-button__copy > small'),
+        mapProvider: read('.wx-map-provider'),
+      };
+    });
+    expect(typography.heading.family.toLowerCase()).toContain('sora');
+    expect(typography.layerLabel.size).toBeGreaterThanOrEqual(11);
+    expect(typography.layerCaption.size).toBeGreaterThanOrEqual(9);
+    expect(typography.mapProvider.size).toBeGreaterThanOrEqual(9);
+  });
+
+  test('switches to a map-first tablet layout before the three-zone desk gets cramped', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    const geometry = await page.evaluate(() => {
+      const map = document.querySelector('.wx-map-panel')?.getBoundingClientRect();
+      const layers = document.querySelector('.wx-layer-rail')?.getBoundingClientRect();
+      const right = document.querySelector('.wx-right-column')?.getBoundingClientRect();
+      return {
+        map: { top: map?.top ?? 0, width: map?.width ?? 0 },
+        layersTop: layers?.top ?? 0,
+        rightTop: right?.top ?? 0,
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      };
+    });
+    expect(geometry.map.width).toBeGreaterThanOrEqual(900);
+    expect(geometry.layersTop).toBeGreaterThan(geometry.map.top);
+    expect(geometry.rightTop).toBeGreaterThan(geometry.layersTop);
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+  });
+
   test('remains usable without horizontal overflow on a mobile viewport', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openWeatherStudio(page, 'AVAILABLE');
@@ -276,6 +345,42 @@ test.describe('Weather Studio route and operational controls', () => {
       clientWidth: document.documentElement.clientWidth,
     }));
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+  });
+
+
+  test('keeps the map key below the map imagery and source lineage collapsed until requested', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    const rectangles = await page.evaluate(() => {
+      const map = document.querySelector('.wx-map-canvas')?.getBoundingClientRect();
+      const key = document.querySelector('.wx-map-legend')?.getBoundingClientRect();
+      return { mapBottom: map?.bottom ?? 0, keyTop: key?.top ?? 0 };
+    });
+    expect(rectangles.keyTop).toBeGreaterThanOrEqual(rectangles.mapBottom - 1);
+    const sourceDisclosure = page.locator('.wx-source-card');
+    await expect(sourceDisclosure).not.toHaveAttribute('open', '');
+    await sourceDisclosure.locator('summary').click();
+    await expect(sourceDisclosure).toHaveAttribute('open', '');
+    await expect(sourceDisclosure.getByText('USGS ComCat')).toBeVisible();
+  });
+
+
+  test('uses a dedicated layer rail beside the live map and preserves map controls', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await openWeatherStudio(page, 'AVAILABLE');
+    await expect(page.locator('.wx-layer-rail')).toBeVisible();
+    await expect(page.locator('.wx-map-panel')).toBeVisible();
+    await expect(page.locator('.wx-right-column')).toBeVisible();
+    const layout = await page.evaluate(() => {
+      const left = document.querySelector('.wx-layer-rail')?.getBoundingClientRect();
+      const map = document.querySelector('.wx-map-panel')?.getBoundingClientRect();
+      const right = document.querySelector('.wx-right-column')?.getBoundingClientRect();
+      return { leftRight: left?.right ?? 0, mapLeft: map?.left ?? 0, mapRight: map?.right ?? 0, rightLeft: right?.left ?? 0 };
+    });
+    expect(layout.leftRight).toBeLessThan(layout.mapLeft);
+    expect(layout.mapRight).toBeLessThan(layout.rightLeft);
+    await expect(page.getByRole('button', { name: /weather models/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /wind flow/i })).toBeEnabled();
   });
 
 });
