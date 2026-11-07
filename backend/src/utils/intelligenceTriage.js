@@ -165,8 +165,10 @@ function assessIncidentSeverity(category, value) {
   const prospectiveThreat = /\b(?:threat|risk|warning|warns?|possible|potential|suspected|planned|plan|plot|attempt)\b.{0,80}\b(?:attack|ambush|kidnap(?:ping)?|abduct(?:ion)?|hostage|bomb|explosion|massacre|terrorist|armed incursion)\b/.test(text)
     || /\b(?:attack|ambush|kidnap(?:ping)?|abduct(?:ion)?|hostage|bomb|explosion)\b.{0,80}\b(?:threat|risk|warning|possible|potential|suspected|foiled|thwarted)\b/.test(text);
   const preventive = /\b(?:anti[- ]?kidnapping|anti[- ]?terror(?:ism)?|counter[- ]?terror(?:ism)?|disarmament|peace talks|ceasefire talks|prevention campaign|prevent(?:ed|ing)? kidnapping|security drill|training exercise|simulation|bomb disposal exercise)\b/.test(text);
-  const denied = /\b(?:no (?:armed )?attack occurred|attack did not occur|no kidnapping occurred|no abduction occurred|false report(?:s)? of (?:an? )?(?:attack|kidnapping|abduction)|unconfirmed reports? of (?:an? )?(?:attack|kidnapping|abduction))\b/.test(text)
-    || noAttackClaim || (noAbductionClaim && !(hostageCount != null && hostageCount > 0));
+  const deniedAttackClaim = noAttackClaim || /\b(?:no (?:armed )?attack occurred|attack did not occur|false report(?:s)? of (?:an? )?(?:attack|ambush)|unconfirmed reports? of (?:an? )?(?:attack|ambush))\b/.test(text);
+  const deniedAbductionClaim = noAbductionClaim || /\b(?:no kidnapping occurred|no abduction occurred|false report(?:s)? of (?:a )?(?:kidnapping|abduction)|unconfirmed reports? of (?:a )?(?:kidnapping|abduction))\b/.test(text);
+  const denied = (cat === 'armed_attack' && deniedAttackClaim)
+    || (cat === 'kidnapping' && deniedAbductionClaim && !(hostageCount != null && hostageCount > 0));
 
   let severity = 'low';
   const basis = [];
