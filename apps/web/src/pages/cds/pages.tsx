@@ -148,6 +148,53 @@ function LockSignalReadout({ value }: { value: unknown }) {
   );
 }
 
+
+function LockBatteryTrend({ events }: { events: Row[] }) {
+  const samples = events.map(event => {
+    const data = event['data'] && typeof event['data'] === 'object' ? event['data'] as Record<string, unknown> : {};
+    const raw = data['battery_level'] ?? data['battery'] ?? data['level'];
+    const level = numericTelemetry(raw, 0, 100);
+    const at = event['created_at'] ? new Date(String(event['created_at'])).getTime() : NaN;
+    return level === null || !Number.isFinite(at) ? null : { level, at };
+  }).filter((sample): sample is { level: number; at: number } => sample !== null)
+    .sort((a, b) => a.at - b.at)
+    .slice(-12);
+  const latest = samples[samples.length - 1];
+  const first = samples[0];
+  const delta = latest && first ? latest.level - first.level : 0;
+  const coordinates = samples.map((sample, index) => ({
+    x: samples.length < 2 ? 100 : 5 + index * (190 / (samples.length - 1)),
+    y: 47 - sample.level * 0.39,
+  }));
+  const trace = coordinates.map((point, index) => (index === 0 ? 'M' : 'L') + point.x.toFixed(1) + ' ' + point.y.toFixed(1)).join(' ');
+  return (
+    <section className="cds-lock-battery-trend" aria-label="Battery telemetry history">
+      <header>
+        <div><span>POWER INTELLIGENCE / EVENT-BACKED</span><b>Battery history trace</b></div>
+        <div className="cds-lock-battery-trend__reading">
+          <strong>{latest ? latest.level + '%' : '—'}</strong>
+          <small>{samples.length >= 2 ? (delta > 0 ? '+' : '') + delta.toFixed(0) + ' PTS IN WINDOW' : samples.length === 1 ? 'ONE READING' : 'NO READINGS'}</small>
+        </div>
+      </header>
+      {samples.length >= 2 ? (
+        <>
+          <svg className="cds-lock-battery-trend__chart" viewBox="0 0 200 54" role="img" aria-label={'Recent battery readings from ' + samples.length + ' persisted device events'}>
+            <path d="M5 47H195 M5 27H195 M5 7H195" className="cds-lock-battery-trend__grid" />
+            <path d={trace} className="cds-lock-battery-trend__line" />
+            {coordinates.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={index === coordinates.length - 1 ? 3 : 1.8} className="cds-lock-battery-trend__point" />)}
+          </svg>
+          <div className="cds-lock-battery-trend__range"><span>MIN {Math.min(...samples.map(sample => sample.level))}%</span><span>MAX {Math.max(...samples.map(sample => sample.level))}%</span><span>{samples.length} SAMPLES</span></div>
+        </>
+      ) : (
+        <div className="cds-lock-battery-trend__empty">
+          {samples.length === 1 ? 'One battery reading is persisted. A trend needs another device report.' : 'No numeric battery readings are present in the returned device-event window.'}
+        </div>
+      )}
+      <small className="cds-lock-battery-trend__footnote">Observed values only · no remaining-life projection or discharge forecast</small>
+    </section>
+  );
+}
+
 function LockEventHistory({ lockId }: { lockId: string }) {
   const { data, isLoading, isError, isFetching } = useLockEvents(lockId, 16);
   const events = data?.data ?? [];
@@ -157,6 +204,7 @@ function LockEventHistory({ lockId }: { lockId: string }) {
         <div><span>DEVICE EVIDENCE / EVENT STREAM</span><b>Recent lock events</b></div>
         <small>{isFetching ? 'UPDATING' : (data?.total ?? events.length) + ' RECORDED'}</small>
       </header>
+      {!isLoading && !isError && <LockBatteryTrend events={events} />}
       {isLoading ? <div className="cds-lock-dossier__empty">Loading persisted device events…</div>
         : isError ? <div className="cds-lock-dossier__empty is-error">Event history could not be retrieved. Device state has not been inferred from a failed read.</div>
           : events.length ? (
