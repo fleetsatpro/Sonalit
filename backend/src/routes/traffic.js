@@ -14,7 +14,7 @@ const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
-const { getTrafficIncidents } = require('../services/spatial/tomtomTrafficGateway');
+const { getTrafficIncidents, getProviderHealth } = require('../services/spatial/tomtomTrafficGateway');
 
 const TOMTOM_BASE = 'https://api.tomtom.com';
 
@@ -64,7 +64,53 @@ router.get('/incidents', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Invalid traffic bbox' });
   }
 
-  const result = await getTrafficIncidents({ bbox, maxRecords: 250, signal: req.signal });
+  let result;
+  try {
+    result = await getTrafficIncidents({ bbox, maxRecords: 250, signal: req.signal });
+  } catch (error) {
+    const failureClass = String(error?.failureClass || '');
+    // Provider failures are operationally degraded states, not unexpected
+    // application errors. Do not turn them into HTTP 500s, and never return a
+    // successful empty FeatureCollection that could be read as "roads are clear".
+    const unavailable = new Set([
+      'circuit_open', 'rate_limited', 'timeout', 'unavailable',
+      'auth_required', 'budget_exhausted', 'http_error', 'malformed', 'invalid_data',
+    ]);
+    if (!unavailable.has(failureClass)) throw error;
+
+    const upstreamStatus = ['http_error', 'malformed', 'invalid_data'].includes(failureClass)
+      ? 502
+      : 503;
+    const retryAfterSeconds = failureClass === 'circuit_open' ? 30
+      : failureClass === 'rate_limited' || failureClass === 'budget_exhausted' ? 60
+        : null;
+    if (retryAfterSeconds != null) res.set('Retry-After', String(retryAfterSeconds));
+
+    const providerHealth = typeof getProviderHealth === 'function' ? getProviderHealth() : {};
+    return res.status(upstreamStatus).json({
+      type: 'FeatureCollection',
+      features: [],
+      configured: true,
+      coverage: {
+        complete: false,
+        queryScope: 'TomTom traffic incidents unavailable for the requested viewport',
+      },
+      health: {
+        status: 'DEGRADED',
+        providerStatus: providerHealth.status || 'UNAVAILABLE',
+        circuitState: providerHealth.circuitState || 'UNKNOWN',
+        lastSuccessAt: providerHealth.lastSuccessAt || null,
+        lastAttemptAt: providerHealth.lastAttemptAt || null,
+        failureClass,
+      },
+      error: {
+        code: 'TRAFFIC_PROVIDER_UNAVAILABLE',
+        reason: failureClass,
+        message: 'Traffic incident data is unavailable. Road conditions are unknown, not confirmed clear.',
+      },
+    });
+  }
+
   const features = (result.observations || []).map((observation) => ({
     type: 'Feature',
     id: observation.sourceReference || observation.id,
