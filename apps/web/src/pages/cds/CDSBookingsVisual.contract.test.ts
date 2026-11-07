@@ -44,6 +44,8 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
     expect(bookings).toContain('cds-booking-manifest-frame');
     expect(manifest).toContain('cds-booking-manifest-toolbar');
     expect(manifest).toContain('cds-booking-pipeline');
+    expect(group).toContain('cds-booking-group');
+    expect(group).toContain('cds-booking-group__toggle');
   });
 
   it('keeps record editing as a separate action rather than nesting buttons', () => {
