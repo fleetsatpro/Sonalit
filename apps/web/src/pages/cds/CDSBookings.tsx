@@ -114,11 +114,14 @@ function BookingCard({ booking, onEdit }: { booking: Row; onEdit: (b: Row) => vo
   const eta = booking['eta'] ? new Date(s(booking['eta'])).toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
 
   return (
-    <div className="rounded-xl border border-white/[.07] bg-white/[.02] overflow-hidden">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[.03] transition-colors cursor-pointer border-none bg-transparent"
-      >
+    <article className="cds-booking-record rounded-xl border border-white/[.07] bg-white/[.02] overflow-hidden">
+      <div className="cds-booking-record__head">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(o => !o)}
+          className="cds-booking-record__toggle flex-1 min-w-0 flex items-center gap-3 px-4 py-3 text-left transition-colors cursor-pointer border-none bg-transparent"
+        >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono font-bold text-[13px] text-cds-orange">{s(booking['booking_number'])}</span>
@@ -141,17 +144,18 @@ function BookingCard({ booking, onEdit }: { booking: Row; onEdit: (b: Row) => vo
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="cds-booking-record__status flex items-center gap-2 flex-shrink-0">
           <StatusBadge status={s(booking['status'])} />
-          {eta && <span className="text-[10px] text-white/35 font-mono hidden sm:block">{eta}</span>}
-          <button onClick={(e) => { e.stopPropagation(); onEdit(booking); }}
-            className="w-7 h-7 rounded-lg bg-white/[.04] border border-white/[.06] text-white/30 hover:text-[#F0B429] flex items-center justify-center cursor-pointer transition-colors"
-            title="Edit booking">
-            <Pencil size={12} />
-          </button>
-          {open ? <ChevronUp size={15} className="text-white/30" /> : <ChevronDown size={15} className="text-white/30" />}
+          {eta && <span className="text-[10px] text-white/55 font-mono hidden sm:block">{eta}</span>}
+          {open ? <ChevronUp size={15} className="text-white/55" /> : <ChevronDown size={15} className="text-white/55" />}
         </div>
-      </button>
+        </button>
+        <button type="button" onClick={() => onEdit(booking)}
+          className="cds-booking-record__edit w-9 h-9 rounded-lg border border-white/[.09] flex items-center justify-center cursor-pointer transition-colors"
+          aria-label={`Edit booking ${s(booking['booking_number'])}`} title="Edit booking">
+          <Pencil size={14} />
+        </button>
+      </div>
 
       {open && (
         <div className="px-4 pb-4 border-t border-white/[.05]">
@@ -178,7 +182,7 @@ function BookingCard({ booking, onEdit }: { booking: Row; onEdit: (b: Row) => vo
           <BookingContainers bookingId={s(booking['id'])} />
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -208,6 +212,11 @@ export function BookingsView() {
   const all = (data?.data ?? []) as Row[];
   const customerList = (customers?.data ?? []) as Row[];
   const statuses = ['all', 'pending', 'active', 'completed', 'cancelled'];
+  const statusCount = (status: string) => all.filter(row => String(row['status'] ?? '').toLowerCase() === status).length;
+  const totalContainers = all.reduce((total, row) => total + Math.max(0, Number(row['container_count'] ?? 0)), 0);
+  const pendingCount = statusCount('pending');
+  const activeCount = statusCount('active');
+  const completedCount = statusCount('completed');
 
   const rows = all.filter(r => {
     if (filter !== 'all' && r['status'] !== filter) return false;
@@ -316,60 +325,99 @@ export function BookingsView() {
   };
 
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div>
-          <h2 className="text-base font-bold text-text-0">Bookings</h2>
-          <p className="text-[11px] text-text-2 font-mono mt-0.5">{rows.length} of {all.length} bookings</p>
+    <div className="cds-bookings-view p-5 max-w-[1600px] mx-auto">
+      <section className="cds-booking-command" aria-labelledby="cds-booking-title">
+        <div className="cds-booking-command__copy">
+          <span className="cds-booking-command__eyebrow">CONTAINER DELIVERY SYSTEM / MOVEMENT CONTROL</span>
+          <h1 id="cds-booking-title">Booking desk</h1>
+          <p>Customer instructions, container manifests and dispatch progress — connected in one operating workspace.</p>
+          <div className="cds-booking-command__proof">
+            <span><i aria-hidden="true" /> TENANT BOOKING REGISTER</span>
+            <span>{rows.length.toLocaleString()} MATCHING RECORDS</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search bookings…"
-            className="h-8 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[12px] outline-none focus:border-[#F0B429]/40 placeholder:text-white/25 transition-colors"
-            style={{ width: 200 }}
-          />
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[12px] font-semibold border-none cursor-pointer transition-all hover:brightness-110"
-            style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}
-          >
-            <Plus size={15} strokeWidth={2.5} /> New Booking
+        <div className="cds-booking-command__actions">
+          <div className="cds-booking-command__container-count">
+            <span>CONTAINERS ON BOOKING RECORDS</span>
+            <strong>{totalContainers.toLocaleString('en-GB')}</strong>
+          </div>
+          <button type="button" onClick={() => { setEditBooking(null); setShowForm(true); }} className="cds-booking-create">
+            <Plus size={16} strokeWidth={2.4} />
+            <span>New booking</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      <div className="flex gap-1.5 mb-4 flex-wrap items-center">
-        {(['manifest', 'cards'] as const).map(v => (
-          <button key={v} onClick={() => setView(v)}
-            className="px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize transition-colors cursor-pointer"
-            style={view === v
-              ? { color: '#0c0e12', background: '#F0B429', border: '1px solid #F0B429' }
-              : { color: '#94a3b8', background: 'transparent', border: '1px solid rgba(255,255,255,.1)' }}>
-            {v}
-          </button>
+      <section className="cds-booking-metrics" aria-label="Booking status summary">
+        {[
+          { label: 'All bookings', value: all.length, detail: 'Tenant register', tone: 'total' },
+          { label: 'Awaiting intake', value: pendingCount, detail: 'Pending status', tone: 'pending' },
+          { label: 'In operation', value: activeCount, detail: 'Active status', tone: 'active' },
+          { label: 'Completed', value: completedCount, detail: 'Completed status', tone: 'complete' },
+        ].map((metric, index) => (
+          <div key={metric.label} className={`cds-booking-metric cds-booking-metric--${metric.tone}`} style={{ animationDelay: `${index * 55}ms` }}>
+            <span className="cds-booking-metric__label">{metric.label}</span>
+            <strong>{metric.value.toLocaleString('en-GB')}</strong>
+            <small>{metric.detail}</small>
+          </div>
         ))}
-        <span className="w-px h-4 bg-white/10 mx-1" />
-        {/* Status chips filter bookings, which the manifest does not list — it
-            has its own yard-state filter over containers. */}
-        {view === 'cards' && statuses.map(st => (
-          <FilterChip key={st} label={st === 'all' ? 'All' : st.charAt(0).toUpperCase() + st.slice(1)} active={filter === st} onClick={() => setFilter(st)} />
-        ))}
-      </div>
+      </section>
 
-      {view === 'manifest' ? <BookingManifest /> : (
-        <div className="space-y-2">
-          {rows.map(r => <BookingCard key={s(r['id'])} booking={r} onEdit={openEdit} />)}
-          {rows.length === 0 && (
-            <div className="text-center py-16 text-text-2 font-mono text-sm">No bookings found</div>
+      <section className="cds-booking-workbench" aria-label="Booking register">
+        <div className="cds-booking-toolbar">
+          <div className="cds-booking-view-switch" role="group" aria-label="Booking register presentation">
+            <button type="button" aria-pressed={view === 'manifest'} onClick={() => setView('manifest')}>
+              <ClipboardList size={15} />
+              <span>Manifest</span>
+            </button>
+            <button type="button" aria-pressed={view === 'cards'} onClick={() => setView('cards')}>
+              <Package size={15} />
+              <span>Booking records</span>
+            </button>
+          </div>
+          {view === 'cards' ? (
+            <label className="cds-booking-search">
+              <Search size={16} aria-hidden="true" />
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search booking, customer, reference or commodity…"
+                aria-label="Search booking records" />
+              {search && <button type="button" onClick={() => setSearch('')} aria-label="Clear booking search"><X size={14} /></button>}
+            </label>
+          ) : (
+            <div className="cds-booking-register-context">MANIFEST / CONTAINER-LEVEL CUSTODY VIEW</div>
           )}
         </div>
-      )}
+
+        {view === 'cards' && (
+          <div className="cds-booking-status-filters" aria-label="Filter booking records by status">
+            {statuses.map(st => (
+              <FilterChip key={st} label={st === 'all' ? `All · ${all.length}` : `${st.charAt(0).toUpperCase() + st.slice(1)} · ${statusCount(st)}`}
+                active={filter === st} onClick={() => setFilter(st)} />
+            ))}
+          </div>
+        )}
+
+        {view === 'manifest' ? (
+          <div className="cds-booking-manifest-frame"><BookingManifest /></div>
+        ) : (
+          <div className="cds-booking-card-list" aria-live="polite">
+            {rows.map(r => <BookingCard key={s(r['id'])} booking={r} onEdit={openEdit} />)}
+            {rows.length === 0 && (
+              <div className="cds-booking-empty">
+                <div className="cds-booking-empty__mark"><Package size={22} /></div>
+                <strong>No booking records match</strong>
+                <span>{search ? 'Try a different reference, customer or commodity search.' : 'New customer instructions will appear here after they are recorded.'}</span>
+                {search && <button type="button" onClick={() => setSearch('')}>Clear search</button>}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) reset(); }}>
-          <form onSubmit={handleSubmit} className="w-full max-w-lg mx-4 rounded-2xl border border-white/[.08] bg-[#12141a] shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[.06]">
+        <div className="cds-booking-modal fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) reset(); }}>
+          <form onSubmit={handleSubmit} className="cds-booking-form-dialog w-full max-w-lg mx-4 rounded-2xl border border-white/[.08] bg-[#12141a] shadow-2xl overflow-hidden">
+            <div className="cds-booking-form-header flex items-center justify-between px-5 py-4 border-b border-white/[.06]">
               <div>
                 <h3 className="text-[15px] font-bold text-white">{editBooking ? 'Edit Booking' : 'New Booking'}</h3>
                 <p className="text-[10px] text-white/40 font-mono mt-0.5">{editBooking ? s(editBooking['booking_number']) : 'Fill in details or upload a shipping document'}</p>
@@ -388,9 +436,9 @@ export function BookingsView() {
                 </button>
               </div>
             </div>
-            <div className="px-5 py-4 max-h-[60vh] overflow-y-auto space-y-3">
-              <div>
-                <label className="block text-[11px] font-medium text-white/50 mb-1">Customer<span className="text-cds-orange ml-0.5">*</span></label>
+            <div className="cds-booking-form-body px-5 py-4 max-h-[60vh] overflow-y-auto space-y-3">
+              <div className="cds-booking-customer-field">
+                <label className="block text-[11px] font-medium text-white/70 mb-1">Customer<span className="text-cds-orange ml-0.5">*</span></label>
                 {customerList.length > 0 ? (
                   <div className="space-y-1.5">
                     <select value={customerId} onChange={e => { setCustomerId(e.target.value); if (e.target.value) setCustomerName(''); }}
@@ -410,6 +458,7 @@ export function BookingsView() {
                     className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors placeholder:text-white/20" />
                 )}
               </div>
+              <div className="cds-booking-form-fields">
               {(() => {
                 const fields = editBooking ? EDIT_FIELDS : BOOKING_FIELDS;
                 const nodes: React.ReactNode[] = [];
@@ -445,8 +494,9 @@ export function BookingsView() {
                 }
                 return nodes;
               })()}
+              </div>
               {!editBooking && (
-                <div className="pt-1">
+                <div className="cds-booking-containers-section pt-1">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-[11px] font-semibold text-white/60 uppercase tracking-wider">
                       Containers{containers.length > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: '#ff7a0022', color: '#ff7a00' }}>{containers.length}</span>}
@@ -478,7 +528,7 @@ export function BookingsView() {
                 </div>
               )}
             </div>
-            <div className="px-5 py-4 border-t border-white/[.06] space-y-2">
+            <div className="cds-booking-form-footer px-5 py-4 border-t border-white/[.06] space-y-2">
               {warning && <p className="text-[11px] font-mono px-1" style={{ color: '#ffb020' }}>{warning}</p>}
               {error && <p className="text-[11px] text-red-400 font-mono px-1">{error}</p>}
               <div className="flex items-center justify-end gap-2">
