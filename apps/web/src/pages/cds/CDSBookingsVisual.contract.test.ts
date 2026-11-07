@@ -30,9 +30,11 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
 
   it('provides a first-class booking command desk with metrics derived from returned bookings', () => {
     expect(bookings).toContain('const totalContainers = all.reduce');
-    expect(bookings).toContain("statusCount('pending')");
-    expect(bookings).toContain("statusCount('active')");
-    expect(bookings).toContain("statusCount('completed')");
+    expect(bookings).toContain("useBookings({ status: 'pending' })");
+    expect(bookings).toContain("useBookings({ status: 'active' })");
+    expect(bookings).toContain("useBookings({ status: 'completed' })");
+    expect(bookings).toContain('data?.total ?? all.length');
+    expect(bookings).toContain('CONTAINERS IN CURRENT RESULTS');
     expect(bookings).toContain('aria-label="Booking status summary"');
     expect(bookings).toContain('cds-booking-command');
     expect(bookings).toContain('cds-booking-metrics');
