@@ -6,6 +6,8 @@ const EVENT = {
   id: EVENT_ID,
   title: '[E2E FIXTURE] Two reported fatalities in a targeted attack',
   summary: '[E2E FIXTURE] A test-only event used to verify impact, urgency and provenance presentation.',
+  url: 'javascript:alert(1)',
+  source_url: 'data:text/html,blocked',
   severity: 'high',
   status: 'fused',
   country_code: 'KE',
@@ -179,6 +181,7 @@ test.describe('Intel Hub restricted workspace', () => {
     await expect(drawer).toContainText('INDEPENDENT SOURCES');
     await expect(drawer).toContainText('WHY THIS LEVEL');
     await expect(drawer).toContainText('Fused records are not independently verified incidents.');
+    await expect(drawer.locator('a')).toHaveCount(0);
   });
 
   test('renders critical alerts as preliminary leads and exposes the verification caveat', async ({ page }) => {
