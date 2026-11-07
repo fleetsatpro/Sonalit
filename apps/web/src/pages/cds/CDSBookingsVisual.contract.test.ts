@@ -9,6 +9,7 @@ const bookings = read('./CDSBookings.tsx');
 const manifest = read('./BookingManifest.tsx');
 const group = read('./BookingGroup.tsx');
 const dashboard = read('./CDSDashboard.tsx');
+const components = read('./components.tsx');
 const polish = read('./CDSOperationalPolish.css');
 
 describe('CDS cosmic surface and booking desk visual contract', () => {
@@ -52,6 +53,11 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
     expect(manifest).toContain('cds-booking-pipeline');
     expect(group).toContain('cds-booking-group');
     expect(group).toContain('cds-booking-group__toggle');
+  });
+
+  it('exposes the selected state of reusable filter controls to assistive technology', () => {
+    expect(components).toContain('aria-pressed={Boolean(active)}');
+    expect(polish).toContain('.cds-booking-status-filters button[aria-pressed="true"]');
   });
 
   it('keeps record editing as a separate action rather than nesting buttons', () => {
