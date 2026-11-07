@@ -188,6 +188,9 @@ function BookingCard({ booking, onEdit }: { booking: Row; onEdit: (b: Row) => vo
 
 export function BookingsView() {
   const { data, isLoading } = useBookings();
+  const { data: pendingRegister } = useBookings({ status: 'pending' });
+  const { data: activeRegister } = useBookings({ status: 'active' });
+  const { data: completedRegister } = useBookings({ status: 'completed' });
   const { data: customers } = useCustomers();
   const createBooking = useCreateBooking();
   const extractBooking = useExtractBooking();
@@ -212,11 +215,10 @@ export function BookingsView() {
   const all = (data?.data ?? []) as Row[];
   const customerList = (customers?.data ?? []) as Row[];
   const statuses = ['all', 'pending', 'active', 'completed', 'cancelled'];
-  const statusCount = (status: string) => all.filter(row => String(row['status'] ?? '').toLowerCase() === status).length;
-  const totalContainers = all.reduce((total, row) => total + Math.max(0, Number(row['container_count'] ?? 0)), 0);
-  const pendingCount = statusCount('pending');
-  const activeCount = statusCount('active');
-  const completedCount = statusCount('completed');
+  const totalBookingCount = data?.total ?? all.length;
+  const pendingCount = pendingRegister?.total;
+  const activeCount = activeRegister?.total;
+  const completedCount = completedRegister?.total;
 
   const rows = all.filter(r => {
     if (filter !== 'all' && r['status'] !== filter) return false;
@@ -227,6 +229,7 @@ export function BookingsView() {
     }
     return true;
   });
+  const totalContainers = rows.reduce((total, row) => total + Math.max(0, Number(row['container_count'] ?? 0)), 0);
 
   const updateCtr = (i: number, p: Partial<CRow>) => setContainers(prev => prev.map((r, idx) => idx === i ? { ...r, ...p } : r));
   const removeCtr = (i: number) => setContainers(prev => prev.filter((_, idx) => idx !== i));
@@ -333,12 +336,12 @@ export function BookingsView() {
           <p>Customer instructions, container manifests and dispatch progress — connected in one operating workspace.</p>
           <div className="cds-booking-command__proof">
             <span><i aria-hidden="true" /> TENANT BOOKING REGISTER</span>
-            <span>{rows.length.toLocaleString()} MATCHING RECORDS</span>
+            <span>SHOWING {rows.length.toLocaleString()} OF {totalBookingCount.toLocaleString('en-GB')} BOOKINGS</span>
           </div>
         </div>
         <div className="cds-booking-command__actions">
           <div className="cds-booking-command__container-count">
-            <span>CONTAINERS ON BOOKING RECORDS</span>
+            <span>CONTAINERS IN CURRENT RESULTS</span>
             <strong>{totalContainers.toLocaleString('en-GB')}</strong>
           </div>
           <button type="button" onClick={() => { setEditBooking(null); setShowForm(true); }} className="cds-booking-create">
@@ -350,14 +353,14 @@ export function BookingsView() {
 
       <section className="cds-booking-metrics" aria-label="Booking status summary">
         {[
-          { label: 'All bookings', value: all.length, detail: 'Tenant register', tone: 'total' },
-          { label: 'Awaiting intake', value: pendingCount, detail: 'Pending status', tone: 'pending' },
-          { label: 'In operation', value: activeCount, detail: 'Active status', tone: 'active' },
-          { label: 'Completed', value: completedCount, detail: 'Completed status', tone: 'complete' },
+          { label: 'All bookings', value: totalBookingCount, detail: 'Entire register', tone: 'total' },
+          { label: 'Pending', value: pendingCount, detail: 'Full register status total', tone: 'pending' },
+          { label: 'Active', value: activeCount, detail: 'Full register status total', tone: 'active' },
+          { label: 'Completed', value: completedCount, detail: 'Full register status total', tone: 'complete' },
         ].map((metric, index) => (
           <div key={metric.label} className={`cds-booking-metric cds-booking-metric--${metric.tone}`} style={{ animationDelay: `${index * 55}ms` }}>
             <span className="cds-booking-metric__label">{metric.label}</span>
-            <strong>{metric.value.toLocaleString('en-GB')}</strong>
+            <strong>{metric.value == null ? '—' : metric.value.toLocaleString('en-GB')}</strong>
             <small>{metric.detail}</small>
           </div>
         ))}
@@ -391,7 +394,7 @@ export function BookingsView() {
         {view === 'cards' && (
           <div className="cds-booking-status-filters" aria-label="Filter booking records by status">
             {statuses.map(st => (
-              <FilterChip key={st} label={st === 'all' ? `All · ${all.length}` : `${st.charAt(0).toUpperCase() + st.slice(1)} · ${statusCount(st)}`}
+              <FilterChip key={st} label={st === 'all' ? `All · ${totalBookingCount}` : st.charAt(0).toUpperCase() + st.slice(1)}
                 active={filter === st} onClick={() => setFilter(st)} />
             ))}
           </div>
