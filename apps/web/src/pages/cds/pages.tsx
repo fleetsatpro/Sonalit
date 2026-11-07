@@ -51,8 +51,10 @@ function lockSignal(row: Row): string {
   return text;
 }
 function lockSolarState(row: Row): 'charging' | 'idle' | 'unverified' {
+  const age = lockHeartbeatAge(row);
+  if (age === null || age > LOCK_HEARTBEAT_STALE_MS) return 'unverified';
   const raw = row['reported_solar_charging'];
-  if (raw === true || raw === 'true') return lockHeartbeatAge(row) !== null && (lockHeartbeatAge(row) as number) <= LOCK_HEARTBEAT_STALE_MS ? 'charging' : 'unverified';
+  if (raw === true || raw === 'true') return 'charging';
   if (raw === false || raw === 'false') return 'idle';
   return 'unverified';
 }
@@ -60,7 +62,8 @@ function lockTamperState(row: Row): 'active' | 'clear' | 'unverified' {
   if (lockFlag(row['tamper_detected'])) return 'active';
   const raw = row['reported_tamper_detected'];
   if (raw === true || raw === 'true') return 'active';
-  if (raw === false || raw === 'false') return 'clear';
+  const age = lockHeartbeatAge(row);
+  if ((raw === false || raw === 'false') && age !== null && age <= LOCK_HEARTBEAT_STALE_MS) return 'clear';
   return 'unverified';
 }
 function lockAgeLabel(value: unknown) {
@@ -117,13 +120,15 @@ function LockBatteryReadout({ row, large = false }: { row: Row; large?: boolean 
 }
 function LockSignalReadout({ value }: { value: unknown }) {
   const signal = lockText(value, 'unverified').toLowerCase();
+  const numeric = Number(signal);
+  const isRssi = signal !== 'unverified' && Number.isFinite(numeric) && numeric < 0;
   const bars = signal === 'strong' ? 4 : signal === 'medium' ? 3 : signal === 'weak' ? 1 : 0;
   return (
-    <span className={'cds-lock-signal cds-lock-signal--' + signal}>
+    <span className={'cds-lock-signal cds-lock-signal--' + (isRssi ? 'rssi' : signal)}>
       <span className="cds-lock-signal__bars" aria-hidden="true">
         {[1, 2, 3, 4].map(level => <i key={level} className={level <= bars ? 'active' : ''} />)}
       </span>
-      <span>{signal === 'unverified' ? 'NOT REPORTED' : signal.toUpperCase()}</span>
+      <span>{signal === 'unverified' ? 'NOT REPORTED' : isRssi ? signal + ' dBm' : signal.toUpperCase()}</span>
     </span>
   );
 }
