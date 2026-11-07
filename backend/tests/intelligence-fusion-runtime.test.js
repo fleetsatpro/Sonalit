@@ -44,6 +44,8 @@ describe('intelligence fused-event persistence contract', () => {
     expect(severityFor('No kidnapping was reported')).toBe('low');
     expect(severityFor('Bomb threat reported; no explosion or detonation occurred')).toBe('moderate');
     expect(severityFor('An unexploded device was found at the station')).toBe('moderate');
+    expect(severityFor('No unexploded device was found at the station')).toBe('low');
+    expect(severityFor('Bomb threat reported; no device found')).toBe('moderate');
     expect(severityFor('Two people were killed in an armed attack, but no mass-casualty event was declared')).toBe('critical');
     expect(severityFor('The armed attack killed two people')).toBe('critical');
     expect(severityFor('Five people were taken hostage, but no mass-hostage crisis was declared')).toBe('critical');
