@@ -21,18 +21,47 @@ function lockText(value: unknown, fallback = '—') {
 function lockFlag(value: unknown) {
   return value === true || value === 'true' || value === 1;
 }
+function numericTelemetry(value: unknown, min: number, max: number): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
+}
 function lockBattery(row: Row): number | null {
-  const raw = row['battery_level'] ?? row['battery'];
-  if (raw === null || raw === undefined || raw === '') return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
+  return numericTelemetry(row['reported_battery_level'], 0, 100);
+}
+function lockInventoryBattery(row: Row): number | null {
+  return numericTelemetry(row['battery_level'], 0, 100);
 }
 function lockHeartbeatAge(row: Row): number | null {
-  const raw = row['last_heartbeat'];
+  const raw = row['last_heartbeat_event_at'];
   if (!raw) return null;
   const timestamp = new Date(String(raw)).getTime();
   if (!Number.isFinite(timestamp)) return null;
   return Math.max(0, Date.now() - timestamp);
+}
+function lockSignal(row: Row): string {
+  const raw = row['reported_signal_strength'];
+  if (raw === null || raw === undefined || raw === '') return 'unverified';
+  const text = String(raw).trim().toLowerCase();
+  if (['strong', 'medium', 'weak', 'offline'].includes(text)) return text;
+  const value = Number(raw);
+  if (Number.isFinite(value) && value >= 0 && value <= 100) {
+    return value >= 70 ? 'strong' : value >= 40 ? 'medium' : value > 0 ? 'weak' : 'offline';
+  }
+  return text;
+}
+function lockSolarState(row: Row): 'charging' | 'idle' | 'unverified' {
+  const raw = row['reported_solar_charging'];
+  if (raw === true || raw === 'true') return lockHeartbeatAge(row) !== null && (lockHeartbeatAge(row) as number) <= LOCK_HEARTBEAT_STALE_MS ? 'charging' : 'unverified';
+  if (raw === false || raw === 'false') return 'idle';
+  return 'unverified';
+}
+function lockTamperState(row: Row): 'active' | 'clear' | 'unverified' {
+  if (lockFlag(row['tamper_detected'])) return 'active';
+  const raw = row['reported_tamper_detected'];
+  if (raw === true || raw === 'true') return 'active';
+  if (raw === false || raw === 'false') return 'clear';
+  return 'unverified';
 }
 function lockAgeLabel(value: unknown) {
   if (!value) return 'NOT RECORDED';
@@ -47,22 +76,23 @@ function lockAgeLabel(value: unknown) {
 }
 function lockHealth(row: Row) {
   const status = lockText(row['status'], '').toLowerCase();
-  const signal = lockText(row['signal_strength'] ?? row['signal'], '').toLowerCase();
+  const signal = lockSignal(row);
   const age = lockHeartbeatAge(row);
   const battery = lockBattery(row);
-  if (lockFlag(row['tamper_detected'] ?? row['tamper'])) {
-    return { key: 'tamper', label: 'TAMPER DETECTED', note: lockText(row['tamper_status'], 'Integrity alert active') };
+  const tamper = lockTamperState(row);
+  if (tamper === 'active') {
+    return { key: 'tamper', label: 'TAMPER DETECTED', note: lockText(row['tamper_status'], 'Device integrity alert') };
   }
   if (status === 'removed') return { key: 'removed', label: 'REMOVED', note: 'Not in active service' };
   if (status === 'maintenance') return { key: 'maintenance', label: 'MAINTENANCE', note: 'Device placed in maintenance' };
-  if (status === 'offline' || signal === 'offline') return { key: 'offline', label: 'OFFLINE', note: 'No current device link' };
-  if (age === null) return { key: 'unverified', label: 'UNVERIFIED', note: 'No usable heartbeat timestamp' };
+  if (status === 'offline' || signal === 'offline') return { key: 'offline', label: 'OFFLINE', note: 'Device reports no link' };
+  if (age === null) return { key: 'unverified', label: 'UNVERIFIED', note: 'No persisted heartbeat event' };
   if (age > LOCK_HEARTBEAT_STALE_MS) {
-    return { key: 'stale', label: 'STALE TELEMETRY', note: 'Last heartbeat ' + lockAgeLabel(row['last_heartbeat']) };
+    return { key: 'stale', label: 'STALE TELEMETRY', note: 'Last persisted heartbeat ' + lockAgeLabel(row['last_heartbeat_event_at']) };
   }
-  if (battery !== null && battery < 25) return { key: 'low-battery', label: 'LOW BATTERY', note: 'Below the 25% attention threshold' };
-  if (signal === 'weak') return { key: 'degraded', label: 'WEAK SIGNAL', note: 'Device link needs attention' };
-  return { key: 'secure', label: 'REPORTING', note: 'Heartbeat within 15 minutes' };
+  if (battery !== null && battery < 25) return { key: 'low-battery', label: 'LOW BATTERY', note: 'Reported charge below the 25% attention threshold' };
+  if (signal === 'weak' || signal === 'medium') return { key: 'degraded', label: 'WEAK SIGNAL', note: 'Reported device link needs attention' };
+  return { key: 'secure', label: 'REPORTING', note: 'Persisted heartbeat within 15 minutes' };
 }
 function LockHealthBadge({ row }: { row: Row }) {
   const health = lockHealth(row);
@@ -70,14 +100,18 @@ function LockHealthBadge({ row }: { row: Row }) {
 }
 function LockBatteryReadout({ row, large = false }: { row: Row; large?: boolean }) {
   const level = lockBattery(row);
-  const charging = lockFlag(row['solar_charging']);
+  const inventoryLevel = lockInventoryBattery(row);
+  const solar = lockSolarState(row);
+  const charging = solar === 'charging';
   const low = level !== null && level < 25;
   const Icon = charging ? BatteryCharging : low ? BatteryWarning : Battery;
+  const displayLevel = level !== null ? level + '%' : inventoryLevel !== null ? inventoryLevel + '%*' : '—';
   return (
-    <div className={'cds-lock-battery' + (large ? ' cds-lock-battery--large' : '') + (charging ? ' cds-lock-battery--charging' : '') + (low ? ' cds-lock-battery--low' : '')}>
+    <div className={'cds-lock-battery' + (large ? ' cds-lock-battery--large' : '') + (charging ? ' cds-lock-battery--charging' : '') + (low ? ' cds-lock-battery--low' : '') + (level === null ? ' cds-lock-battery--unverified' : '')}>
       <span className="cds-lock-battery__icon" aria-hidden="true"><Icon size={large ? 29 : 21} strokeWidth={1.8} /></span>
-      <span className="cds-lock-battery__reading">{level === null ? '—' : level + '%'}</span>
+      <span className="cds-lock-battery__reading">{displayLevel}</span>
       {charging && <span className="cds-lock-battery__charge"><Zap size={10} aria-hidden="true" /> SOLAR INPUT</span>}
+      {level === null && <span className="cds-lock-battery__charge cds-lock-battery__charge--unverified">{inventoryLevel === null ? 'NO BATTERY TELEMETRY' : 'REGISTERED · UNVERIFIED'}</span>}
     </div>
   );
 }
@@ -134,8 +168,8 @@ function LockEventHistory({ lockId }: { lockId: string }) {
 }
 
 function LockDossier({ lock }: { lock: Row }) {
-  const temperature = lock['temperature'] === null || lock['temperature'] === undefined || lock['temperature'] === ''
-    ? 'NOT REPORTED' : Number(lock['temperature']).toFixed(1) + ' °C';
+  const temperature = numericTelemetry(lock['reported_temperature'], -80, 150) === null
+    ? 'NOT REPORTED' : numericTelemetry(lock['reported_temperature'], -80, 150)!.toFixed(1) + ' °C';
   const coordinates = lock['lat'] != null && lock['lng'] != null
     ? Number(lock['lat']).toFixed(5) + ', ' + Number(lock['lng']).toFixed(5) : 'NOT REPORTED';
   return (
@@ -150,9 +184,9 @@ function LockDossier({ lock }: { lock: Row }) {
       </section>
       <div className="cds-lock-dossier__metrics">
         <div><small>CONNECTION</small><LockSignalReadout value={lock['signal_strength']} /></div>
-        <div><small>LAST HEARTBEAT</small><b>{lockAgeLabel(lock['last_heartbeat'])}</b><span>{lock['last_heartbeat'] ? new Date(String(lock['last_heartbeat'])).toLocaleString() : 'No timestamp'}</span></div>
-        <div><small>THERMAL TELEMETRY</small><b>{temperature}</b><span>Reported device temperature</span></div>
-        <div><small>SOLAR INPUT</small><b>{lockFlag(lock['solar_charging']) ? 'CHARGING' : 'NOT CHARGING'}</b><span>Device-reported charging flag</span></div>
+        <div><small>LAST HEARTBEAT</small><b>{lockAgeLabel(lock['last_heartbeat_event_at'])}</b><span>{lock['last_heartbeat_event_at'] ? new Date(String(lock['last_heartbeat_event_at'])).toLocaleString() : 'No heartbeat event'}</span></div>
+        <div><small>THERMAL TELEMETRY</small><b>{temperature}</b><span>Latest persisted heartbeat payload</span></div>
+        <div><small>SOLAR INPUT</small><b>{lockSolarState(lock) === 'charging' ? 'CHARGING' : lockSolarState(lock) === 'idle' ? 'NOT CHARGING' : 'NOT REPORTED'}</b><span>Latest persisted heartbeat payload</span></div>
       </div>
       <section className="cds-lock-dossier__section">
         <header><b>Assignment & device identity</b><span>Persisted inventory fields</span></header>
@@ -163,8 +197,9 @@ function LockDossier({ lock }: { lock: Row }) {
           <div><small>FIRMWARE</small><b>{lockText(lock['firmware_version'], 'NOT RECORDED')}</b></div>
           <div><small>LOCATION</small><b>{lockText(lock['location'], coordinates)}</b></div>
           <div><small>COORDINATES</small><b>{coordinates}</b></div>
-          <div><small>LAST DEVICE EVENT</small><b>{lockAgeLabel(lock['last_event_at'])}</b></div>
-          <div><small>TAMPER CHANNEL</small><b>{lockFlag(lock['tamper_detected']) ? lockText(lock['tamper_status'], 'ALERT ACTIVE').toUpperCase() : 'NO ACTIVE TAMPER FLAG'}</b></div>
+          <div><small>LAST DEVICE EVENT</small><b>{lockAgeLabel(lock['last_persisted_event_at'])}</b></div>
+          <div><small>TAMPER CHANNEL</small><b>{lockTamperState(lock) === 'active' ? lockText(lock['tamper_status'], 'ALERT ACTIVE').toUpperCase() : lockTamperState(lock) === 'clear' ? 'CLEAR · DEVICE REPORTED' : 'NOT REPORTED'}</b></div>
+          <div><small>REGISTERED BATTERY</small><b>{lockInventoryBattery(lock) === null ? 'NOT RECORDED' : lockInventoryBattery(lock) + '% · UNVERIFIED BASELINE'}</b></div>
         </div>
       </section>
       <div className="cds-lock-dossier__notice"><ShieldCheck size={14} aria-hidden="true" /><span>This console presents persisted inventory and device telemetry. Remote lock / unlock actuation is not exposed by the current CDS API, so no hardware command is simulated here.</span></div>
@@ -195,9 +230,9 @@ export function LocksView() {
     const battery = lockBattery(row);
     return battery !== null && battery < 25;
   });
-  const charging = count(row => lockFlag(row['solar_charging']));
+  const charging = count(row => lockSolarState(row) === 'charging');
   const attention = count(row => ['tamper', 'offline', 'stale', 'low-battery', 'degraded', 'unverified'].includes(lockHealth(row).key));
-  const thermal = count(row => row['temperature'] !== null && row['temperature'] !== undefined && row['temperature'] !== '');
+  const thermal = count(row => numericTelemetry(row['reported_temperature'], -80, 150) !== null);
   const filters = [
     { id: 'all', label: 'All devices', total: all.length },
     { id: 'attention', label: 'Needs attention', total: attention },
@@ -215,7 +250,7 @@ export function LocksView() {
     const filterMatch = filter === 'all'
       || (filter === 'attention' && ['tamper', 'offline', 'stale', 'low-battery', 'degraded', 'unverified'].includes(health))
       || (filter === 'low' && battery !== null && battery < 25)
-      || (filter === 'charging' && lockFlag(row['solar_charging']))
+      || (filter === 'charging' && lockSolarState(row) === 'charging')
       || (filter === health);
     if (!filterMatch) return false;
     if (!searchTerm) return true;
@@ -297,7 +332,7 @@ export function LocksView() {
           {rows.map((row, index) => {
             const serial = lockText(row['serial'] ?? row['serial_number'] ?? row['lock_id'], 'LOCK ' + (index + 1));
             const battery = lockBattery(row);
-            const signal = row['signal_strength'] ?? row['signal'];
+            const signal = lockSignal(row);
             const heartbeatAge = lockHeartbeatAge(row);
             const location = lockText(row['location'], row['lat'] != null && row['lng'] != null
               ? Number(row['lat']).toFixed(4) + ', ' + Number(row['lng']).toFixed(4) : 'LOCATION NOT REPORTED');
@@ -310,18 +345,18 @@ export function LocksView() {
                 <div className="cds-lock-device__power">
                   <LockBatteryReadout row={row} />
                   <div className="cds-lock-device__power-track"><i style={{ width: (battery ?? 0) + '%' }} data-missing={battery === null ? 'true' : 'false'} /></div>
-                  <small>{lockFlag(row['solar_charging']) ? 'SOLAR INPUT ACTIVE' : battery === null ? 'POWER STATE UNKNOWN' : battery < 25 ? 'LOW POWER · REVIEW' : 'SOLAR INPUT IDLE'}</small>
+                  <small>{lockSolarState(row) === 'charging' ? 'SOLAR INPUT · RECENT HEARTBEAT' : lockSolarState(row) === 'idle' ? 'NOT CHARGING · RECENT HEARTBEAT' : battery === null ? 'POWER STATE UNKNOWN' : battery < 25 ? 'LOW POWER · REVIEW' : 'CHARGE STATE UNVERIFIED'}</small>
                 </div>
                 <div className="cds-lock-device__telemetry">
                   <div><small>LINK</small><LockSignalReadout value={signal} /></div>
-                  <div><small>HEARTBEAT</small><b>{heartbeatAge === null ? 'UNVERIFIED' : lockAgeLabel(row['last_heartbeat'])}</b></div>
-                  <div><small>TEMPERATURE</small><b>{row['temperature'] == null ? '—' : Number(row['temperature']).toFixed(1) + '°C'}</b></div>
+                  <div><small>HEARTBEAT</small><b>{heartbeatAge === null ? 'UNVERIFIED' : lockAgeLabel(row['last_heartbeat_event_at'])}</b></div>
+                  <div><small>TEMPERATURE</small><b>{numericTelemetry(row['reported_temperature'], -80, 150) === null ? '—' : numericTelemetry(row['reported_temperature'], -80, 150)!.toFixed(1) + '°C'}</b></div>
                 </div>
                 <div className="cds-lock-device__assignment">
                   <span><MapPin size={12} aria-hidden="true" /> {location}</span>
                   <span><Lock size={12} aria-hidden="true" /> {lockText(row['container_number'], 'UNASSIGNED')}</span>
                 </div>
-                <footer><span>FW {lockText(row['firmware_version'], '—')}</span><span>LAST EVENT {lockAgeLabel(row['last_event_at'])}</span><ChevronRight size={14} aria-hidden="true" /></footer>
+                <footer><span>FW {lockText(row['firmware_version'], '—')}</span><span>LAST EVENT {lockAgeLabel(row['last_persisted_event_at'])}</span><ChevronRight size={14} aria-hidden="true" /></footer>
               </button>
             );
           })}
