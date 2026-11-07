@@ -159,7 +159,7 @@ test.describe('Intel Hub restricted workspace', () => {
     await expect(drawer).toContainText('65%');
     await expect(drawer).toContainText('INDEPENDENT SOURCES');
     await expect(drawer).toContainText('WHY THIS LEVEL');
-    await expect(drawer).toContain('Fused records are not independently verified incidents.');
+    await expect(drawer).toContainText('Fused records are not independently verified incidents.');
   });
 
   test('renders critical alerts as preliminary leads and exposes the verification caveat', async ({ page }) => {
@@ -181,7 +181,7 @@ test.describe('Intel Hub restricted workspace', () => {
     await expect(drawer).toContainText('URGENCY');
     await expect(drawer).toContainText('IMMEDIATE');
     await expect(drawer).toContainText('WHY THIS LEVEL');
-    await expect(drawer).toContain('A public-signal lead is not a verified incident.');
+    await expect(drawer).toContainText('A public-signal lead is not a verified incident.');
   });
 
   test('does not represent an alert API failure as an empty incident window', async ({ page }) => {
@@ -225,7 +225,7 @@ test.describe('Intel Hub restricted workspace', () => {
     });
   });
 
-  test('has no serious or critical accessibility violations in the analysis workspace', async ({ page }) => {
+  test('has no serious or critical accessibility violations in the analysis workspace', async ({ page }, testInfo: TestInfo) => {
     await seedAdmin(page);
     await stubIntelApi(page);
     await page.goto('/intelligence?module=analysis');
@@ -235,6 +235,26 @@ test.describe('Intel Hub restricted workspace', () => {
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
     const serious = results.violations.filter(item => item.impact === 'serious' || item.impact === 'critical');
-    expect(serious.map(item => ({ id: item.id, impact: item.impact, description: item.description }))).toEqual([]);
+    const details = serious.map(item => ({
+      id: item.id,
+      impact: item.impact,
+      description: item.description,
+      nodes: item.nodes.map(node => ({
+        target: node.target,
+        html: node.html,
+        failureSummary: node.failureSummary,
+        checks: node.any.filter(check => !check.passed).map(check => ({
+          id: check.id,
+          message: check.message,
+          data: check.data,
+          relatedNodes: check.relatedNodes?.map(related => ({ target: related.target, html: related.html })),
+        })),
+      })),
+    }));
+    await testInfo.attach('intel-hub-axe-serious-critical.json', {
+      body: JSON.stringify(details, null, 2),
+      contentType: 'application/json',
+    });
+    expect(details).toEqual([]);
   });
 });
