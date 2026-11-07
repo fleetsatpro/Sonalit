@@ -106,6 +106,18 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(independentSourceKey({provider:'telegram',source_id:'tg-b',raw_metadata:{channel:'another_channel'}})).not.toBe('telegram:security_updates');
   expect(independentSourceKey({provider:'x',source_id:'x-feed',raw_metadata:{author_id:'1001'}})).toBe('x:1001');
  });
+ test('honours explicit negative claims for attacks, hostage-taking and detonation',()=>{
+  expect(assessIncidentSeverity('armed_attack','No armed attack was reported near the border').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','No evidence of an armed attack was found').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No hostage was taken during the incident').severity).toBe('low');
+  expect(assessIncidentSeverity('ied','Bomb threat reported; no explosion or detonation occurred').severity).toBe('medium');
+  expect(assessIncidentSeverity('ied','An unexploded device was found at the station').severity).toBe('medium');
+ });
+ test('does not let a separate negative label erase explicit catastrophic impact',()=>{
+  expect(assessIncidentSeverity('armed_attack','No armed attack was reported, but two people were killed in the explosion').severity).toBe('critical');
+  expect(assessIncidentSeverity('kidnapping','No hostage crisis was reported, but five people were taken hostage').severity).toBe('critical');
+ });
  test('keeps an unverified bomb threat below Critical',()=>{
   const threat=assessIncidentSeverity('ied','Police investigate a bomb threat; no device found and no injuries');expect(threat.severity).toBe('medium');expect(threat.preliminary).toBe(true);expect(threat.caveat).toMatch(/does not establish that the report is true/i);
  });
