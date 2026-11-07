@@ -58,11 +58,11 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
   });
 
   it('uses compact, information-first card proportions across the CDS command surfaces', () => {
-    expect(bookingCss).toContain('.cds-booking-command {\n  min-height: 132px !important;');
-    expect(bookingCss).toContain('.cds-booking-metric {\n  min-height: 76px !important;');
-    expect(bookingCss).toContain('.cds-booking-group__toggle {\n  min-height: 54px !important;');
-    expect(overviewCss).toContain('.cds-shell .cds-overview-metric {\n  min-height: 112px !important;');
-    expect(overviewCss).toContain('.cds-overview-secondary__item {\n  min-height: 76px !important;');
+    expect(bookingCss).toMatch(/\.cds-booking-command\s*\{[^}]*min-height:\s*132px\s*!important/s);
+    expect(bookingCss).toMatch(/\.cds-booking-metric\s*\{[^}]*min-height:\s*76px\s*!important/s);
+    expect(bookingCss).toMatch(/\.cds-booking-group__toggle\s*\{[^}]*min-height:\s*54px\s*!important/s);
+    expect(overviewCss).toMatch(/\.cds-shell\s+\.cds-overview-metric\s*\{[^}]*min-height:\s*112px\s*!important/s);
+    expect(overviewCss).toMatch(/\.cds-overview-secondary__item\s*\{[^}]*min-height:\s*76px\s*!important/s);
     expect(cosmic).toContain('animation: none !important;');
   });
 
