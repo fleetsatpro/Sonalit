@@ -31,7 +31,7 @@ function plainText(value, maxLength = 6000) {
 
 function incidentCategory(value) {
   const text = plainText(value, 12000).toLowerCase();
-  if (/\b(?:ied|improvised explosive device|explosive device|bomb(?:ing)?|explosion|detonat(?:ed|ion))\b/.test(text)) return 'ied';
+  if (/\b(?:ied|improvised explosive device|explosive device|unexploded (?:bomb|device|ordnance)|undetonated (?:bomb|device|ordnance)|uxo|bomb(?:ing)?|explosion|detonat(?:ed|ion))\b/.test(text)) return 'ied';
   if (/\b(?:armed attack|armed clashes?|intercommunal clashes?|ethnic clashes?|terrorist attack|terror attack|gunfire|shooting|ambush|militia (?:attack|attacks|attacked|ambush|ambushed)|insurgents? (?:attack|attacks|attacked|ambush|ambushed)|insurgency attack|massacre|mass shooting|mass[- ]casualt(?:y|ies)(?: incident| event| attack))\b/.test(text)) return 'armed_attack';
   if (/\b(?:kidnap(?:ped|ping|pings)?|abduct(?:ed|ion)|taken hostage|held hostage|hostage[- ]taking|hostages? held|(?:take|takes|took|taking) (?:multiple )?hostages?|hostage crisis)\b/.test(text)) return 'kidnapping';
   if (/\b(?:protests?|protesters?|riots?|rioting|unrest|demonstrations?|demonstrators?|roadblocks?|violent clashes?|clashes? with (?:police|security forces|troops|armed forces))\b/.test(text)) return 'protest';

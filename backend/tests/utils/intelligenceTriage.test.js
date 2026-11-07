@@ -62,6 +62,10 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(incidentCategory('Protesters clash with police in Nairobi')).toBe('protest');
   expect(incidentCategory('Armed clashes reported near the border')).toBe('armed_attack');
   expect(incidentCategory('Terrorist attack reported in the region')).toBe('armed_attack');
+  const unexplodedDevice='An unexploded device was found at the station';
+  expect(incidentCategory(unexplodedDevice)).toBe('ied');
+  expect(securityRelevance(incidentCategory(unexplodedDevice),unexplodedDevice)).toBe('security_relevant');
+  expect(assessIncidentSeverity(incidentCategory(unexplodedDevice),unexplodedDevice).severity).toBe('medium');
  });
  test('separates security-relevant leads from ordinary public news',()=>{
   const sports='Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash';
