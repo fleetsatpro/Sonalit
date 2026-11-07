@@ -124,6 +124,13 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(assessIncidentSeverity('ied','An unexploded device was found at the station').severity).toBe('medium');
   expect(incidentCategory('No unexploded device was found at the station')).toBe('other');
   expect(securityRelevance(incidentCategory('No unexploded device was found at the station'),'No unexploded device was found at the station')).toBe('not_security_relevant');
+  const noExplosiveDevice='No explosive device was found at the station';
+  expect(incidentCategory(noExplosiveDevice)).toBe('other');
+  expect(securityRelevance(incidentCategory(noExplosiveDevice),noExplosiveDevice)).toBe('not_security_relevant');
+  const noBombThreat='No bomb threat was reported at the station';
+  expect(incidentCategory(noBombThreat)).toBe('other');
+  expect(securityRelevance(incidentCategory(noBombThreat),noBombThreat)).toBe('not_security_relevant');
+  expect(securityRelevance(incidentCategory('Bomb threat reported; no device found'),'Bomb threat reported; no device found')).toBe('security_relevant');
   expect(incidentCategory('Bomb threat reported; no device found')).toBe('ied');
   expect(assessIncidentSeverity('ied','No unexploded device was found at the station').severity).toBe('low');
   expect(assessIncidentSeverity('ied','Bomb threat reported; no device found').severity).toBe('medium');

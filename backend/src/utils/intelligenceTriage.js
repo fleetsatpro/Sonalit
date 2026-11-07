@@ -77,7 +77,11 @@ function securityRelevance(category, value) {
     return /\b(?:large crowd|mass gathering|thousands|tens of thousands|clash|violence|unrest|road closure|security alert|security concerns|heavy security|disruption)\b/.test(text)
       ? 'potential_security_relevant' : 'not_security_relevant';
   }
-  const explicit = /\b(?:security incident|security alert|security threat|credible threat|imminent threat|threat to (?:life|personal safety|public safety)|suspicious (?:package|device|vehicle|activity)|explosive device|bomb threat|terror plot|terrorist cell|hostage (?:taking|crisis)|armed incursion|border incursion|cross[- ]border attack|sabotage|arson attack|targeted attack|armed men (?:seen|reported|approached)|weapons cache|arms cache|cyber[- ]attack|ransomware attack|data breach|critical infrastructure attack|embassy attack|attack on (?:police|civilians|security forces|checkpoint|convoy)|kidnapp(?:ed|ing)|abduct(?:ed|ion)|mass[- ]casualt(?:y|ies)|massacre|mass killing|mass shooting|genocide)\b/.test(text);
+  const positiveSecurityEvidenceText = text
+    .replace(/\b(?:no|without)\s+(?:(?:reported|confirmed|known)\s+)?(?:(?:unexploded|undetonated|explosive|suspicious)\s+)?(?:bomb|device|ordnance|ied)\s+(?:(?:was|were|has been|have been)\s+)?(?:found|discovered|located|detected|recovered)\b/gi, ' ')
+    .replace(/\b(?:no|without)\s+(?:(?:reported|confirmed|known)\s+)?(?:bomb|explosive|ied)\s+threat\b/gi, ' ')
+    .replace(/\bno\s+evidence\s+of\s+(?:an?\s+)?(?:(?:unexploded|undetonated|explosive|suspicious)\s+)?(?:bomb|device|ordnance|ied)\b/gi, ' ');
+  const explicit = /\b(?:security incident|security alert|security threat|credible threat|imminent threat|threat to (?:life|personal safety|public safety)|suspicious (?:package|device|vehicle|activity)|explosive device|bomb threat|terror plot|terrorist cell|hostage (?:taking|crisis)|armed incursion|border incursion|cross[- ]border attack|sabotage|arson attack|targeted attack|armed men (?:seen|reported|approached)|weapons cache|arms cache|cyber[- ]attack|ransomware attack|data breach|critical infrastructure attack|embassy attack|attack on (?:police|civilians|security forces|checkpoint|convoy)|kidnapp(?:ed|ing)|abduct(?:ed|ion)|mass[- ]casualt(?:y|ies)|massacre|mass killing|mass shooting|genocide)\b/.test(positiveSecurityEvidenceText);
   return explicit ? 'potential_security_relevant' : 'not_security_relevant';
 }
 
