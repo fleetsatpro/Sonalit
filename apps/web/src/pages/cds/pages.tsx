@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, type LucideIcon } from 'lucide-react';
+import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, ArrowUpRight, type LucideIcon } from 'lucide-react';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
@@ -800,7 +800,7 @@ export function AnalyticsView() {
                 <div className="mt-2 h-8 opacity-70 group-hover:opacity-100">
                   {k.series.length > 1 ? <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={'h-full w-full ' + t.text} role="img" aria-label={k.label + ' observed daily trend'}><polygon points={'0,32 ' + points + ' 100,32'} fill="currentColor" opacity=".09" /><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /><circle cx="100" cy={29 - k.series[k.series.length - 1] / sparkMax * 25} r="2" fill="currentColor" /></svg> : <div className={'h-[2px] mt-4 rounded-full ' + t.fill} />}
                 </div>
-                <div className="mt-2 border-t border-white/[.055] pt-2 text-[9px] uppercase tracking-wider text-text-2 group-hover:text-text-1">Explore signal <span className="float-right">↗</span></div>
+                <div className="mt-2 border-t border-white/[.055] pt-2 text-[9px] uppercase tracking-wider text-text-2 group-hover:text-text-1">Explore signal <ArrowUpRight size={12} aria-hidden="true" className="float-right" /></div>
               </a>
             );
           })}

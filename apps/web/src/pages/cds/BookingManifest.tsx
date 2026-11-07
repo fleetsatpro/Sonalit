@@ -20,14 +20,15 @@
  */
 import {
   AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown,
-  ChevronsDownUp, ChevronsUpDown, Check,
+  ChevronsDownUp, ChevronsUpDown, Check, ChevronDown,
   LayoutList, Rows3, Search, ShieldCheck,
-  Package, Truck,
+  Truck,
   Anchor, CircleCheck, Filter, X,
 } from 'lucide-react';
 import { useMemo, useState, useCallback } from 'react';
 
 import { BookingGroup, type BookingGroupData } from './BookingGroup.js';
+import { ContainerArtwork } from './components.js';
 import { LoadingState } from './CDSDashboard.js';
 import { useBookingManifest, useManifestAnomalies, useUpdateBookingContainer } from './hooks.js';
 import {
@@ -69,7 +70,7 @@ function groupRows(rows: Row[]): BookingGroupData[] {
 // ─── Pipeline Header ────────────────────────────────────────────────────────
 
 const PIPELINE_STAGES = [
-  { key: 'pending',    label: 'Yard',       icon: Package,     color: '#94a3b8' },
+  { key: 'pending',    label: 'Yard',       icon: ContainerArtwork, color: '#94a3b8' },
   { key: 'in_transit', label: 'In Transit', icon: Truck,       color: '#ff7a00' },
   { key: 'at_port',    label: 'At Port',    icon: Anchor,      color: '#ffb020' },
   { key: 'delivered',  label: 'Delivered',  icon: CircleCheck,  color: '#33d6a8' },
@@ -500,7 +501,7 @@ export function BookingManifest({ bookingId }: { bookingId?: string }) {
         <div className="relative">
           <Chip on={!!stageFilter} color={stageFilter ? STAGE_COLOR[stageFilter] : undefined}
             onClick={() => setShowStageFilter(v => !v)}>
-            {stageFilter ? stageFilter.replace(/_/g, ' ').toUpperCase() : 'STAGE ▾'}
+            {stageFilter ? stageFilter.replace(/_/g, ' ').toUpperCase() : <span className="inline-flex items-center gap-1">STAGE <ChevronDown size={11} aria-hidden="true" /></span>}
           </Chip>
           {showStageFilter && (
             <div className="absolute top-full left-0 mt-1 z-30 rounded-lg py-1 min-w-[140px]"

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
-import { ChevronDown, ChevronUp, Plus, Upload, Loader2, X, Package, Pencil, ClipboardList, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Upload, Loader2, X, Pencil, ClipboardList, Search } from 'lucide-react';
 import './CDSBookingsVisual.css';
-import { StatusBadge, FilterChip } from './components.js';
+import { StatusBadge, FilterChip, ContainerArtwork } from './components.js';
 import {
   useBookings, useCreateBooking, useUpdateBooking, useCustomers,
   useExtractBooking, useBookingContainers,
@@ -128,7 +128,7 @@ function BookingCard({ booking, onEdit }: { booking: Row; onEdit: (b: Row) => vo
             <span className="text-[11px] text-white/60 truncate">{s(booking['customer_name'])}</span>
             {cnt > 0 && (
               <span className="ml-1 flex items-center gap-1 text-[10px] font-mono text-white/40">
-                <Package size={10} />
+                <ContainerArtwork size={10} />
                 {delivered}/{cnt}
               </span>
             )}
@@ -374,7 +374,7 @@ export function BookingsView() {
               <span>Manifest</span>
             </button>
             <button type="button" aria-pressed={view === 'cards'} onClick={() => setView('cards')}>
-              <Package size={15} />
+              <ContainerArtwork size={15} />
               <span>Booking records</span>
             </button>
           </div>
@@ -407,7 +407,7 @@ export function BookingsView() {
             {rows.map(r => <BookingCard key={s(r['id'])} booking={r} onEdit={openEdit} />)}
             {rows.length === 0 && (
               <div className="cds-booking-empty">
-                <div className="cds-booking-empty__mark"><Package size={22} /></div>
+                <div className="cds-booking-empty__mark"><ContainerArtwork size={22} /></div>
                 <strong>No booking records match</strong>
                 <span>{search ? 'Try a different reference, customer or commodity search.' : 'New customer instructions will appear here after they are recorded.'}</span>
                 {search && <button type="button" onClick={() => setSearch('')}>Clear search</button>}

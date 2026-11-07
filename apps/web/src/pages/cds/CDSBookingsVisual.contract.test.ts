@@ -10,6 +10,9 @@ const manifest = read('./BookingManifest.tsx');
 const group = read('./BookingGroup.tsx');
 const dashboard = read('./CDSDashboard.tsx');
 const components = read('./components.tsx');
+const register = read('./CDSContainerRegister.tsx');
+const modulePages = read('./pages.tsx');
+const dataPage = read('./CDSDataPage.tsx');
 const polish = read('./CDSOperationalPolish.css');
 
 describe('CDS cosmic surface and booking desk visual contract', () => {
@@ -121,6 +124,22 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
     expect(polish).toContain('@media (hover: hover) and (pointer: fine)');
     expect(polish).toContain('scale(.985)');
     expect(polish).toContain('prefers-reduced-motion: reduce');
+  });
+
+  it('uses purpose-built vector container artwork and keeps emoji/glyph substitutes out of operational screens', () => {
+    expect(components).toContain('data-icon="intermodal-container"');
+    expect(bookings).toContain("import { StatusBadge, FilterChip, ContainerArtwork } from './components.js'");
+    expect(manifest).toContain("import { ContainerArtwork } from './components.js'");
+    expect(bookings).not.toContain('<Package');
+    expect(manifest).not.toContain('Package');
+    expect(dashboard).not.toContain('aria-hidden="true">↗</span>');
+    const operationalScreens = [bookings, manifest, dashboard, register, modulePages, dataPage];
+    expect(operationalScreens.every(source => !/\p{Extended_Pictographic}/u.test(source))).toBe(true);
+    expect(components).toContain('<ArrowUp size={12}');
+    expect(components).toContain('<ArrowDown size={12}');
+    expect(dashboard).toContain('<ArrowUpRight size={13}');
+    expect(modulePages).toContain('<ArrowUpRight size={12}');
+    expect(manifest).toContain('<ChevronDown size={11}');
   });
 
 });

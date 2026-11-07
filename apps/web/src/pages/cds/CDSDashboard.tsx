@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import {
-  Search, Bell, ChevronLeft, PanelLeftClose, PanelLeft, Menu, X,
+  Search, Bell, ChevronLeft, PanelLeftClose, PanelLeft, Menu, X, ArrowUpRight,
 } from 'lucide-react';
 import { lazy, memo, Suspense, useState, useEffect, useRef } from 'react';
 import './CDSDesignSystem.css';
@@ -738,7 +738,7 @@ function DashboardView() {
               <h2>Live movement</h2>
               <p>{liveLoading ? 'Checking the authorised position feed' : trips.length + ' open trips · ' + locatedTrips.length + ' with a recorded position · ' + freshFixes + ' fresh GPS fixes'}</p>
             </div>
-            <button type="button" className="cds-overview-panel__link" onClick={() => setActiveView('live')}>Open trip register <span aria-hidden="true">↗</span></button>
+            <button type="button" className="cds-overview-panel__link" onClick={() => setActiveView('live')}>Open trip register <ArrowUpRight size={13} aria-hidden="true" /></button>
           </div>
 
           <div className="cds-overview-phase-strip" aria-label="Open movement phases">
@@ -810,7 +810,7 @@ function DashboardView() {
               <h2>Recent activity</h2>
               <p>Latest custody and movement events</p>
             </div>
-            <button type="button" className="cds-overview-panel__link" onClick={() => setActiveView('inbox')}>View all <span aria-hidden="true">↗</span></button>
+            <button type="button" className="cds-overview-panel__link" onClick={() => setActiveView('inbox')}>View all <ArrowUpRight size={13} aria-hidden="true" /></button>
           </div>
           <div className="cds-overview-activity__list">
             {(activity ?? []).map((item, index) => {
