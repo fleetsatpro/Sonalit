@@ -26,7 +26,22 @@ function numericTelemetry(value: unknown, min: number, max: number): number | nu
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
 }
+function lockTelemetryAge(row: Row, timestampKey: string): number | null {
+  const raw = row[timestampKey];
+  if (!raw) return null;
+  const timestamp = new Date(String(raw)).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, Date.now() - timestamp);
+}
+function lockTelemetryFresh(row: Row, timestampKey: string): boolean {
+  const age = lockTelemetryAge(row, timestampKey);
+  return age !== null && age <= LOCK_HEARTBEAT_STALE_MS;
+}
 function lockBattery(row: Row): number | null {
+  return lockTelemetryFresh(row, 'reported_battery_at')
+    ? numericTelemetry(row['reported_battery_level'], 0, 100) : null;
+}
+function lockLastReportedBattery(row: Row): number | null {
   return numericTelemetry(row['reported_battery_level'], 0, 100);
 }
 function lockInventoryBattery(row: Row): number | null {
@@ -40,6 +55,7 @@ function lockHeartbeatAge(row: Row): number | null {
   return Math.max(0, Date.now() - timestamp);
 }
 function lockSignal(row: Row): string {
+  if (!lockTelemetryFresh(row, 'reported_signal_at')) return 'unverified';
   const raw = row['reported_signal_strength'];
   if (raw === null || raw === undefined || raw === '') return 'unverified';
   const text = String(raw).trim().toLowerCase();
@@ -51,8 +67,7 @@ function lockSignal(row: Row): string {
   return text;
 }
 function lockSolarState(row: Row): 'charging' | 'idle' | 'unverified' {
-  const age = lockHeartbeatAge(row);
-  if (age === null || age > LOCK_HEARTBEAT_STALE_MS) return 'unverified';
+  if (!lockTelemetryFresh(row, 'reported_solar_at')) return 'unverified';
   const raw = row['reported_solar_charging'];
   if (raw === true || raw === 'true') return 'charging';
   if (raw === false || raw === 'false') return 'idle';
@@ -62,8 +77,7 @@ function lockTamperState(row: Row): 'active' | 'clear' | 'unverified' {
   if (lockFlag(row['tamper_detected'])) return 'active';
   const raw = row['reported_tamper_detected'];
   if (raw === true || raw === 'true') return 'active';
-  const age = lockHeartbeatAge(row);
-  if ((raw === false || raw === 'false') && age !== null && age <= LOCK_HEARTBEAT_STALE_MS) return 'clear';
+  if ((raw === false || raw === 'false') && lockTelemetryFresh(row, 'reported_tamper_at')) return 'clear';
   return 'unverified';
 }
 function lockAgeLabel(value: unknown) {
@@ -104,17 +118,19 @@ function LockHealthBadge({ row }: { row: Row }) {
 function LockBatteryReadout({ row, large = false }: { row: Row; large?: boolean }) {
   const level = lockBattery(row);
   const inventoryLevel = lockInventoryBattery(row);
+  const lastReportedLevel = lockLastReportedBattery(row);
+  const batteryAge = lockTelemetryAge(row, 'reported_battery_at');
   const solar = lockSolarState(row);
   const charging = solar === 'charging';
   const low = level !== null && level < 25;
   const Icon = charging ? BatteryCharging : low ? BatteryWarning : Battery;
-  const displayLevel = level !== null ? level + '%' : inventoryLevel !== null ? inventoryLevel + '%*' : '—';
+  const displayLevel = level !== null ? level + '%' : lastReportedLevel !== null ? lastReportedLevel + '%†' : inventoryLevel !== null ? inventoryLevel + '%*' : '—';
   return (
     <div className={'cds-lock-battery' + (large ? ' cds-lock-battery--large' : '') + (charging ? ' cds-lock-battery--charging' : '') + (low ? ' cds-lock-battery--low' : '') + (level === null ? ' cds-lock-battery--unverified' : '')}>
       <span className="cds-lock-battery__icon" aria-hidden="true"><Icon size={large ? 29 : 21} strokeWidth={1.8} /></span>
       <span className="cds-lock-battery__reading">{displayLevel}</span>
       {charging && <span className="cds-lock-battery__charge"><Zap size={10} aria-hidden="true" /> SOLAR INPUT</span>}
-      {level === null && <span className="cds-lock-battery__charge cds-lock-battery__charge--unverified">{inventoryLevel === null ? 'NO BATTERY TELEMETRY' : 'REGISTERED · UNVERIFIED'}</span>}
+      {level === null && <span className="cds-lock-battery__charge cds-lock-battery__charge--unverified">{lastReportedLevel !== null ? 'LAST REPORT ' + lockAgeLabel(row['reported_battery_at']) : inventoryLevel !== null ? 'REGISTERED · UNVERIFIED' : 'NO BATTERY TELEMETRY'}</span>}
     </div>
   );
 }
@@ -173,8 +189,9 @@ function LockEventHistory({ lockId }: { lockId: string }) {
 }
 
 function LockDossier({ lock }: { lock: Row }) {
-  const temperature = numericTelemetry(lock['reported_temperature'], -80, 150) === null
-    ? 'NOT REPORTED' : numericTelemetry(lock['reported_temperature'], -80, 150)!.toFixed(1) + ' °C';
+  const temperatureValue = numericTelemetry(lock['reported_temperature'], -80, 150);
+  const temperatureFresh = lockTelemetryFresh(lock, 'reported_temperature_at');
+  const temperature = temperatureValue === null ? 'NOT REPORTED' : temperatureValue.toFixed(1) + ' °C' + (temperatureFresh ? '' : ' · STALE');
   const coordinates = lock['lat'] != null && lock['lng'] != null
     ? Number(lock['lat']).toFixed(5) + ', ' + Number(lock['lng']).toFixed(5) : 'NOT REPORTED';
   return (
@@ -190,7 +207,7 @@ function LockDossier({ lock }: { lock: Row }) {
       <div className="cds-lock-dossier__metrics">
         <div><small>CONNECTION</small><LockSignalReadout value={lock['signal_strength']} /></div>
         <div><small>LAST HEARTBEAT</small><b>{lockAgeLabel(lock['last_heartbeat_event_at'])}</b><span>{lock['last_heartbeat_event_at'] ? new Date(String(lock['last_heartbeat_event_at'])).toLocaleString() : 'No heartbeat event'}</span></div>
-        <div><small>THERMAL TELEMETRY</small><b>{temperature}</b><span>Latest persisted heartbeat payload</span></div>
+        <div><small>THERMAL TELEMETRY</small><b>{temperature}</b><span>{lockAgeLabel(lock['reported_temperature_at'])} · EVENT-BACKED</span></div>
         <div><small>SOLAR INPUT</small><b>{lockSolarState(lock) === 'charging' ? 'CHARGING' : lockSolarState(lock) === 'idle' ? 'NOT CHARGING' : 'NOT REPORTED'}</b><span>Latest persisted heartbeat payload</span></div>
       </div>
       <section className="cds-lock-dossier__section">
@@ -237,7 +254,7 @@ export function LocksView() {
   });
   const charging = count(row => lockSolarState(row) === 'charging');
   const attention = count(row => ['tamper', 'offline', 'stale', 'low-battery', 'degraded', 'unverified'].includes(lockHealth(row).key));
-  const thermal = count(row => numericTelemetry(row['reported_temperature'], -80, 150) !== null);
+  const thermal = count(row => numericTelemetry(row['reported_temperature'], -80, 150) !== null && lockTelemetryFresh(row, 'reported_temperature_at'));
   const filters = [
     { id: 'all', label: 'All devices', total: all.length },
     { id: 'attention', label: 'Needs attention', total: attention },
@@ -355,7 +372,7 @@ export function LocksView() {
                 <div className="cds-lock-device__telemetry">
                   <div><small>LINK</small><LockSignalReadout value={signal} /></div>
                   <div><small>HEARTBEAT</small><b>{heartbeatAge === null ? 'UNVERIFIED' : lockAgeLabel(row['last_heartbeat_event_at'])}</b></div>
-                  <div><small>TEMPERATURE</small><b>{numericTelemetry(row['reported_temperature'], -80, 150) === null ? '—' : numericTelemetry(row['reported_temperature'], -80, 150)!.toFixed(1) + '°C'}</b></div>
+                  <div><small>TEMPERATURE</small><b>{numericTelemetry(row['reported_temperature'], -80, 150) === null ? '—' : numericTelemetry(row['reported_temperature'], -80, 150)!.toFixed(1) + '°C' + (lockTelemetryFresh(row, 'reported_temperature_at') ? '' : ' · STALE')}</b></div>
                 </div>
                 <div className="cds-lock-device__assignment">
                   <span><MapPin size={12} aria-hidden="true" /> {location}</span>
