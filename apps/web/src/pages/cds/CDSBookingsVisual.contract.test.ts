@@ -109,8 +109,8 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
   });
 
   it('keeps perpetual cosmic motion compositor-friendly and restrained on mobile', () => {
-    const starfield = cosmic.match(/@keyframes cds-cosmic-starfield-float\\s*\\{([\\s\\S]*?)\\n\\}/)?.[1] ?? '';
-    const nebula = cosmic.match(/@keyframes cds-crystal-veil\\s*\\{([\\s\\S]*?)\\n\\}/)?.[1] ?? '';
+    const starfield = cosmic.match(/@keyframes cds-cosmic-starfield-float\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const nebula = cosmic.match(/@keyframes cds-crystal-veil\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
     expect(starfield).toContain('transform:');
     expect(starfield).not.toMatch(/background-position|box-shadow|filter/);
     expect(nebula).toContain('transform:');
