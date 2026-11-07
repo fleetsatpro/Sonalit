@@ -673,6 +673,74 @@
 }
 
 .sonalit-intelligence-workspace .ia-page .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-page .ia-alert-top em,
+.sonalit-intelligence-workspace .ia-page .ia-meta small,
+.sonalit-intelligence-workspace .ia-page .ia-severity-levels b,
+.sonalit-intelligence-workspace .ia-page .ia-assessment-grid small,
+.sonalit-intelligence-workspace .ia-page .ia-assessment-basis > small,
+.sonalit-intelligence-workspace .ia-page .ia-severity-assessment > header span {
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert-main h3 {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-severity-levels span {
+  color: var(--intel-crystal-copy);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-assessment-grid strong {
+  color: var(--intel-crystal-text);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert.critical .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-page .ia-severity-levels > div:nth-child(1) b {
+  color: var(--intel-crystal-critical);
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert.high .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-page .ia-severity-levels > div:nth-child(2) b {
+  color: var(--intel-crystal-high);
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert.moderate .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-page .ia-alert.medium .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-page .ia-severity-levels > div:nth-child(3) b {
+  color: var(--intel-crystal-medium);
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert.low .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-page .ia-severity-levels > div:nth-child(4) b {
+  color: var(--intel-crystal-low);
+}
+
+.sonalit-intelligence-workspace .intelligence-live .in-section-head > span,
+.sonalit-intelligence-workspace .intelligence-live .in-event small {
+  color: var(--intel-crystal-meta);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .intelligence-live .in-event b {
+  color: var(--intel-crystal-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.sonalit-intelligence-workspace .intelligence-live .in-event > span {
+  color: var(--intel-crystal-copy);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert-top b,
 .sonalit-intelligence-workspace .intelligence-live .in-card h2,
 .sonalit-intelligence-workspace .intelligence-live .in-card h3,
 .sonalit-intelligence-workspace .ics-root .ics-source-card h3,
@@ -727,7 +795,7 @@
 .sonalit-intelligence-workspace .ipd-root .ipd-template-use,
 .sonalit-intelligence-workspace .ics-root .ics-run-button,
 .sonalit-intelligence-workspace .ia-page .ia-refresh,
-.sonalit-intelligence-workspace .intelligence-live button {
+.sonalit-intelligence-workspace .intelligence-live .in-controls button {
   min-height: 40px;
   border: 1px solid var(--intel-crystal-line);
   border-radius: 8px;
