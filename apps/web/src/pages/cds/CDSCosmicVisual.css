@@ -181,3 +181,22 @@
   .cds-shell::after { opacity: .13; }
   .cds-shell .cds-topbar { background: rgba(5,10,23,.97); }
 }
+
+
+
+/* Premium finish: ambient crystalline motion belongs to the workspace
+   backdrop, not every content panel. Stable surfaces make operational signals
+   easier to distinguish from decoration. */
+.cds-shell .cds-panel {
+  border-color: rgba(129,182,255,.18) !important;
+  background: linear-gradient(145deg,rgba(15,27,49,.94),rgba(6,13,28,.97)) !important;
+  box-shadow: inset 0 1px rgba(255,255,255,.055), 0 8px 20px rgba(0,0,0,.19) !important;
+  animation: none !important;
+}
+.cds-shell .cds-panel:hover {
+  border-color: rgba(117,223,255,.34) !important;
+  box-shadow: inset 0 1px rgba(255,255,255,.065), 0 10px 23px rgba(0,0,0,.22) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cds-shell .cds-panel { animation: none !important; }
+}
