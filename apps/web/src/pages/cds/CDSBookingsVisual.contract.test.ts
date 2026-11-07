@@ -27,7 +27,7 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
   it('uses animated spatial atmosphere without communicating fabricated operational telemetry', () => {
     expect(cosmic).toContain('.cds-shell::before');
     expect(cosmic).toContain('.cds-shell::after');
-    expect(cosmic).toContain('@keyframes cds-cosmic-star-drift');
+    expect(cosmic).toContain('@keyframes cds-cosmic-starfield-float');
     expect(cosmic).toContain('@keyframes cds-crystal-veil');
     expect(cosmic).toContain('prefers-reduced-motion: reduce');
     expect(cosmic).toContain('pointer-events: none');
@@ -107,4 +107,20 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
     expect(bookingCss).toContain('@media (prefers-reduced-motion: reduce)');
     expect(bookingCss).toContain('color: #f2f6ff !important;');
   });
+
+  it('keeps perpetual cosmic motion compositor-friendly and restrained on mobile', () => {
+    const starfield = cosmic.match(/@keyframes cds-cosmic-starfield-float\\s*\\{([\\s\\S]*?)\\n\\}/)?.[1] ?? '';
+    const nebula = cosmic.match(/@keyframes cds-crystal-veil\\s*\\{([\\s\\S]*?)\\n\\}/)?.[1] ?? '';
+    expect(starfield).toContain('transform:');
+    expect(starfield).not.toMatch(/background-position|box-shadow|filter/);
+    expect(nebula).toContain('transform:');
+    expect(nebula).toContain('opacity:');
+    expect(nebula).not.toMatch(/background-position|box-shadow|filter/);
+    expect(cosmic).toContain('animation-duration: 168s;');
+    expect(cosmic).toContain('prefers-reduced-motion: reduce');
+    expect(polish).toContain('@media (hover: hover) and (pointer: fine)');
+    expect(polish).toContain('scale(.985)');
+    expect(polish).toContain('prefers-reduced-motion: reduce');
+  });
+
 });

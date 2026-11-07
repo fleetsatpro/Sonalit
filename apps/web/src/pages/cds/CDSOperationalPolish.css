@@ -865,3 +865,69 @@
     transition: none;
   }
 }
+
+
+/* Motion language — ambient by default, responsive to intent, quiet on touch.
+   Continuous motion is limited to the two compositor-friendly cosmic layers.
+   Content surfaces move only in response to a deliberate pointer interaction. */
+.cds-module-heading::after {
+  transform-origin: left center;
+  animation: cds-heading-accent-breathe 13s cubic-bezier(.37, 0, .63, 1) infinite alternate;
+}
+@keyframes cds-heading-accent-breathe {
+  from { opacity: .58; transform: scaleX(.82); }
+  to { opacity: 1; transform: scaleX(1.08); }
+}
+
+.cds-view-stage[data-view] button:not(:disabled) {
+  transition: transform .16s cubic-bezier(.2, .8, .2, 1);
+}
+.cds-view-stage[data-view] button:not(:disabled):active {
+  transform: scale(.985);
+}
+
+.cds-view-stage[data-view="bookings"] .cds-booking-metric,
+.cds-view-stage[data-view="bookings"] .cds-booking-record,
+.cds-view-stage[data-view="bookings"] .cds-booking-group {
+  transition:
+    transform .22s cubic-bezier(.2, .8, .2, 1),
+    border-color .22s ease;
+}
+.cds-view-stage[data-view="bookings"] .cds-booking-create,
+.cds-view-stage[data-view="bookings"] .cds-booking-view-switch button,
+.cds-view-stage[data-view="bookings"] .cds-booking-status-filters button,
+.cds-view-stage[data-view="bookings"] .cds-booking-group__toggle {
+  transition:
+    transform .16s cubic-bezier(.2, .8, .2, 1),
+    border-color .18s ease,
+    background-color .18s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cds-view-stage[data-view="bookings"] .cds-booking-metric:hover,
+  .cds-view-stage[data-view="bookings"] .cds-booking-record:hover {
+    transform: translate3d(0, -2px, 0);
+  }
+  .cds-view-stage[data-view="bookings"] .cds-booking-group:hover {
+    transform: translate3d(0, -1px, 0);
+  }
+  .cds-view-stage[data-view="bookings"] .cds-booking-view-switch button:hover:not([aria-pressed="true"]),
+  .cds-view-stage[data-view="bookings"] .cds-booking-status-filters button:hover:not([aria-pressed="true"]),
+  .cds-view-stage[data-view="bookings"] .cds-booking-group__toggle:hover {
+    transform: translate3d(0, -1px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cds-module-heading::after {
+    animation: none !important;
+    transform: none !important;
+  }
+  .cds-view-stage[data-view] button:not(:disabled),
+  .cds-view-stage[data-view="bookings"] .cds-booking-metric,
+  .cds-view-stage[data-view="bookings"] .cds-booking-record,
+  .cds-view-stage[data-view="bookings"] .cds-booking-group {
+    transition: none !important;
+    transform: none !important;
+  }
+}
