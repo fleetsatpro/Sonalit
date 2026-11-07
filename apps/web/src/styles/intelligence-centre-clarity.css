@@ -1,0 +1,839 @@
+/* Sonalit Intel Hub — final clarity and crystal-glass layer.
+   Kept deliberately separate from the legacy component sheets so one final,
+   auditable cascade owns legibility, contrast, surface opacity and focus. */
+
+.sonalit-intelligence-workspace {
+  --intel-crystal-ink: #07101f;
+  --intel-crystal-panel: #101b31;
+  --intel-crystal-raised: #162641;
+  --intel-crystal-text: #f4f8ff;
+  --intel-crystal-copy: #d3e0f0;
+  --intel-crystal-meta: #b3c4dc;
+  --intel-crystal-kicker: #a7e8f5;
+  --intel-crystal-focus: #8cecff;
+  --intel-crystal-line: rgba(153, 198, 244, .34);
+  --intel-crystal-line-strong: rgba(135, 226, 248, .56);
+  --intel-crystal-cyan: #8cecff;
+  --intel-crystal-violet: #c0b4ff;
+  --intel-crystal-critical: #ff9ca7;
+  --intel-crystal-high: #ffc08a;
+  --intel-crystal-medium: #f2d989;
+  --intel-crystal-low: #79e7c5;
+  color: var(--intel-crystal-text);
+  color-scheme: dark;
+  font-size: 14px;
+  line-height: 1.55;
+  font-weight: 500;
+  background:
+    radial-gradient(ellipse 70% 45% at 76% -8%, rgba(72, 133, 207, .2), transparent 68%),
+    radial-gradient(ellipse 48% 48% at 0% 44%, rgba(31, 165, 190, .1), transparent 72%),
+    radial-gradient(ellipse 52% 45% at 100% 88%, rgba(107, 83, 184, .1), transparent 70%),
+    linear-gradient(145deg, #080f1c 0%, #060b17 54%, #0a1020 100%);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.sonalit-intelligence-workspace .icw-shell {
+  grid-template-columns: 252px minmax(0, 1fr);
+  min-height: calc(100dvh - 56px);
+}
+
+.sonalit-intelligence-workspace .icw-rail {
+  border-right: 1px solid rgba(157, 194, 236, .24);
+  background:
+    radial-gradient(ellipse at 15% 0%, rgba(73, 180, 208, .16), transparent 52%),
+    linear-gradient(180deg, rgba(9, 19, 37, .985), rgba(6, 12, 25, .985));
+  box-shadow: 15px 0 46px rgba(0, 0, 0, .25), inset -1px 0 rgba(225, 244, 255, .055);
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+}
+
+.sonalit-intelligence-workspace .icw-brand {
+  border-bottom-color: rgba(157, 194, 236, .24);
+}
+
+.sonalit-intelligence-workspace .icw-brand-mark,
+.sonalit-intelligence-workspace .icw-nav-icon {
+  border-color: rgba(151, 213, 244, .4);
+  background:
+    linear-gradient(145deg, rgba(66, 112, 160, .48), rgba(28, 39, 75, .86)),
+    rgba(13, 27, 49, .94);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .17), inset 0 -1px rgba(107, 172, 224, .08), 0 9px 22px rgba(0, 0, 0, .24);
+}
+
+.sonalit-intelligence-workspace .icw-brand-copy strong,
+.sonalit-intelligence-workspace .icw-topbar-title h1,
+.sonalit-intelligence-workspace .icv-title-block h1,
+.sonalit-intelligence-workspace .icd-root .icd-top h1,
+.sonalit-intelligence-workspace .icd-root .icd-hero h2,
+.sonalit-intelligence-workspace .in-brand h1,
+.sonalit-intelligence-workspace .ia-page .ia-head h1,
+.sonalit-intelligence-workspace .ipd-root .ipd-head h1 {
+  color: var(--intel-crystal-text) !important;
+  background: none !important;
+  background-image: none !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  -webkit-text-fill-color: var(--intel-crystal-text) !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+.sonalit-intelligence-workspace .icw-brand-copy small,
+.sonalit-intelligence-workspace .icw-brand-copy span,
+.sonalit-intelligence-workspace .icw-nav-group-label,
+.sonalit-intelligence-workspace .icw-nav-copy small,
+.sonalit-intelligence-workspace .icw-nav-index,
+.sonalit-intelligence-workspace .icw-rail-foot span,
+.sonalit-intelligence-workspace .icw-rail-foot small {
+  color: var(--intel-crystal-meta);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .icw-brand-copy small,
+.sonalit-intelligence-workspace .icw-nav-group-label,
+.sonalit-intelligence-workspace .icw-rail-foot span {
+  color: var(--intel-crystal-kicker);
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.sonalit-intelligence-workspace .icw-nav-item {
+  min-height: 64px;
+  border-color: rgba(155, 194, 235, .14);
+  border-radius: 12px;
+  color: #e1ebf8;
+  background: rgba(14, 26, 47, .48);
+}
+
+.sonalit-intelligence-workspace .icw-nav-item:hover {
+  border-color: rgba(143, 212, 244, .42);
+  background: linear-gradient(105deg, rgba(34, 107, 135, .36), rgba(65, 65, 124, .28));
+  color: #fff;
+}
+
+.sonalit-intelligence-workspace .icw-nav-item[aria-current="page"] {
+  border-color: var(--intel-crystal-line-strong);
+  background:
+    linear-gradient(110deg, rgba(30, 112, 145, .46), rgba(72, 68, 137, .34)),
+    rgba(13, 28, 52, .92);
+  color: #fff;
+  box-shadow: inset 3px 0 var(--intel-crystal-cyan), inset 0 1px rgba(255,255,255,.12), 0 9px 24px rgba(0,0,0,.2);
+}
+
+.sonalit-intelligence-workspace .icw-nav-copy strong {
+  color: inherit;
+  font-size: 11.5px;
+  font-weight: 850;
+  line-height: 1.3;
+}
+
+.sonalit-intelligence-workspace .icw-topbar {
+  border-bottom-color: rgba(157, 194, 236, .28);
+}
+
+.sonalit-intelligence-workspace .icw-topbar-title > span {
+  color: var(--intel-crystal-kicker);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.sonalit-intelligence-workspace .icw-topbar-title h1 {
+  font-size: clamp(29px, 2.25vw, 37px);
+  letter-spacing: .035em;
+}
+
+.sonalit-intelligence-workspace .icw-topbar-title p {
+  color: var(--intel-crystal-copy);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.sonalit-intelligence-workspace .icw-secure-tag,
+.sonalit-intelligence-workspace .icw-clock-tag,
+.sonalit-intelligence-workspace .icw-motion-toggle {
+  min-height: 38px;
+  border: 1px solid var(--intel-crystal-line);
+  border-radius: 9px;
+  background: linear-gradient(145deg, rgba(27, 47, 77, .94), rgba(11, 22, 42, .97));
+  color: var(--intel-crystal-copy);
+  font-size: 10.5px;
+  font-weight: 800;
+  box-shadow: inset 0 1px rgba(255,255,255,.1), 0 6px 16px rgba(0,0,0,.16);
+}
+
+.sonalit-intelligence-workspace .icw-secure-tag svg,
+.sonalit-intelligence-workspace .icw-clock-tag svg {
+  color: var(--intel-crystal-cyan);
+}
+
+.sonalit-intelligence-workspace .icw-mobile-nav {
+  border-bottom-color: rgba(157, 194, 236, .26);
+}
+
+.sonalit-intelligence-workspace .icw-mobile-nav button {
+  min-height: 42px;
+  border: 1px solid var(--intel-crystal-line);
+  border-radius: 9px;
+  background: rgba(16, 31, 55, .96);
+  color: var(--intel-crystal-copy);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.sonalit-intelligence-workspace .icw-mobile-nav button[aria-current="page"] {
+  border-color: var(--intel-crystal-line-strong);
+  background: linear-gradient(110deg, rgba(24, 105, 135, .5), rgba(67, 64, 130, .42));
+  color: #fff;
+}
+
+/* Crystalline surfaces: depth comes from facets and edge-light, never washed-out text. */
+.sonalit-intelligence-workspace .icv-root .icv-controls,
+.sonalit-intelligence-workspace .icv-root .icv-metric,
+.sonalit-intelligence-workspace .icv-root .icv-panel,
+.sonalit-intelligence-workspace .icd-root .icd-hero,
+.sonalit-intelligence-workspace .icd-root .icd-kpi,
+.sonalit-intelligence-workspace .icd-root .icd-panel,
+.sonalit-intelligence-workspace .icd-root .icd-country,
+.sonalit-intelligence-workspace .ics-root .ics-source-card,
+.sonalit-intelligence-workspace .intelligence-live .in-card,
+.sonalit-intelligence-workspace .ia-page .ia-alert,
+.sonalit-intelligence-workspace .ipd-root .ipd-card,
+.sonalit-intelligence-workspace .ipd-root .ipd-coverage {
+  border: 1px solid var(--intel-crystal-line);
+  border-radius: 13px;
+  background:
+    radial-gradient(ellipse at 92% 0%, rgba(93, 139, 206, .19), transparent 43%),
+    linear-gradient(145deg, rgba(22, 38, 65, .97), rgba(10, 19, 37, .985));
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, .11),
+    inset 0 -1px rgba(114, 169, 225, .08),
+    0 15px 36px rgba(0, 0, 0, .22);
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-metric:hover,
+.sonalit-intelligence-workspace .icd-root .icd-country:hover,
+.sonalit-intelligence-workspace .ics-root .ics-source-card:hover,
+.sonalit-intelligence-workspace .ipd-root .ipd-card:hover {
+  border-color: var(--intel-crystal-line-strong);
+  box-shadow: inset 0 1px rgba(255,255,255,.14), 0 18px 40px rgba(0,0,0,.28), 0 0 24px rgba(84, 192, 231, .08);
+  transform: translateY(-2px);
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-panel-head,
+.sonalit-intelligence-workspace .icd-root .icd-panel > header {
+  border-bottom-color: rgba(153, 198, 244, .26);
+  background: linear-gradient(100deg, rgba(30, 52, 84, .88), rgba(14, 27, 50, .82));
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-panel-head h2,
+.sonalit-intelligence-workspace .icd-root .icd-panel > header b {
+  color: var(--intel-crystal-text);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-panel-head p,
+.sonalit-intelligence-workspace .icv-root .icv-window-note,
+.sonalit-intelligence-workspace .icv-root .icv-assurance-note,
+.sonalit-intelligence-workspace .icv-root .icv-event-copy,
+.sonalit-intelligence-workspace .icd-root .icd-viewhead p,
+.sonalit-intelligence-workspace .icd-root .icd-row > div span,
+.sonalit-intelligence-workspace .ics-root .ics-source-card > p,
+.sonalit-intelligence-workspace .intelligence-live .in-card p,
+.sonalit-intelligence-workspace .ia-page .ia-alert-main p,
+.sonalit-intelligence-workspace .ipd-root .ipd-card p {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-metric span,
+.sonalit-intelligence-workspace .icv-root .icv-metric small,
+.sonalit-intelligence-workspace .icd-root .icd-kpi span,
+.sonalit-intelligence-workspace .icd-root .icd-kpi small,
+.sonalit-intelligence-workspace .icd-root .icd-top-readout,
+.sonalit-intelligence-workspace .icd-root .icd-theatre label > span,
+.sonalit-intelligence-workspace .icd-root .icd-theatre-id span,
+.sonalit-intelligence-workspace .icd-root .icd-theatre-id small,
+.sonalit-intelligence-workspace .icd-root .icd-query kbd,
+.sonalit-intelligence-workspace .icd-root .icd-filterbar,
+.sonalit-intelligence-workspace .icd-root .icd-country small,
+.sonalit-intelligence-workspace .icd-root .icd-country em,
+.sonalit-intelligence-workspace .ics-root .ics-eyebrow,
+.sonalit-intelligence-workspace .ics-root .ics-source-type,
+.sonalit-intelligence-workspace .ics-root .ics-footnote,
+.sonalit-intelligence-workspace .intelligence-live .in-card-top,
+.sonalit-intelligence-workspace .intelligence-live .in-card-meta,
+.sonalit-intelligence-workspace .intelligence-live .in-card-foot,
+.sonalit-intelligence-workspace .ia-page .ia-meta,
+.sonalit-intelligence-workspace .ia-page .ia-meta-age,
+.sonalit-intelligence-workspace .ia-page .ia-read-label,
+.sonalit-intelligence-workspace .ipd-root .ipd-headline-meta,
+.sonalit-intelligence-workspace .ipd-root .ipd-signal-row small,
+.sonalit-intelligence-workspace .ipd-root .ipd-card-actions {
+  color: var(--intel-crystal-meta);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-metric strong,
+.sonalit-intelligence-workspace .icd-root .icd-kpi strong,
+.sonalit-intelligence-workspace .icd-root .icd-country strong,
+.sonalit-intelligence-workspace .ipd-root .ipd-coverage b {
+  color: var(--intel-crystal-text);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 16px rgba(118, 193, 239, .12);
+}
+
+.sonalit-intelligence-workspace .icd-root {
+  color: var(--intel-crystal-text);
+  font-size: 14px;
+  line-height: 1.55;
+  background:
+    radial-gradient(ellipse at 78% 0%, rgba(55, 128, 187, .16), transparent 42%),
+    linear-gradient(180deg, rgba(7, 15, 29, .5), rgba(5, 11, 22, .65));
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-top {
+  border-bottom-color: var(--intel-crystal-line);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-top h1 {
+  font-size: 36px;
+  line-height: 1.08;
+  letter-spacing: -.035em;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-top p,
+.sonalit-intelligence-workspace .icd-root .icd-hero p,
+.sonalit-intelligence-workspace .icd-root .icd-viewhead p {
+  color: var(--intel-crystal-copy);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-eyebrow,
+.sonalit-intelligence-workspace .icd-root .icd-kicker,
+.sonalit-intelligence-workspace .icd-root .icd-panel > header span,
+.sonalit-intelligence-workspace .icd-root .icd-evidence > b,
+.sonalit-intelligence-workspace .icd-root .icd-map-overlay span,
+.sonalit-intelligence-workspace .icd-root .icd-map-overlay small {
+  color: var(--intel-crystal-kicker);
+  font-size: 10.5px;
+  font-weight: 850;
+  letter-spacing: .1em;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-theatre > label,
+.sonalit-intelligence-workspace .icd-root .icd-query,
+.sonalit-intelligence-workspace .icd-root .icd-filterbar select,
+.sonalit-intelligence-workspace .icd-root .scope-chip,
+.sonalit-intelligence-workspace .icd-root .icd-theatre select {
+  border-color: var(--intel-crystal-line);
+  border-radius: 8px;
+  background: rgba(13, 27, 49, .97);
+  color: var(--intel-crystal-copy);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-theatre label > span,
+.sonalit-intelligence-workspace .icd-root .icd-theatre-id span {
+  color: var(--intel-crystal-kicker);
+  font-size: 10px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-theatre select,
+.sonalit-intelligence-workspace .icd-root .icd-query input,
+.sonalit-intelligence-workspace .icd-root .icd-filterbar select {
+  min-height: 40px;
+  color: var(--intel-crystal-text);
+  font-size: 12.5px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-theatre-id strong {
+  color: var(--intel-crystal-text);
+  font-size: 20px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-theatre-id small,
+.sonalit-intelligence-workspace .icd-root .icd-query kbd,
+.sonalit-intelligence-workspace .icd-root .icd-filterbar,
+.sonalit-intelligence-workspace .icd-root .scope-chip {
+  color: var(--intel-crystal-meta);
+  font-size: 10.5px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-nav {
+  border-color: var(--intel-crystal-line);
+  border-radius: 11px;
+  background: rgba(9, 19, 36, .97);
+  box-shadow: inset 0 1px rgba(255,255,255,.08), 0 8px 22px rgba(0,0,0,.16);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-nav button {
+  min-height: 52px;
+  border-right-color: rgba(153, 198, 244, .2);
+  color: var(--intel-crystal-copy);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-nav button b {
+  color: inherit;
+  font-size: 10.5px;
+  font-weight: 850;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-nav button span,
+.sonalit-intelligence-workspace .icd-root .icd-row .index,
+.sonalit-intelligence-workspace .icd-root .icd-row aside small {
+  color: var(--intel-crystal-meta);
+  font-size: 10px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-nav button.active {
+  background: linear-gradient(110deg, rgba(23, 100, 128, .6), rgba(65, 61, 123, .55));
+  color: #fff;
+  box-shadow: inset 0 1px rgba(255,255,255,.13), inset 0 -2px var(--intel-crystal-cyan);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-filterbar {
+  padding-block: 11px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-hero {
+  min-height: 270px;
+  padding: clamp(17px, 2vw, 26px);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-hero h2 {
+  font-size: clamp(34px, 3.1vw, 48px);
+  line-height: 1.04;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-hero-pills span {
+  border-color: var(--intel-crystal-line);
+  border-radius: 8px;
+  background: rgba(10, 23, 43, .94);
+  color: var(--intel-crystal-copy);
+  font-size: 10.5px;
+  font-weight: 750;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-kpis {
+  gap: 8px;
+  border: 0;
+  background: transparent;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-kpi {
+  min-height: 91px;
+  border: 1px solid rgba(153, 198, 244, .27);
+  border-radius: 11px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-kpi span,
+.sonalit-intelligence-workspace .icd-root .icd-kpi small {
+  font-size: 10.5px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-kpi strong {
+  margin-block: 7px 3px;
+  font-size: 28px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-panel {
+  overflow: hidden;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-panel > header {
+  padding: 13px 15px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-panel > header small {
+  color: var(--intel-crystal-meta);
+  font-size: 10px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-row {
+  min-height: 68px;
+  padding: 13px 14px;
+  border-bottom-color: rgba(153, 198, 244, .17);
+  background: rgba(9, 19, 35, .94);
+  color: var(--intel-crystal-text);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-row:hover {
+  background: linear-gradient(100deg, rgba(23, 76, 104, .75), rgba(43, 44, 90, .72));
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-row > div b {
+  color: var(--intel-crystal-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-row > div span {
+  color: var(--intel-crystal-copy);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-row aside em {
+  color: var(--intel-crystal-meta);
+  font-size: 10px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-sev {
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-sev.critical,
+.sonalit-intelligence-workspace .icd-root .icd-sev.high {
+  color: var(--intel-crystal-critical);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-sev.moderate {
+  color: var(--intel-crystal-medium);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-sev.low {
+  color: var(--intel-crystal-low);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-empty {
+  color: var(--intel-crystal-meta);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-empty b {
+  color: var(--intel-crystal-text);
+  font-size: 12px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-empty span {
+  color: var(--intel-crystal-copy);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-viewhead h2 {
+  color: var(--intel-crystal-text);
+  font-size: 31px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-map-overlay {
+  border-color: var(--intel-crystal-line);
+  border-radius: 9px;
+  background: rgba(7, 16, 31, .96);
+  box-shadow: 0 8px 25px rgba(0,0,0,.22);
+  backdrop-filter: blur(12px);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-map-overlay b {
+  color: var(--intel-crystal-text);
+  font-size: 24px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-country > div span,
+.sonalit-intelligence-workspace .icd-root .icd-country small,
+.sonalit-intelligence-workspace .icd-root .icd-country em {
+  color: var(--intel-crystal-meta);
+  font-size: 10.5px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-country strong {
+  color: var(--intel-crystal-text);
+  font-size: 31px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-drawer,
+.sonalit-intelligence-workspace .icd-root .icd-overlay {
+  border-color: var(--intel-crystal-line-strong);
+  background: rgba(4, 10, 22, .78);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-drawer {
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(69, 140, 204, .18), transparent 48%),
+    linear-gradient(155deg, rgba(18, 33, 57, .99), rgba(6, 13, 27, .995));
+  color: var(--intel-crystal-text);
+  box-shadow: -28px 0 72px rgba(0,0,0,.45), inset 1px 0 rgba(255,255,255,.08);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-field-grid small,
+.sonalit-intelligence-workspace .icd-root .icd-drawer header span,
+.sonalit-intelligence-workspace .icd-root .icd-drawer-meta > span {
+  color: var(--intel-crystal-kicker);
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-field-grid span,
+.sonalit-intelligence-workspace .icd-root .icd-drawer footer,
+.sonalit-intelligence-workspace .icd-root .icd-drawer pre {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-open {
+  min-height: 40px;
+  border-color: var(--intel-crystal-line);
+  border-radius: 8px;
+  background: linear-gradient(110deg, rgba(26, 94, 124, .66), rgba(63, 60, 119, .62));
+  color: #f4f8ff;
+  font-size: 11px;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-forecast-card,
+.sonalit-intelligence-workspace .icd-root .icd-forecast-detail,
+.sonalit-intelligence-workspace .icd-root .icd-forecast-measure,
+.sonalit-intelligence-workspace .icd-root .icd-forecast-register {
+  border-color: var(--intel-crystal-line);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(20, 36, 61, .97), rgba(9, 18, 35, .985));
+  box-shadow: inset 0 1px rgba(255,255,255,.08), 0 10px 26px rgba(0,0,0,.2);
+}
+
+.sonalit-intelligence-workspace .icd-root :is(.icd-forecast-card, .icd-forecast-detail, .icd-forecast-measure, .icd-forecast-register) :is(small, label, span) {
+  color: var(--intel-crystal-meta);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .icd-root :is(.icd-forecast-card, .icd-forecast-detail, .icd-forecast-measure, .icd-forecast-register) p {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* The remaining workspaces share the same readable glass and control grammar. */
+.sonalit-intelligence-workspace .ia-page,
+.sonalit-intelligence-workspace .intelligence-live,
+.sonalit-intelligence-workspace .ics-root,
+.sonalit-intelligence-workspace .ipd-root {
+  color: var(--intel-crystal-text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-head p,
+.sonalit-intelligence-workspace .intelligence-live .in-head p,
+.sonalit-intelligence-workspace .ics-root .ics-heading p,
+.sonalit-intelligence-workspace .ipd-root .ipd-head p {
+  color: var(--intel-crystal-copy);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-head-posture,
+.sonalit-intelligence-workspace .ia-page .ia-assessment-caveat,
+.sonalit-intelligence-workspace .ia-page .ia-assessment-basis,
+.sonalit-intelligence-workspace .ia-page .ia-posture-grid span,
+.sonalit-intelligence-workspace .ia-page .ia-severity-guide,
+.sonalit-intelligence-workspace .ia-page .ia-meta,
+.sonalit-intelligence-workspace .ia-page .ia-meta-age,
+.sonalit-intelligence-workspace .intelligence-live .in-subbar,
+.sonalit-intelligence-workspace .intelligence-live .in-substatus,
+.sonalit-intelligence-workspace .intelligence-live .in-card-top,
+.sonalit-intelligence-workspace .intelligence-live .in-card-meta,
+.sonalit-intelligence-workspace .intelligence-live .in-card-foot,
+.sonalit-intelligence-workspace .ics-root .ics-footnote,
+.sonalit-intelligence-workspace .ics-root .ics-detail-field small,
+.sonalit-intelligence-workspace .ics-root .ics-source-details small,
+.sonalit-intelligence-workspace .ipd-root .ipd-headline-meta span,
+.sonalit-intelligence-workspace .ipd-root .ipd-signal-row small,
+.sonalit-intelligence-workspace .ipd-root .ipd-card-actions {
+  color: var(--intel-crystal-meta);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert-main p,
+.sonalit-intelligence-workspace .intelligence-live .in-card p,
+.sonalit-intelligence-workspace .intelligence-live .in-principle span,
+.sonalit-intelligence-workspace .ics-root .ics-source-card > p,
+.sonalit-intelligence-workspace .ics-root .ics-detail-field b,
+.sonalit-intelligence-workspace .ipd-root .ipd-card p,
+.sonalit-intelligence-workspace .ipd-root .ipd-summary p,
+.sonalit-intelligence-workspace .ipd-root .ipd-sections p {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert-top b,
+.sonalit-intelligence-workspace .intelligence-live .in-card h2,
+.sonalit-intelligence-workspace .intelligence-live .in-card h3,
+.sonalit-intelligence-workspace .ics-root .ics-source-card h3,
+.sonalit-intelligence-workspace .ipd-root .ipd-card h2 {
+  color: var(--intel-crystal-text);
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-severity-levels,
+.sonalit-intelligence-workspace .ia-page .ia-assessment-grid,
+.sonalit-intelligence-workspace .ics-root .ics-quality-strip,
+.sonalit-intelligence-workspace .ics-root .ics-detail-grid,
+.sonalit-intelligence-workspace .ipd-root .ipd-signal-row > div {
+  border-color: var(--intel-crystal-line);
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-detail,
+.sonalit-intelligence-workspace .ics-root .ics-drawer,
+.sonalit-intelligence-workspace .ic-evidence-drawer,
+.sonalit-intelligence-workspace .ipd-root .ipd-modal article {
+  border-color: var(--intel-crystal-line-strong);
+  background:
+    radial-gradient(ellipse at 95% 0%, rgba(72, 137, 202, .18), transparent 47%),
+    linear-gradient(145deg, rgba(18, 34, 59, .99), rgba(6, 13, 27, .995));
+  color: var(--intel-crystal-text);
+  box-shadow: 0 25px 76px rgba(0,0,0,.48), inset 0 1px rgba(255,255,255,.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.sonalit-intelligence-workspace .ipd-root .ipd-controls select,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-fields select,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-fields textarea,
+.sonalit-intelligence-workspace .ics-root .ics-register-tools select,
+.sonalit-intelligence-workspace .ics-root .ics-search input,
+.sonalit-intelligence-workspace .ia-page select,
+.sonalit-intelligence-workspace .intelligence-live input {
+  min-height: 42px;
+  border: 1px solid var(--intel-crystal-line);
+  border-radius: 8px;
+  background: rgba(7, 17, 33, .97);
+  color: var(--intel-crystal-text);
+  font-size: 12.5px;
+}
+
+.sonalit-intelligence-workspace .ipd-root .ipd-headline-meta span,
+.sonalit-intelligence-workspace .ipd-root .ipd-signal-row > div {
+  border-color: var(--intel-crystal-line);
+  background: rgba(10, 23, 43, .9);
+}
+
+.sonalit-intelligence-workspace .ipd-root .ipd-template-open,
+.sonalit-intelligence-workspace .ipd-root .ipd-template-use,
+.sonalit-intelligence-workspace .ics-root .ics-run-button,
+.sonalit-intelligence-workspace .ia-page .ia-refresh,
+.sonalit-intelligence-workspace .intelligence-live button {
+  min-height: 40px;
+  border: 1px solid var(--intel-crystal-line);
+  border-radius: 8px;
+  background: linear-gradient(110deg, rgba(27, 101, 131, .78), rgba(66, 63, 126, .72));
+  color: #f4f8ff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.sonalit-intelligence-workspace .icw-main :is(button, a, input, select, textarea, [tabindex]):focus-visible,
+.sonalit-intelligence-workspace .icw-rail :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--intel-crystal-focus);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgba(140, 236, 255, .16);
+}
+
+.sonalit-intelligence-workspace .icw-main :is(input, select, textarea)::placeholder,
+.sonalit-intelligence-workspace .icd-root :is(input, select, textarea)::placeholder {
+  color: #aabbd2;
+  opacity: 1;
+}
+
+.sonalit-intelligence-workspace .icw-main a,
+.sonalit-intelligence-workspace .icd-root a,
+.sonalit-intelligence-workspace .ipd-root a {
+  color: #a8e9ff;
+  text-decoration-color: rgba(168, 233, 255, .55);
+  text-underline-offset: 3px;
+}
+
+.sonalit-intelligence-workspace :is(.icd-root, .icv-root, .ia-page, .intelligence-live, .ics-root, .ipd-root) :is(button, input, select, textarea) {
+  font-family: inherit;
+}
+
+.sonalit-intelligence-workspace .icd-root :is(button, select),
+.sonalit-intelligence-workspace .ics-root :is(button, select),
+.sonalit-intelligence-workspace .ipd-root :is(button, select) {
+  cursor: pointer;
+}
+
+.sonalit-intelligence-workspace .icd-root button:disabled,
+.sonalit-intelligence-workspace .ics-root button:disabled,
+.sonalit-intelligence-workspace .ipd-root button:disabled {
+  cursor: not-allowed;
+  filter: saturate(.55);
+  opacity: .72;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-sev.critical,
+.sonalit-intelligence-workspace .ia-page .ia-severity-critical,
+.sonalit-intelligence-workspace .icd-root .icd-sev.high {
+  color: var(--intel-crystal-critical);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-sev.moderate,
+.sonalit-intelligence-workspace .ia-page .ia-severity-medium {
+  color: var(--intel-crystal-medium);
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-sev.low {
+  color: var(--intel-crystal-low);
+}
+
+@media (max-width: 1180px) {
+  .sonalit-intelligence-workspace .icw-shell {
+    grid-template-columns: 218px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 960px) {
+  .sonalit-intelligence-workspace .icw-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sonalit-intelligence-workspace .icw-rail {
+    position: relative;
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--intel-crystal-line);
+  }
+}
+
+@media (max-width: 680px) {
+  .sonalit-intelligence-workspace {
+    font-size: 14px;
+  }
+  .sonalit-intelligence-workspace .icw-main {
+    padding-inline: 12px;
+  }
+  .sonalit-intelligence-workspace .icw-topbar-title h1 {
+    font-size: 29px;
+  }
+  .sonalit-intelligence-workspace .icd-root .icd-hero h2 {
+    font-size: 34px;
+  }
+  .sonalit-intelligence-workspace .icd-root .icd-row {
+    min-height: 72px;
+  }
+  .sonalit-intelligence-workspace .icd-root .icd-row > div span {
+    white-space: normal;
+  }
+  .sonalit-intelligence-workspace .icd-root .icd-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sonalit-intelligence-workspace *,
+  .sonalit-intelligence-workspace *::before,
+  .sonalit-intelligence-workspace *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
