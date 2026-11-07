@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, Search, Radio, Sparkles, TrendingUp, X, ExternalLink, Globe2 } from 'lucide-react';
+import { ArrowUpRight, Search, Radio, Sparkles, TrendingUp, X, ExternalLink, Globe2, Shield } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { displayText, safeExternalUrl } from '../lib/intelligenceText.js';
 const EAST_AFRICA=new Set(['KE','TZ','UG','RW','BI','CD','SS','SO','ET']);
