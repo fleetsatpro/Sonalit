@@ -859,6 +859,326 @@
   color: var(--intel-crystal-low);
 }
 
+
+/* Dense operational metadata: make every sub-workspace readable at working distance.
+   The older sheets contained 6–10px labels; these scoped rules deliberately lift
+   the information floor without inflating the dashboard or changing semantics. */
+
+/* Command Picture — live metrics, event rows, map readouts and evidence drawer. */
+.sonalit-intelligence-workspace .icv-root .icv-eyebrow,
+.sonalit-intelligence-workspace .icv-root .icv-control-group > span,
+.sonalit-intelligence-workspace .icv-root .icv-window-note,
+.sonalit-intelligence-workspace .icv-root .icv-metric span,
+.sonalit-intelligence-workspace .icv-root .icv-metric small,
+.sonalit-intelligence-workspace .icv-root .icv-panel-head > div > span,
+.sonalit-intelligence-workspace .icv-root .icv-map-legend span,
+.sonalit-intelligence-workspace .icv-root .icv-map-readout span,
+.sonalit-intelligence-workspace .icv-root .icv-map-readout small,
+.sonalit-intelligence-workspace .icv-root .icv-map-footer,
+.sonalit-intelligence-workspace .icv-root .icv-warning-row small,
+.sonalit-intelligence-workspace .icv-root .icv-country-row small,
+.sonalit-intelligence-workspace .icv-root .icv-panel-state,
+.sonalit-intelligence-workspace .icv-root .icv-event-copy small,
+.sonalit-intelligence-workspace .icv-root .icv-event-meta b,
+.sonalit-intelligence-workspace .icv-root .icv-event-meta small,
+.sonalit-intelligence-workspace .icv-root .icv-assurance-lines span,
+.sonalit-intelligence-workspace .icv-root .icv-assurance-lines b,
+.sonalit-intelligence-workspace .icv-root .icv-drawer > header > span,
+.sonalit-intelligence-workspace .icv-root .icv-drawer-tags span,
+.sonalit-intelligence-workspace .icv-root .icv-drawer-fields small,
+.sonalit-intelligence-workspace .icv-root .icv-evidence-row small,
+.sonalit-intelligence-workspace .icv-root .icv-related-row span,
+.sonalit-intelligence-workspace .icv-root .icv-drawer > footer {
+  color: var(--intel-crystal-meta);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-panel-head p,
+.sonalit-intelligence-workspace .icv-root .icv-assurance-note,
+.sonalit-intelligence-workspace .icv-root .icv-drawer-body > p,
+.sonalit-intelligence-workspace .icv-root .icv-evidence-row p {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-event-copy strong,
+.sonalit-intelligence-workspace .icv-root .icv-warning-row > b,
+.sonalit-intelligence-workspace .icv-root .icv-related-row b,
+.sonalit-intelligence-workspace .icv-root .icv-evidence-row strong {
+  color: var(--intel-crystal-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-drawer-fields b {
+  color: var(--intel-crystal-text);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.sonalit-intelligence-workspace .icv-root .icv-refresh,
+.sonalit-intelligence-workspace .icv-root .icv-clear-scope,
+.sonalit-intelligence-workspace .icv-root .icv-basemap-toggle button,
+.sonalit-intelligence-workspace .icv-root .icv-heading-actions button {
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+/* Analysis Workbench — record indexes, source fields and severity indicators. */
+.sonalit-intelligence-workspace .icd-root .icd-eyebrow,
+.sonalit-intelligence-workspace .icd-root .icd-kicker,
+.sonalit-intelligence-workspace .icd-root .icd-theatre label > span,
+.sonalit-intelligence-workspace .icd-root .icd-theatre-id small,
+.sonalit-intelligence-workspace .icd-root .icd-nav button span,
+.sonalit-intelligence-workspace .icd-root .icd-nav button b,
+.sonalit-intelligence-workspace .icd-root .icd-filterbar,
+.sonalit-intelligence-workspace .icd-root .icd-kpi > span,
+.sonalit-intelligence-workspace .icd-root .icd-kpi > small,
+.sonalit-intelligence-workspace .icd-root .icd-panel > header small,
+.sonalit-intelligence-workspace .icd-root .icd-row .index,
+.sonalit-intelligence-workspace .icd-root .icd-row aside em,
+.sonalit-intelligence-workspace .icd-root .icd-row aside small,
+.sonalit-intelligence-workspace .icd-root .icd-map-overlay span,
+.sonalit-intelligence-workspace .icd-root .icd-map-overlay small,
+.sonalit-intelligence-workspace .icd-root .icd-field-grid small,
+.sonalit-intelligence-workspace .icd-root .icd-forecast-validity,
+.sonalit-intelligence-workspace .icd-root .icd-forecast-status-grid small {
+  color: var(--intel-crystal-meta);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-row > div b,
+.sonalit-intelligence-workspace .icd-root .icd-sev,
+.sonalit-intelligence-workspace .icd-root .icd-field-grid span,
+.sonalit-intelligence-workspace .icd-root .icd-forecast-measure b {
+  color: var(--intel-crystal-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-row > div span,
+.sonalit-intelligence-workspace .icd-root .icd-forecast-detail p,
+.sonalit-intelligence-workspace .icd-root .icd-forecast-card p {
+  color: var(--intel-crystal-copy);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .icd-root .icd-filterbar select,
+.sonalit-intelligence-workspace .icd-root .icd-theatre select,
+.sonalit-intelligence-workspace .icd-root .icd-query input {
+  min-height: 40px;
+  color: var(--intel-crystal-text);
+  font-size: 12.5px;
+}
+
+/* Incident Fabric — triage badges, lead classification and drawer evidence. */
+.sonalit-intelligence-workspace .ia-page .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-page .ia-alert-top em,
+.sonalit-intelligence-workspace .ia-page .ia-unverified,
+.sonalit-intelligence-workspace .ia-page .ia-meta,
+.sonalit-intelligence-workspace .ia-page .ia-meta small,
+.sonalit-intelligence-workspace .ia-page .ia-head-posture,
+.sonalit-intelligence-workspace .ia-page .ia-read-label,
+.sonalit-intelligence-workspace .ia-page .ia-last,
+.sonalit-intelligence-workspace .ia-page .ia-posture-grid span,
+.sonalit-intelligence-workspace .ia-page .ia-posture-grid b,
+.sonalit-intelligence-workspace .ia-page .ia-detail-badges span,
+.sonalit-intelligence-workspace .ia-page .ia-drawer .field small {
+  color: var(--intel-crystal-meta);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert-main h3 {
+  color: var(--intel-crystal-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-alert-main p,
+.sonalit-intelligence-workspace .ia-page .ia-side p,
+.sonalit-intelligence-workspace .ia-page .ia-empty span,
+.sonalit-intelligence-workspace .ia-page .ia-assessment-caveat,
+.sonalit-intelligence-workspace .ia-page .ia-drawer .field span {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-feed-head b,
+.sonalit-intelligence-workspace .ia-page .ia-side h3,
+.sonalit-intelligence-workspace .ia-page .ia-empty b,
+.sonalit-intelligence-workspace .ia-page .ia-drawer header h2 {
+  color: var(--intel-crystal-text);
+}
+
+.sonalit-intelligence-workspace .ia-page .ia-scope-control button,
+.sonalit-intelligence-workspace .ia-page .ia-cat-control button,
+.sonalit-intelligence-workspace .ia-page .ia-refresh,
+.sonalit-intelligence-workspace .ia-page .ia-drawer header button,
+.sonalit-intelligence-workspace .ia-page .ia-drawer .field a {
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+/* Newsroom — source metadata stays readable, event rows remain editorial records. */
+.sonalit-intelligence-workspace .intelligence-live .in-live,
+.sonalit-intelligence-workspace .intelligence-live .in-subbar,
+.sonalit-intelligence-workspace .intelligence-live .in-substatus,
+.sonalit-intelligence-workspace .intelligence-live .in-search kbd,
+.sonalit-intelligence-workspace .intelligence-live .in-card-top,
+.sonalit-intelligence-workspace .intelligence-live .in-card-top time,
+.sonalit-intelligence-workspace .intelligence-live .in-card-meta,
+.sonalit-intelligence-workspace .intelligence-live .in-card-foot,
+.sonalit-intelligence-workspace .intelligence-live .in-metric small,
+.sonalit-intelligence-workspace .intelligence-live .in-metric span,
+.sonalit-intelligence-workspace .intelligence-live .in-system-line,
+.sonalit-intelligence-workspace .intelligence-live .in-system-line span,
+.sonalit-intelligence-workspace .intelligence-live .in-system-line b,
+.sonalit-intelligence-workspace .intelligence-live .in-section-head > span,
+.sonalit-intelligence-workspace .intelligence-live .in-event small,
+.sonalit-intelligence-workspace .intelligence-live .in-stale-note,
+.sonalit-intelligence-workspace .intelligence-live .ic-evidence-badges span,
+.sonalit-intelligence-workspace .intelligence-live .ic-evidence-grid small {
+  color: var(--intel-crystal-meta);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.sonalit-intelligence-workspace .intelligence-live .in-event b,
+.sonalit-intelligence-workspace .intelligence-live .in-card h3,
+.sonalit-intelligence-workspace .intelligence-live .in-card h2,
+.sonalit-intelligence-workspace .intelligence-live .ic-evidence-grid b {
+  color: var(--intel-crystal-text);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .intelligence-live .in-card p,
+.sonalit-intelligence-workspace .intelligence-live .in-event > span,
+.sonalit-intelligence-workspace .intelligence-live .in-principle span,
+.sonalit-intelligence-workspace .intelligence-live .in-feed-state span,
+.sonalit-intelligence-workspace .intelligence-live .ic-evidence-note p,
+.sonalit-intelligence-workspace .intelligence-live .ic-evidence-body p {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .intelligence-live .in-principle strong,
+.sonalit-intelligence-workspace .intelligence-live .in-feed-state b,
+.sonalit-intelligence-workspace .intelligence-live .ic-evidence-note strong,
+.sonalit-intelligence-workspace .intelligence-live .ic-evidence-body small {
+  color: var(--intel-crystal-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sonalit-intelligence-workspace .intelligence-live .in-controls button,
+.sonalit-intelligence-workspace .intelligence-live .in-search input,
+.sonalit-intelligence-workspace .intelligence-live .ic-evidence-open,
+.sonalit-intelligence-workspace .intelligence-live .ic-evidence-drawer header button {
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+/* Collection Control — provider state and source lineage must not fade into chrome. */
+.sonalit-intelligence-workspace .ics-root .ics-eyebrow,
+.sonalit-intelligence-workspace .ics-root .ics-metrics span,
+.sonalit-intelligence-workspace .ics-root .ics-metrics small,
+.sonalit-intelligence-workspace .ics-root .ics-quality-strip > div span,
+.sonalit-intelligence-workspace .ics-root .ics-quality-strip > p,
+.sonalit-intelligence-workspace .ics-root .ics-source-type,
+.sonalit-intelligence-workspace .ics-root .ics-state-pill,
+.sonalit-intelligence-workspace .ics-root .ics-source-details small,
+.sonalit-intelligence-workspace .ics-root .ics-source-card footer,
+.sonalit-intelligence-workspace .ics-root .ics-footnote,
+.sonalit-intelligence-workspace .ics-root .ics-drawer > header span,
+.sonalit-intelligence-workspace .ics-root .ics-state-banner b,
+.sonalit-intelligence-workspace .ics-root .ics-state-banner span,
+.sonalit-intelligence-workspace .ics-root .ics-detail-grid small,
+.sonalit-intelligence-workspace .ics-root .ics-detail-field small,
+.sonalit-intelligence-workspace .ics-root .ics-run-error small,
+.sonalit-intelligence-workspace .ics-root .ics-drawer > footer {
+  color: var(--intel-crystal-meta);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.sonalit-intelligence-workspace .ics-root .ics-source-card h3,
+.sonalit-intelligence-workspace .ics-root .ics-source-details b,
+.sonalit-intelligence-workspace .ics-root .ics-detail-grid b,
+.sonalit-intelligence-workspace .ics-root .ics-detail-field b {
+  color: var(--intel-crystal-text);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .ics-root .ics-source-card > p,
+.sonalit-intelligence-workspace .ics-root .ics-quality-strip > p,
+.sonalit-intelligence-workspace .ics-root .ics-notice,
+.sonalit-intelligence-workspace .ics-root .ics-service-error,
+.sonalit-intelligence-workspace .ics-root .ics-policy-note,
+.sonalit-intelligence-workspace .ics-root .ics-run-error p {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .ics-root .ics-source-link,
+.sonalit-intelligence-workspace .ics-root .ics-refresh,
+.sonalit-intelligence-workspace .ics-root .ics-run-button,
+.sonalit-intelligence-workspace .ics-root .ics-register-tools select,
+.sonalit-intelligence-workspace .ics-root .ics-search input {
+  font-size: 12px;
+}
+
+/* Publications — labels and handling controls are part of the decision record. */
+.sonalit-intelligence-workspace .ipd-root .ipd-headline-meta span,
+.sonalit-intelligence-workspace .ipd-root .ipd-coverage small,
+.sonalit-intelligence-workspace .ipd-root .ipd-top em,
+.sonalit-intelligence-workspace .ipd-root .ipd-signal-row small,
+.sonalit-intelligence-workspace .ipd-root .ipd-signal-row span,
+.sonalit-intelligence-workspace .ipd-root .ipd-card-actions,
+.sonalit-intelligence-workspace .ipd-root .ipd-summary small,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-fields label,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-caution,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-notice {
+  color: var(--intel-crystal-meta);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.sonalit-intelligence-workspace .ipd-root .ipd-signal-row b,
+.sonalit-intelligence-workspace .ipd-root .ipd-summary b,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-head h3 {
+  color: var(--intel-crystal-text);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-head p,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-notice,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-caution {
+  color: var(--intel-crystal-copy);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.sonalit-intelligence-workspace .ipd-root .ipd-controls select,
+.sonalit-intelligence-workspace .ipd-root .ipd-card-actions button,
+.sonalit-intelligence-workspace .ipd-root .ipd-template-open,
+.sonalit-intelligence-workspace .ipd-root .ipd-template-use,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-fields select,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-fields textarea,
+.sonalit-intelligence-workspace .ipd-root .ipd-handling-fields button {
+  font-size: 12px;
+}
+
 @media (max-width: 1180px) {
   .sonalit-intelligence-workspace .icw-shell {
     grid-template-columns: 218px minmax(0, 1fr);
