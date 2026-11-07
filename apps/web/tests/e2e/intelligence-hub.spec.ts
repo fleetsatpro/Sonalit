@@ -31,6 +31,7 @@ const ALERT = {
   category: 'armed_attack',
   country_code: 'KE',
   source_name: 'E2E source fixture',
+  source_url: 'javascript:alert(1)',
   source_count: 2,
   confidence: 65,
   verification_state: 'unverified',
@@ -47,6 +48,16 @@ const ALERT = {
   },
 };
 
+const OBSERVATION = {
+  id: 'e2e-intel-observation-0001',
+  title: '[E2E FIXTURE] External source link validation',
+  body: '[E2E FIXTURE] A test-only observation with an unsafe source URL.',
+  url: 'javascript:alert(1)',
+  source_name: 'E2E source fixture',
+  country_code: 'KE',
+  observed_at: '2026-11-06T18:10:00.000Z',
+};
+ 
 async function seedAdmin(page: Page, role: string = 'admin') {
   await page.addInitScript(({ user }: { user: object }) => {
     localStorage.setItem('sonalit-auth', JSON.stringify({ state: { user }, version: 0 }));
@@ -78,6 +89,9 @@ async function stubIntelApi(page: Page, options: { alertsFailure?: boolean } = {
         contentType: 'application/json',
         body: JSON.stringify({ status: { sources: 2, latest_alert: ALERT.last_seen_at } }),
       });
+    }
+    if (path === '/risk/intelligence/observations') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ observations: [OBSERVATION] }) });
     }
     if (path === '/risk/intelligence/events') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ events: [EVENT] }) });
@@ -187,6 +201,21 @@ test.describe('Intel Hub restricted workspace', () => {
     await expect(drawer).toContainText('IMMEDIATE');
     await expect(drawer).toContainText('WHY THIS LEVEL');
     await expect(drawer).toContainText('A public-signal lead is not a verified incident.');
+  });
+
+  test('rejects non-web source URLs in alert and newsroom evidence drawers', async ({ page }) => {
+    await seedAdmin(page);
+    await stubIntelApi(page);
+    await page.goto('/intelligence?module=alerts');
+
+    await page.locator('.ia-alert').filter({ hasText: ALERT.title }).click();
+    await expect(page.locator('.ia-drawer a')).toHaveCount(0);
+
+    await page.goto('/intelligence?module=newsroom');
+    const observation = page.locator('.in-card').filter({ hasText: OBSERVATION.title });
+    await expect(observation).toBeVisible();
+    await observation.click();
+    await expect(page.locator('.ic-evidence-drawer a')).toHaveCount(0);
   });
 
   test('does not represent an alert API failure as an empty incident window', async ({ page }) => {
