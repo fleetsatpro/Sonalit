@@ -238,7 +238,10 @@ function assessIncidentSeverity(category, value) {
         reasonCodes.push('ARMED_GROUP_REFERENCE_UNSPECIFIED');
       }
     } else {
-      const abductionEvent = (hostageCount != null && hostageCount > 0) || (!noAbductionClaim && /\b(?:kidnapped|abducted|kidnapping(?:s)? reported|abduction reported|kidnapping of|kidnapping|taken hostage|held hostage|hostage[- ]taking|hostages? held|take(?:s|n|ing) (?:multiple )?hostages?|hostage crisis)\b/.test(text));
+      const abductionEvidenceText = text
+        .replace(/\b(?:no|without)\s+(?:(?:reported|confirmed|known)\s+)?(?:mass[- ]hostage[- ]taking|mass[- ]hostage crisis|large[- ]scale hostage crisis|multiple hostages?(?:\s+at\s+(?:a\s+)?(?:school|hospital|embassy|airport|public venue))?)\b/gi, ' ')
+        .replace(/\bno\s+evidence\s+of\s+(?:a\s+)?(?:mass[- ]hostage[- ]taking|mass[- ]hostage crisis|large[- ]scale hostage crisis)\b/gi, ' ');
+      const abductionEvent = (hostageCount != null && hostageCount > 0) || (!noAbductionClaim && /\b(?:kidnapped|abducted|kidnapping(?:s)? reported|abduction reported|kidnapping of|kidnapping|taken hostage|held hostage|hostage[- ]taking|hostages? held|take(?:s|n|ing) (?:multiple )?hostages?|hostage crisis)\b/.test(abductionEvidenceText));
       if (abductionEvent && !foiled && !preventive) {
         severity = 'high';
         basis.push('Reported kidnapping, abduction or hostage-taking; scale and victim status remain separate questions');
