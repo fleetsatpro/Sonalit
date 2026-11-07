@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8');
 const cosmic = read('./CDSCosmicVisual.css');
 const bookingCss = read('./CDSBookingsVisual.css');
+const overviewCss = read('./CDSOverviewVisual.css');
 const bookings = read('./CDSBookings.tsx');
 const manifest = read('./BookingManifest.tsx');
 const group = read('./BookingGroup.tsx');
@@ -54,6 +55,15 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
     expect(bookings).toContain('aria-expanded={open}');
     expect(bookings).toContain('cds-booking-record__edit');
     expect(bookings).not.toContain('onClick={(e) => { e.stopPropagation(); onEdit(booking); }}');
+  });
+
+  it('uses compact, information-first card proportions across the CDS command surfaces', () => {
+    expect(bookingCss).toContain('.cds-booking-command {\n  min-height: 132px !important;');
+    expect(bookingCss).toContain('.cds-booking-metric {\n  min-height: 76px !important;');
+    expect(bookingCss).toContain('.cds-booking-group__toggle {\n  min-height: 54px !important;');
+    expect(overviewCss).toContain('.cds-shell .cds-overview-metric {\n  min-height: 112px !important;');
+    expect(overviewCss).toContain('.cds-overview-secondary__item {\n  min-height: 76px !important;');
+    expect(cosmic).toContain('animation: none !important;');
   });
 
   it('provides a responsive, keyboard-readable, reduced-motion-safe booking intake dialog', () => {
