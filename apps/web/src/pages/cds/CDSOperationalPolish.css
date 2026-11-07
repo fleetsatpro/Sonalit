@@ -1593,3 +1593,90 @@
   .cds-lock-device, .cds-lock-filters button, .cds-lock-power-watch__items > button { transition: none !important; }
   .cds-lock-device:hover { transform: none; }
 }
+
+.cds-lock-battery--unverified .cds-lock-battery__icon,
+.cds-lock-battery--unverified .cds-lock-battery__reading { color: #9bb0c8; }
+.cds-lock-battery__charge--unverified { color: #8ca2bb; }
+.cds-lock-battery-trend {
+  padding: 11px;
+  border: 1px solid rgba(135, 176, 216, .14);
+  border-radius: 8px;
+  background: linear-gradient(140deg, rgba(10, 27, 46, .86), rgba(8, 17, 31, .88));
+}
+.cds-lock-battery-trend > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.cds-lock-battery-trend > header > div:first-child { display: grid; gap: 3px; }
+.cds-lock-battery-trend > header > div:first-child > span {
+  color: #85add1;
+  font: 700 7px var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .12em;
+}
+.cds-lock-battery-trend > header > div:first-child > b { color: #e3eefb; font-size: 10px; }
+.cds-lock-battery-trend__reading { display: grid; justify-items: end; gap: 2px; }
+.cds-lock-battery-trend__reading strong {
+  color: #c9f1e4;
+  font: 760 16px var(--font-mono, ui-monospace, monospace);
+}
+.cds-lock-battery-trend__reading small {
+  color: #839bb6;
+  font: 700 7px var(--font-mono, ui-monospace, monospace);
+}
+.cds-lock-battery-trend__chart {
+  display: block;
+  width: 100%;
+  height: 68px;
+  margin-top: 8px;
+  overflow: visible;
+  color: #6bd8b4;
+}
+.cds-lock-battery-trend__grid {
+  fill: none;
+  stroke: rgba(139, 175, 212, .14);
+  stroke-width: .75;
+  stroke-dasharray: 2 3;
+}
+.cds-lock-battery-trend__line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgba(82, 218, 175, .28));
+}
+.cds-lock-battery-trend__point {
+  fill: #0b1b2e;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+.cds-lock-battery-trend__point:last-child { fill: #a2f4d8; }
+.cds-lock-battery-trend__range {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #8099b5;
+  font: 700 7px var(--font-mono, ui-monospace, monospace);
+}
+.cds-lock-battery-trend__empty {
+  margin-top: 9px;
+  padding: 13px 8px;
+  border: 1px dashed rgba(137, 177, 219, .16);
+  border-radius: 6px;
+  color: #91a8c2;
+  font-size: 8px;
+  line-height: 1.5;
+  text-align: center;
+}
+.cds-lock-battery-trend__footnote {
+  display: block;
+  margin-top: 8px;
+  color: #7188a3;
+  font-size: 7px;
+  line-height: 1.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cds-lock-battery-trend__line { filter: none; }
+}
