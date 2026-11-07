@@ -110,4 +110,41 @@ describe('Weather Studio evidence and interaction contract', () => {
   });
 
 
+
+  it('separates forecast controls and makes detailed source lineage available on demand', () => {
+    expect(page).toContain('wx-toolbar-primary');
+    expect(page).toContain('wx-toolbar-secondary');
+    expect(page).toContain('<details className="wx-card wx-source-card"');
+    expect(page).toContain('wx-source-summary');
+    expect(styles).toContain('.wx-warning-card .wx-warning-list');
+    expect(styles).toContain('.wx-toolbar-secondary');
+  });
+
+
+  it('keeps the map key outside the map viewport and observation notices inside the canvas', () => {
+    const canvasStart = page.indexOf('<div className="wx-map-canvas">');
+    const canvasEnd = page.indexOf('          </div>\n          {!mapReady && !mapError', canvasStart);
+    const keyPosition = page.indexOf('<div className="wx-map-legend"');
+    expect(canvasStart).toBeGreaterThanOrEqual(0);
+    expect(canvasEnd).toBeGreaterThan(canvasStart);
+    expect(keyPosition).toBeGreaterThan(canvasEnd);
+    expect(page.slice(canvasStart, canvasEnd)).toContain('className="wx-observation-note"');
+    expect(page.slice(canvasStart, canvasEnd)).toContain('className="wx-map-notice wx-raster-notice"');
+    expect(styles).toContain('.wx-map-legend {');
+    expect(styles).not.toContain('position:absolute; top:12px; right:12px; left:auto;');
+  });
+
+
+  it('renders the map-first three-zone operator desk with controls isolated from the map canvas', () => {
+    expect(page).toContain('wx-layer-rail');
+    expect(page).toContain('wx-workspace--desk');
+    expect(page).toContain('wx-toolbar-primary');
+    expect(page).toContain('wx-toolbar-secondary');
+    expect(page).toContain('wx-layer-button__copy');
+    expect(page).toContain('Source-first display');
+    expect(styles).toContain('grid-template-areas: "layers map right"');
+    expect(styles).toContain('.wx-layer-rail');
+    expect(styles).toContain('@media (max-width: 900px)');
+  });
+
 });
