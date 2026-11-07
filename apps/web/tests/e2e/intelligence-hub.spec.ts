@@ -135,6 +135,11 @@ test.describe('Intel Hub restricted workspace', () => {
     for (const label of ['COMMAND PICTURE', 'ANALYSIS WORKBENCH', 'INCIDENT FABRIC', 'NEWSROOM', 'COLLECTION CONTROL', 'PUBLICATIONS']) {
       await expect(page.locator('.icw-rail .icw-nav-item').filter({ hasText: label })).toBeVisible();
     }
+
+    await testInfo.attach('intel-hub-desktop-shell', {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: 'image/png',
+    });
   });
 
   test('keeps persisted impact, urgency, confidence and rationale distinct in the event drawer', async ({ page }) => {
@@ -223,6 +228,11 @@ test.describe('Intel Hub restricted workspace', () => {
       body: await page.screenshot({ fullPage: true }),
       contentType: 'image/png',
     });
+
+    const finalWorkspace = mobileNavigation.getByRole('button', { name: 'Publications' });
+    await finalWorkspace.click();
+    await expect(page.getByRole('heading', { name: 'SECURITY PUBLICATION DESK' })).toBeVisible();
+    await expect(finalWorkspace).toHaveAttribute('aria-current', 'page');
   });
 
   test('has no serious or critical accessibility violations in the analysis workspace', async ({ page }, testInfo: TestInfo) => {
