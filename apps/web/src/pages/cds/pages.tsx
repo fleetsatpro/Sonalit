@@ -30,8 +30,9 @@ function lockTelemetryAge(row: Row, timestampKey: string): number | null {
   const raw = row[timestampKey];
   if (!raw) return null;
   const timestamp = new Date(String(raw)).getTime();
-  if (!Number.isFinite(timestamp)) return null;
-  return Math.max(0, Date.now() - timestamp);
+  const now = Date.now();
+  if (!Number.isFinite(timestamp) || timestamp > now + 60_000) return null;
+  return now - timestamp;
 }
 function lockTelemetryFresh(row: Row, timestampKey: string): boolean {
   const age = lockTelemetryAge(row, timestampKey);
@@ -48,11 +49,7 @@ function lockInventoryBattery(row: Row): number | null {
   return numericTelemetry(row['battery_level'], 0, 100);
 }
 function lockHeartbeatAge(row: Row): number | null {
-  const raw = row['last_heartbeat_event_at'];
-  if (!raw) return null;
-  const timestamp = new Date(String(raw)).getTime();
-  if (!Number.isFinite(timestamp)) return null;
-  return Math.max(0, Date.now() - timestamp);
+  return lockTelemetryAge(row, 'last_heartbeat_event_at');
 }
 function lockSignal(row: Row): string {
   if (!lockTelemetryFresh(row, 'reported_signal_at')) return 'unverified';
