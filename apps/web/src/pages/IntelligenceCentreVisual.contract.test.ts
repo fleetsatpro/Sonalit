@@ -104,4 +104,41 @@ describe('Intel Hub crystalline clarity contract', () => {
     expect(clarity).toContain('@media (prefers-reduced-motion: reduce)');
     expect(clarity).toContain('animation-duration: .01ms !important');
   });
+
+  it('adds a high-contrast gilded-obsidian palette without weakening text contrast', () => {
+    const panel = hexToken('--intel-crystal-panel');
+    for (const name of ['--intel-gold', '--intel-gold-highlight', '--intel-gold-amber']) {
+      expect(contrastRatio(hexToken(name), panel), name + ' contrast').toBeGreaterThanOrEqual(7);
+    }
+    expect(clarity).toContain('--intel-gold-edge-strong: rgba(255, 211, 105, .82);');
+    expect(clarity).toContain('radial-gradient(ellipse at 13% 0%, rgba(255, 223, 151, .105), transparent 38%)');
+    expect(clarity).toContain('outline: 2px solid var(--intel-gold)');
+  });
+
+  it('carries the metallic card treatment across all six Intelligence Centre workspaces', () => {
+    const cardFamilies = [
+      '.icv-root .icv-metric',
+      '.icd-root .icd-kpi',
+      '.ia-page .ia-alert',
+      '.intelligence-live .in-card',
+      '.ics-root .ics-source-card',
+      '.ipd-root .ipd-card',
+    ];
+    for (const selector of cardFamilies) {
+      expect(clarity, 'missing gilded card family: ' + selector).toContain(selector);
+    }
+    expect(clarity).toContain('border-color: var(--intel-gold-edge-strong);');
+    expect(clarity).toContain('box-shadow:');
+    expect(clarity).toContain('.icw-nav-item[aria-current="page"]');
+  });
+
+  it('keeps security severity tokens distinct from the gold brand accent', () => {
+    expect(hexToken('--intel-crystal-critical')).toBe('#ff9ca7');
+    expect(hexToken('--intel-crystal-high')).toBe('#ffc08a');
+    expect(hexToken('--intel-crystal-medium')).toBe('#f2d989');
+    expect(hexToken('--intel-crystal-low')).toBe('#79e7c5');
+    expect(clarity).toContain('.icd-root .icd-sev.critical');
+    expect(clarity).toContain('.ia-page .ia-severity-critical');
+  });
+
 });
