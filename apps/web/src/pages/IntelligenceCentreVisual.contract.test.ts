@@ -65,6 +65,14 @@ describe('Intel Hub crystalline clarity contract', () => {
     expect(clarity).toContain('font-size: 12.5px;');
   });
 
+  it('keeps Newsroom event records distinct from toolbar actions and strengthens severity legibility', () => {
+    expect(clarity).toContain('.sonalit-intelligence-workspace .intelligence-live .in-controls button');
+    expect(clarity).not.toContain('.sonalit-intelligence-workspace .intelligence-live button {');
+    expect(clarity).toContain('.sonalit-intelligence-workspace .intelligence-live .in-event b');
+    expect(clarity).toContain('.sonalit-intelligence-workspace .ia-page .ia-severity-levels span');
+    expect(clarity).toContain('.sonalit-intelligence-workspace .ia-page .ia-alert.critical .ia-alert-top b');
+  });
+
   it('preserves keyboard focus and reduced-motion accessibility', () => {
     expect(clarity).toContain(':focus-visible');
     expect(clarity).toContain('outline: 2px solid var(--intel-crystal-focus)');
