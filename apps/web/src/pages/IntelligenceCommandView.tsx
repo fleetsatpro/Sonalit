@@ -4,6 +4,7 @@ import { ArrowUpRight, Clock3, ExternalLink, Globe2, MapPin, RefreshCw, ShieldAl
 import MapLibreMap, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
+import { safeExternalUrl } from '../lib/intelligenceText.js';
 import { DARK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
 
 type Row = Record<string, any>;
@@ -320,7 +321,7 @@ export default function IntelligenceCommandView() {
             {Array.isArray(warningActionsQ.data?.actions) && warningActionsQ.data.actions.length ? warningActionsQ.data.actions.map((item: Row, index: number) => <article className="icv-evidence-row" key={item.id || index}><div><strong>{item.action || item.action_type || 'Warning action'}</strong><small>{item.actor_name || item.actor_id || 'Actor not returned'} · {time(item.created_at)}</small><p>{item.notes || item.reason || 'No action notes recorded.'}</p></div></article>) : <div className="icv-panel-state">No warning actions were returned.</div>}
           </> : <>
             <h3>Linked observations</h3>
-            {Array.isArray(selected?.evidence) && selected.evidence.length ? selected.evidence.map((item: Row, index: number) => <article className="icv-evidence-row" key={item.id || index}><div><strong>{item.title || 'Source observation'}</strong><small>{item.source?.name || item.source_name || 'Source not identified'} · {time(item.observed_at)}</small><p>{item.body || 'No source text is attached.'}</p></div>{item.url && <a href={item.url} target="_blank" rel="noreferrer" aria-label="Open original source"><ExternalLink size={15}/></a>}</article>) :
+            {Array.isArray(selected?.evidence) && selected.evidence.length ? selected.evidence.map((item: Row, index: number) => { const sourceUrl = safeExternalUrl(item.url); return <article className="icv-evidence-row" key={item.id || index}><div><strong>{item.title || 'Source observation'}</strong><small>{item.source?.name || item.source_name || 'Source not identified'} · {time(item.observed_at)}</small><p>{item.body || 'No source text is attached.'}</p></div>{sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer" aria-label="Open original source"><ExternalLink size={15}/></a>}</article>; }) :
              <div className="icv-panel-state">No linked observations were returned for this event.</div>}
             {Array.isArray(selected?.related_events) && selected.related_events.length > 0 && <><h3>Related event objects</h3>{selected.related_events.map((item: Row, index: number) => <div className="icv-related-row" key={item.event_id || index}><b>{item.title || 'Related event'}</b><span>{item.relationship || 'Relationship not classified'} · {confidence(item.confidence)}</span></div>)}</>}
           </>}

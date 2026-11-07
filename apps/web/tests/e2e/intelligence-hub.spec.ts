@@ -8,6 +8,8 @@ const EVENT = {
   summary: '[E2E FIXTURE] A test-only event used to verify impact, urgency and provenance presentation.',
   url: 'javascript:alert(1)',
   source_url: 'data:text/html,blocked',
+  url: 'javascript:alert(1)',
+  source_url: 'data:text/html,blocked',
   severity: 'high',
   status: 'fused',
   country_code: 'KE',
@@ -95,6 +97,13 @@ async function stubIntelApi(page: Page, options: { alertsFailure?: boolean } = {
     if (path === '/risk/intelligence/observations') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ observations: [OBSERVATION] }) });
     }
+    if (path === '/risk/intelligence/overview') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        events: [EVENT],
+        summary: { events_in_window: 1, priority_events_in_window: 1, observations_in_window: 1, active_warnings: 0, open_gaps: 0 },
+        generated_at: '2026-11-07T00:00:00.000Z',
+      }) });
+    }
     if (path === '/risk/intelligence/events') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ events: [EVENT] }) });
     }
@@ -102,7 +111,7 @@ async function stubIntelApi(page: Page, options: { alertsFailure?: boolean } = {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ event: { ...EVENT, evidence: [{ id: 'e2e-observation-0001', title: '[E2E FIXTURE] Source observation', source_name: 'E2E source fixture' }] } }),
+        body: JSON.stringify({ event: { ...EVENT, evidence: [{ id: 'e2e-observation-0001', title: '[E2E FIXTURE] Source observation', source_name: 'E2E source fixture', url: 'javascript:alert(1)' }] } }),
       });
     }
     if (path === '/risk/intelligence/quality') {
@@ -181,6 +190,20 @@ test.describe('Intel Hub restricted workspace', () => {
     await expect(drawer).toContainText('INDEPENDENT SOURCES');
     await expect(drawer).toContainText('WHY THIS LEVEL');
     await expect(drawer).toContainText('Fused records are not independently verified incidents.');
+    await expect(drawer.locator('a')).toHaveCount(0);
+  });
+
+  test('rejects unsafe source URLs from linked observations in the command picture', async ({ page }) => {
+    await seedAdmin(page);
+    await stubIntelApi(page);
+    await page.goto('/intelligence?module=command');
+
+    const row = page.locator('.icv-event-row').filter({ hasText: EVENT.title });
+    await expect(row).toBeVisible();
+    await row.click();
+
+    const drawer = page.locator('.icv-drawer');
+    await expect(drawer).toContainText('Linked observations');
     await expect(drawer.locator('a')).toHaveCount(0);
   });
 
