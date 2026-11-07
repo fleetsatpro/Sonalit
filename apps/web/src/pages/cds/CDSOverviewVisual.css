@@ -782,9 +782,9 @@
   .cds-shell .cds-overview-date { width: auto !important; min-width: 0 !important; max-width: 100% !important; padding: 8px 10px !important; align-self: stretch; }
   .cds-overview-primary { grid-template-columns: repeat(2,minmax(0,1fr)) !important; gap: 7px !important; }
   .cds-shell .cds-overview-metric { min-height: 100px !important; padding: 9px 10px !important; border-radius: 9px !important; }
-  .cds-overview-metric__label { font-size: 9px !important; }
+  .cds-overview-metric__label { font-size: 10px !important; }
   .cds-overview-metric__value { margin-top: 7px !important; font-size: clamp(25px,7vw,32px) !important; }
-  .cds-overview-metric__detail { max-width: 70% !important; font-size: 9px !important; }
+  .cds-overview-metric__detail { max-width: 70% !important; font-size: 10px !important; }
   .cds-overview-metric__media { top: 30px !important; right: 6px !important; bottom: 6px !important; width: 25% !important; min-width: 45px !important; max-width: 62px !important; border-radius: 6px !important; }
   .cds-overview-secondary__item { min-height: 68px !important; padding: 8px 9px !important; }
   .cds-overview-secondary__value { font-size: 21px !important; }
@@ -798,7 +798,7 @@
   .cds-shell .cds-overview-metric { min-height: 94px !important; }
   .cds-overview-metric__value { font-size: 25px !important; }
   .cds-overview-metric__media { min-width: 40px !important; max-width: 52px !important; }
-  .cds-overview-metric__detail { font-size: 8.5px !important; }
+  .cds-overview-metric__detail { font-size: 9.5px !important; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cds-overview-heading::before { animation: none !important; }
