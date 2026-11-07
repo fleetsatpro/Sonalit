@@ -12,7 +12,7 @@ const lockConsole = pages.slice(lockStart, lockEnd);
 
 describe('CDS E-Lock Control contract', () => {
   it('uses the persisted device fields instead of stale frontend aliases', () => {
-    for (const field of ['reported_battery_level', 'reported_signal_strength', 'reported_tamper_detected', 'last_heartbeat_event_at', 'reported_solar_charging', 'reported_temperature', 'firmware_version']) {
+    for (const field of ['reported_battery_level', 'reported_battery_at', 'reported_signal_strength', 'reported_signal_at', 'reported_tamper_detected', 'reported_tamper_at', 'last_heartbeat_event_at', 'reported_solar_charging', 'reported_solar_at', 'reported_temperature', 'reported_temperature_at', 'firmware_version']) {
       expect(lockConsole).toContain(field);
     }
     expect(lockConsole).toContain('battery_level');
@@ -21,6 +21,8 @@ describe('CDS E-Lock Control contract', () => {
     expect(lockConsole).not.toContain("row['signal_strength']");
     expect(lockConsole).toContain('battery === null');
     expect(lockConsole).toContain('age > LOCK_HEARTBEAT_STALE_MS');
+    expect(lockConsole).toContain('function lockTelemetryFresh');
+    expect(lockConsole).toContain('LAST REPORT ');
     expect(lockConsole).toContain('LOCK_HEARTBEAT_STALE_MS = 15 * 60 * 1000');
     expect(lockConsole).toContain('BatteryCharging');
     expect(lockConsole).not.toMatch(/\p{Extended_Pictographic}/u);
@@ -32,10 +34,15 @@ describe('CDS E-Lock Control contract', () => {
     expect(apiRoutes).toContain("le.type='heartbeat'");
     expect(apiRoutes).toContain('AS last_heartbeat_event_at');
     expect(apiRoutes).toContain('AS reported_battery_level');
+    expect(apiRoutes).toContain('AS reported_battery_at');
     expect(apiRoutes).toContain('AS reported_signal_strength');
+    expect(apiRoutes).toContain('AS reported_signal_at');
     expect(apiRoutes).toContain('AS reported_solar_charging');
+    expect(apiRoutes).toContain('AS reported_solar_at');
     expect(apiRoutes).toContain('AS reported_temperature');
+    expect(apiRoutes).toContain('AS reported_temperature_at');
     expect(apiRoutes).toContain('AS reported_tamper_detected');
+    expect(apiRoutes).toContain('AS reported_tamper_at');
   });
 
   it('loads event history from the scoped CDS device endpoint', () => {
