@@ -1640,11 +1640,16 @@ const LOCK_JOINS = `LEFT JOIN cds_containers c ON c.id=t.container_id AND c.org_
         WHERE le.lock_id=t.id AND le.org_id=t.org_id AND le.type='heartbeat'
           AND le.data ? 'temperature'
         ORDER BY le.created_at DESC, le.id DESC LIMIT 1) AS reported_temperature
+      ,(SELECT le.data->>'tamper_detected' FROM cds_lock_events le
+        WHERE le.lock_id=t.id AND le.org_id=t.org_id AND le.type='heartbeat'
+          AND le.data ? 'tamper_detected'
+        ORDER BY le.created_at DESC, le.id DESC LIMIT 1) AS reported_tamper_detected
   ) lock_telemetry ON TRUE`;
 const LOCK_COLS = `t.*, c.number AS container_number, v.registration AS truck,
   lock_telemetry.last_persisted_event_at, lock_telemetry.last_heartbeat_event_at,
   lock_telemetry.reported_battery_level, lock_telemetry.reported_signal_strength,
-  lock_telemetry.reported_solar_charging, lock_telemetry.reported_temperature`;
+  lock_telemetry.reported_solar_charging, lock_telemetry.reported_temperature,
+  lock_telemetry.reported_tamper_detected`;
 router.get('/locks', asyncHandler(async (req, res) => {
   await listRows(req, res, 'cds_electronic_locks', {
     joins: LOCK_JOINS,
