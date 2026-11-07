@@ -73,6 +73,31 @@ describe('Intel Hub crystalline clarity contract', () => {
     expect(clarity).toContain('.sonalit-intelligence-workspace .ia-page .ia-alert.critical .ia-alert-top b');
   });
 
+  it('lifts dense metadata across all six workspaces above the legacy 6–10px label floor', () => {
+    const requiredSelectors = [
+      '.sonalit-intelligence-workspace .icv-root .icv-event-meta small',
+      '.sonalit-intelligence-workspace .icv-root .icv-drawer-fields small',
+      '.sonalit-intelligence-workspace .icd-root .icd-nav button b',
+      '.sonalit-intelligence-workspace .icd-root .icd-row aside small',
+      '.sonalit-intelligence-workspace .ia-page .ia-detail-badges span',
+      '.sonalit-intelligence-workspace .ia-page .ia-drawer .field span',
+      '.sonalit-intelligence-workspace .intelligence-live .in-card-top',
+      '.sonalit-intelligence-workspace .intelligence-live .ic-evidence-grid small',
+      '.sonalit-intelligence-workspace .ics-root .ics-state-pill',
+      '.sonalit-intelligence-workspace .ics-root .ics-detail-grid small',
+      '.sonalit-intelligence-workspace .ipd-root .ipd-handling-fields label',
+    ];
+
+    for (const selector of requiredSelectors) {
+      expect(clarity, 'missing readability selector: ' + selector).toContain(selector);
+    }
+
+    expect(clarity).toContain('font-size: 11.5px;');
+    expect(clarity).toContain('font-size: 12.5px;');
+    expect(clarity).toContain('color: var(--intel-crystal-meta);');
+    expect(clarity).toContain('color: var(--intel-crystal-copy);');
+  });
+
   it('preserves keyboard focus and reduced-motion accessibility', () => {
     expect(clarity).toContain(':focus-visible');
     expect(clarity).toContain('outline: 2px solid var(--intel-crystal-focus)');
