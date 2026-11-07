@@ -1,0 +1,145 @@
+'use strict';
+const {plainText,incidentCategory,assessIncidentSeverity,securityRelevance,independentSourceKey}=require('../../src/utils/intelligenceTriage');
+describe('Intelligence observation text normalization and threat triage',()=>{
+ test('strips RSS attributes and decodes entities retaining visible text',()=>{
+  const raw='<a href="https://news.google.com/rss/articles/example?q=protest+Nairobi" target="_blank">Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash</a>&nbsp;<font color="#6f6f6f">Kenya News Agency</font>',text=plainText(raw);
+  expect(text).toBe('Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash Kenya News Agency');expect(text).not.toMatch(/href=|target=|<a|&nbsp;|<font/i);expect(incidentCategory(text)).toBe('other');expect(assessIncidentSeverity('other',text).severity).toBe('low');
+ });
+ test('cleans encoded markup and suppresses script/style blocks',()=>{
+  expect(plainText('&lt;a href=&quot;https://example.test/?q=attack&quot;&gt;Local match tickets&lt;/a&gt;&amp;nbsp;')).toBe('Local match tickets');
+  expect(plainText('<style>.x{content:"protest"}</style><script>IED attack</script>Weather report')).toBe('Weather report');expect(plainText('A&nbsp;road&nbsp;closure &mdash; updated')).toBe('A road closure — updated');
+ });
+ test('keeps peaceful protest, rally, routine traffic and minor accident Low',()=>{
+  expect(assessIncidentSeverity('protest','Peaceful protest in Nairobi with no reported injuries').severity).toBe('low');expect(assessIncidentSeverity('political_rally','Political rally held peacefully').severity).toBe('low');expect(assessIncidentSeverity('traffic','Heavy traffic congestion in CBD').severity).toBe('low');expect(assessIncidentSeverity('accident','Minor road accident; no injuries').severity).toBe('low');
+ });
+ test('raises bounded disruption/injury without inflating it to Critical',()=>{
+  const result=assessIncidentSeverity('protest','Protesters block the main highway, disrupting access to the airport');expect(result.severity).toBe('medium');expect(result.impact).toBe('material');expect(assessIncidentSeverity('accident','Multi-vehicle collision leaves several injured').severity).toBe('medium');expect(assessIncidentSeverity('accident','Multi-vehicle collision leaves several seriously injured').severity).toBe('high');
+ });
+ test('escalates two or more reported deaths to Critical, not mere casualty counts',()=>{
+  expect(assessIncidentSeverity('armed_attack','Two people killed in an armed attack').severity).toBe('critical');
+  expect(assessIncidentSeverity('armed_attack','Several people killed in an armed attack').severity).toBe('critical');
+  expect(assessIncidentSeverity('armed_attack','Multiple fatalities reported after an armed attack').severity).toBe('critical');
+  expect(assessIncidentSeverity('armed_attack','Armed attack kills one person').severity).toBe('high');
+  expect(assessIncidentSeverity('armed_attack','Armed attack leaves two people injured, no deaths').severity).toBe('high');
+ });
+ test('does not treat generic fatal wording as evidence of a fatality',()=>{
+  expect(assessIncidentSeverity('other','A fatal flaw in the county allocation process').severity).toBe('low');
+  expect(assessIncidentSeverity('protest','No one was killed during a peaceful protest').severity).toBe('low');
+  expect(assessIncidentSeverity('protest','No one killed during the peaceful protest').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','No civilians died during the armed incident').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','No people were killed during the armed incident').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','No deaths were reported after an armed incident').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','Zero fatalities were reported after an armed incident').severity).toBe('low');
+  expect(assessIncidentSeverity('accident','Fatal crash reported on the highway').severity).toBe('high');
+ });
+ test('does not escalate explicitly negated catastrophic language',()=>{
+  expect(assessIncidentSeverity('other','No multiple fatalities were reported').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','No multiple fatalities, but two people were killed in the attack').severity).toBe('critical');
+  expect(assessIncidentSeverity('other','No mass-casualty event was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','No mass-hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','No mass hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','No mass hostage-taking was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','No nationwide power outage was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('other','There were no deaths reported after the incident').severity).toBe('low');
+  expect(assessIncidentSeverity('other','Massacre reported near the town').severity).toBe('critical');
+  expect(assessIncidentSeverity('other','Nationwide power outage across multiple cities').severity).toBe('critical');
+  expect(assessIncidentSeverity('armed_attack','Two people were killed in an armed attack, but no mass-casualty event was declared').severity).toBe('critical');
+  expect(assessIncidentSeverity('armed_attack','The armed attack killed two people').severity).toBe('critical');
+  expect(assessIncidentSeverity('kidnapping','Five people were taken hostage, but no mass-hostage crisis was declared').severity).toBe('critical');
+  expect(assessIncidentSeverity('kidnapping','One person was taken hostage, but no mass-hostage crisis was declared').severity).toBe('high');
+  expect(assessIncidentSeverity('kidnapping','One person has been taken hostage, but no mass-hostage crisis was declared').severity).toBe('high');
+  expect(assessIncidentSeverity('other','No nationwide power outage was reported, but a suspicious device was found').severity).toBe('medium');
+ });
+ test('reserves High/Critical for explicit serious impact',()=>{
+  expect(assessIncidentSeverity('armed_attack','Ongoing armed attack reported near the town').severity).toBe('high');expect(assessIncidentSeverity('kidnapping','Two people kidnapped from their home').severity).toBe('high');
+  const critical=assessIncidentSeverity('armed_attack','Terrorist attack with at least 8 people killed');expect(critical.severity).toBe('critical');expect(critical.impact).toBe('catastrophic');expect(critical.urgency).toBe('immediate');
+  expect(assessIncidentSeverity('other','A mass-casualty attack is only a possible future threat')).toMatchObject({severity:'medium',urgency:'routine'});
+ });
+ test('does not mistake a sports fixture clash for a protest/security incident',()=>{
+  const title='Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash';
+  expect(incidentCategory(title)).toBe('other');
+  expect(assessIncidentSeverity(incidentCategory(title),title).severity).toBe('low');
+  expect(incidentCategory('Protesters clash with police in Nairobi')).toBe('protest');
+  expect(incidentCategory('Armed clashes reported near the border')).toBe('armed_attack');
+  expect(incidentCategory('Terrorist attack reported in the region')).toBe('armed_attack');
+  const unexplodedDevice='An unexploded device was found at the station';
+  expect(incidentCategory(unexplodedDevice)).toBe('ied');
+  expect(securityRelevance(incidentCategory(unexplodedDevice),unexplodedDevice)).toBe('security_relevant');
+  expect(assessIncidentSeverity(incidentCategory(unexplodedDevice),unexplodedDevice).severity).toBe('medium');
+ });
+ test('separates security-relevant leads from ordinary public news',()=>{
+  const sports='Tickets sale opens for highly anticipated Bayern Munich vs AFC Ajax clash';
+  const journalism='Journalists challenged to tell stories that matter';
+  expect(securityRelevance(incidentCategory(sports),sports)).toBe('not_security_relevant');
+  expect(securityRelevance(incidentCategory(journalism),journalism)).toBe('not_security_relevant');
+  expect(securityRelevance('protest','Peaceful protest announced in Nairobi')).toBe('security_relevant');
+  expect(securityRelevance('traffic','Traffic congestion reported in the CBD')).toBe('not_security_relevant');
+  expect(securityRelevance('traffic','Road blocked after a roadblock closes airport access')).toBe('operationally_relevant');
+  expect(securityRelevance('protest','Roadblock shuts airport access with no confrontation')).toBe('operationally_relevant');
+  expect(securityRelevance('accident','Minor fender-bender; no injuries')).toBe('not_security_relevant');
+  expect(securityRelevance('accident','Multi-vehicle collision leaves several seriously injured')).toBe('operationally_relevant');
+  expect(securityRelevance('political_rally','Candidate announces a campaign rally')).toBe('not_security_relevant');
+  expect(securityRelevance('political_rally','Thousands gather for a rally as roads close and clashes erupt')).toBe('potential_security_relevant');
+  expect(securityRelevance('protest','CRA ignores governors’ protests, sticks to Sh440.8bn county allocation')).toBe('not_security_relevant');
+  expect(securityRelevance('protest','Lawyers stage protests in Nairobi CBD over abduction saga')).toBe('security_relevant');
+  expect(securityRelevance('protest','Protesters block a highway over budget cuts')).toBe('security_relevant');
+  expect(assessIncidentSeverity('other','Police investigate suspicious package near an embassy').severity).toBe('medium');
+  expect(securityRelevance('other','Police investigate suspicious package near an embassy')).toBe('potential_security_relevant');
+  expect(securityRelevance('other','Confirmed cyber attack against hospital systems')).toBe('potential_security_relevant');
+  expect(securityRelevance(incidentCategory('Nationwide power outage across multiple cities'),'Nationwide power outage across multiple cities')).toBe('operationally_relevant');
+ });
+ test('does not inflate generic armed-group and prevention language',()=>{
+  expect(incidentCategory('Militia leaders attend peace talks')).toBe('other');
+  expect(assessIncidentSeverity('other','Militia leaders attend peace talks').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','Police launch an anti-kidnapping prevention campaign').severity).toBe('low');
+  expect(assessIncidentSeverity('ied','Bomb disposal team removes an unexploded device').severity).toBe('medium');
+  expect(assessIncidentSeverity('armed_attack','A militia group announces a political meeting').severity).toBe('low');
+ });
+ test('reserves Critical hostage classification for catastrophic-scale cases',()=>{
+  expect(incidentCategory('One person taken hostage during a robbery')).toBe('kidnapping');
+  expect(assessIncidentSeverity('kidnapping','One person taken hostage during a robbery').severity).toBe('high');
+  expect(assessIncidentSeverity('kidnapping','Armed men take multiple hostages at a school').severity).toBe('critical');
+  expect(incidentCategory('Armed men take multiple hostages at a school')).toBe('kidnapping');
+ });
+ test('counts independent publishers rather than feed records',()=>{
+  const a=independentSourceKey({provider:'newsmesh',source_id:'feed-a',url:'https://www.example-news.test/story/one'});
+  const b=independentSourceKey({provider:'newsmesh',source_id:'feed-b',url:'https://example-news.test/story/two'});
+  expect(a).toBe('example-news.test');expect(b).toBe(a);
+  expect(independentSourceKey({provider:'newsmesh',source_id:'feed-c',raw_metadata:{feed:'The Star Kenya'},url:'https://news.google.com/rss/articles/a'})).toBe('the star kenya');
+  expect(independentSourceKey({provider:'telegram',source_id:'tg-a',raw_metadata:{channel:'security_updates'}})).toBe('telegram:security_updates');
+  expect(independentSourceKey({provider:'telegram',source_id:'tg-b',raw_metadata:{channel:'another_channel'}})).not.toBe('telegram:security_updates');
+  expect(independentSourceKey({provider:'x',source_id:'x-feed',raw_metadata:{author_id:'1001'}})).toBe('x:1001');
+ });
+ test('honours explicit negative claims for attacks, hostage-taking and detonation',()=>{
+  expect(assessIncidentSeverity('armed_attack','No armed attack was reported near the border').severity).toBe('low');
+  expect(assessIncidentSeverity('armed_attack','No evidence of an armed attack was found').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No hostage was taken during the incident').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No mass-hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No mass hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No mass-hostage-taking was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No mass-hostage crisis was reported, but one person was kidnapped').severity).toBe('high');
+  expect(assessIncidentSeverity('kidnapping','No mass-hostage crisis was reported, but five people were taken hostage').severity).toBe('critical');
+  expect(assessIncidentSeverity('ied','Bomb threat reported; no explosion or detonation occurred').severity).toBe('medium');
+  expect(assessIncidentSeverity('ied','An unexploded device was found at the station').severity).toBe('medium');
+  expect(incidentCategory('No unexploded device was found at the station')).toBe('other');
+  expect(securityRelevance(incidentCategory('No unexploded device was found at the station'),'No unexploded device was found at the station')).toBe('not_security_relevant');
+  const noExplosiveDevice='No explosive device was found at the station';
+  expect(incidentCategory(noExplosiveDevice)).toBe('other');
+  expect(securityRelevance(incidentCategory(noExplosiveDevice),noExplosiveDevice)).toBe('not_security_relevant');
+  const noBombThreat='No bomb threat was reported at the station';
+  expect(incidentCategory(noBombThreat)).toBe('other');
+  expect(securityRelevance(incidentCategory(noBombThreat),noBombThreat)).toBe('not_security_relevant');
+  expect(securityRelevance(incidentCategory('Bomb threat reported; no device found'),'Bomb threat reported; no device found')).toBe('security_relevant');
+  expect(incidentCategory('Bomb threat reported; no device found')).toBe('ied');
+  expect(assessIncidentSeverity('ied','No unexploded device was found at the station').severity).toBe('low');
+  expect(assessIncidentSeverity('ied','Bomb threat reported; no device found').severity).toBe('medium');
+ });
+ test('does not let a separate negative label erase explicit catastrophic impact',()=>{
+  expect(assessIncidentSeverity('armed_attack','No armed attack was reported, but two people were killed in the explosion').severity).toBe('critical');
+  expect(assessIncidentSeverity('kidnapping','No hostage crisis was reported, but five people were taken hostage').severity).toBe('critical');
+ });
+ test('keeps an unverified bomb threat below Critical',()=>{
+  const threat=assessIncidentSeverity('ied','Police investigate a bomb threat; no device found and no injuries');expect(threat.severity).toBe('medium');expect(threat.preliminary).toBe(true);expect(threat.caveat).toMatch(/does not establish that the report is true/i);
+ });
+});

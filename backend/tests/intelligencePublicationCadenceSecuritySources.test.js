@@ -40,6 +40,14 @@ describe('Intel Hub publication contract',()=>{
     expect(s).toContain("const events=rawEvents.filter(isSecurityRelevantEvent)");
   });
 
+  test('publication corroboration counts independent publishers, not feed IDs',()=>{
+    const s=agents();
+    expect(s).toContain('source_count:publishers.size');
+    expect(s).toContain("'provider',s.provider,'raw_metadata',o.raw_metadata");
+    expect(s).toContain('sourceKeys.add(independentSourceKey(obs))');
+    expect(s).not.toContain('sourceIds.size');
+  });
+
   test('normal worker cycles do not regenerate publications every collection interval',()=>{
     const s=worker();
     expect(s).toContain("runIntelligenceAgents({includePublications:false})");

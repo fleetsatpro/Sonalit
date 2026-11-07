@@ -92,6 +92,25 @@ The deterministic fusion layer:
 
 This is deliberately conservative. A single social post is **not** treated as corroborated intelligence. Contradiction handling, stronger semantic entity resolution, geospatial clustering, coordinated-narrative detection, source-history scoring and analyst verification are higher-order intelligence stages.
 
+## Threat impact, severity and confidence
+
+Threat severity describes the **potential or reported impact of the event**. It is not a source-reliability score, probability that the report is true, number of articles, or analyst-verification state. The deterministic triage result is preliminary and remains explicitly unverified until an authorised analyst completes the relevant review.
+
+The current operational thresholds are:
+
+| Level | Impact rule |
+|---|---|
+| **CRITICAL** | An explicitly reported mass-casualty incident, two or more reported fatalities, a large-scale hostage crisis (five or more hostages) or an explicit multi-hostage seizure at a sensitive public facility (for example, a school, hospital or embassy), or widespread failure/disruption of essential services. |
+| **HIGH** | A single reported fatality; serious/life-threatening injury; an actual armed attack, ambush, gunfire, kidnapping/abduction or explosive detonation; or violent disorder with material harm/disruption. |
+| **MODERATE** | A credible but prospective threat, foiled/disrupted plot, explosive device/threat without detonation, limited-impact violent disorder, significant local disruption, or material but non-catastrophic hazard/crime. |
+| **LOW** | Peaceful protest/mobilisation without harm or material disruption, generic actor/weapon terminology without an incident, routine traffic/crime, or an event reference without demonstrated material impact. |
+
+These are Sonalit's conservative triage thresholds, not a universal casualty taxonomy. Two or more reported fatalities from an actual incident meet the critical threshold; a single reported fatality remains high. An explicitly described mass-casualty incident or high-risk multi-hostage seizure can qualify as critical even when a count is not supplied. A report of a possible attack or foiled plot is not treated as a completed mass-casualty event.
+
+**Confidence stays separate.** Independent source diversity, source reliability, freshness, manipulation indicators and contradictions affect the confidence/quality measures, not the severity label. The existing fusion confidence ceiling remains 45% for one independent source, 65% for two and 85% for three or more; additional repetitions from the same publisher/source family do not count as independent corroboration.
+
+The assessment records its model version, severity, impact, urgency, reason codes, evidence indicators, applied thresholds and uncertainty caveat. Urgency is separate from impact: an older/high-impact incident is not automatically labelled an immediate response. Analyst overrides and locked assessments remain protected from deterministic refresh. Raw Newsroom observations are shown as **RAW SOURCE**, not as severity-rated incidents.
+
 ## Publication research and evidence quality
 
 The publication research layer reuses country-scoped publisher feeds configured through `INTEL_RSS_FEEDS`, `INTEL_PUBLICATION_RESEARCH_FEEDS`, or `RISK_INTEL_EXTRA_RSS_FEEDS`. It reuses the existing country-coded direct-publisher registry as well as the country-specific AllAfrica RDF feed, while keeping Google News as a separate discovery lane. Configured feeds must declare their country explicitly; feed location is a collection hint, not authoritative event attribution. Feed items are matched against incident headline/location/date, and article URLs are kept separate from feed URLs. Cross-domain canonical tags cannot redefine the domain that actually served an article body. Public fetches retain the existing SSRF, redirect, timeout and response-size protections. Short-lived response caching is bounded by entry count and a 16 MiB total body budget, in-flight de-duplication is enabled, and public fetch concurrency is capped. Failed HTTP and DNS/connection fetches are briefly negative-cached so one unavailable publisher does not generate one retry per incident. Opaque Google News story wrappers are resolved only through the existing public-address-validated HTTPS redirect fetcher; an unresolved wrapper is never treated as a publisher source. GDELT is an on-demand secondary fallback: it is not queried when first-party evidence and direct publisher/Google News article bodies already yield two substantive independent domains. The serialized GDELT lane remains a final guard against duplicate requests and bursty rate-limit failures.

@@ -1,0 +1,723 @@
+/* SONALIT INTEL HUB — ONE COHERENT COMMAND VISUAL SYSTEM
+   Designed for dense evidence work: legible at distance, deliberate depth,
+   clear information hierarchy, restrained motion and strict reduced-motion support. */
+
+.sonalit-intelligence-workspace {
+  --icw-void: #050814;
+  --icw-surface: rgba(10, 18, 35, .96);
+  --icw-surface-raised: rgba(17, 29, 51, .96);
+  --icw-surface-soft: rgba(13, 24, 43, .9);
+  --icw-line: rgba(135, 169, 226, .18);
+  --icw-line-strong: rgba(120, 177, 245, .32);
+  --icw-text: #f4f7ff;
+  --icw-muted: #b0bfd5;
+  --icw-dim: #8194b0;
+  --icw-cyan: #65e4ff;
+  --icw-blue: #83b3ff;
+  --icw-violet: #aa91ff;
+  --icw-green: #65dbb3;
+  --icw-amber: #ffc477;
+  --icw-red: #ff7c86;
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  color: var(--icw-text);
+  background:
+    radial-gradient(ellipse at 72% -14%, rgba(69,109,196,.23), transparent 42%),
+    radial-gradient(ellipse at 2% 82%, rgba(85,61,165,.12), transparent 40%),
+    linear-gradient(145deg, #080e1d 0%, #050814 50%, #080e1c 100%);
+  font-family: 'Archivo', 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.sonalit-intelligence-workspace::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: .19;
+  background:
+    radial-gradient(1px 1px at 12% 18%, rgba(206,225,255,.9) 0, transparent 100%),
+    radial-gradient(1px 1px at 31% 70%, rgba(112,198,255,.7) 0, transparent 100%),
+    radial-gradient(1px 1px at 66% 22%, rgba(184,170,255,.8) 0, transparent 100%),
+    radial-gradient(1px 1px at 87% 62%, rgba(157,208,255,.75) 0, transparent 100%),
+    linear-gradient(rgba(118,154,206,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(118,154,206,.035) 1px, transparent 1px);
+  background-size: auto,auto,auto,auto,54px 54px,54px 54px;
+}
+.sonalit-intelligence-workspace button,
+.sonalit-intelligence-workspace input,
+.sonalit-intelligence-workspace select,
+.sonalit-intelligence-workspace textarea { font-family: inherit; }
+.sonalit-intelligence-workspace :focus-visible { outline: 2px solid var(--icw-cyan); outline-offset: 3px; }
+
+/* ── Workspace shell ───────────────────────────────────────────────────── */
+.sonalit-intelligence-workspace .icw-shell { grid-template-columns: 218px minmax(0,1fr); min-height: calc(100dvh - 60px); gap: 0; }
+.sonalit-intelligence-workspace .icw-rail {
+  position: sticky; top: 0; min-height: calc(100dvh - 60px);
+  gap: 18px; padding: 24px 13px 18px;
+  border-right: 1px solid rgba(135,169,226,.17);
+  background: radial-gradient(ellipse at 0% 0%,rgba(70,128,190,.17),transparent 46%),linear-gradient(180deg,#091122fa,#050a17fa);
+  box-shadow: 12px 0 44px rgba(0,0,0,.14);
+}
+.sonalit-intelligence-workspace .icw-brand { gap: 12px; min-height: 65px; padding: 3px 6px 18px; border-bottom-color: rgba(135,169,226,.19); }
+.sonalit-intelligence-workspace .icw-brand-mark {
+  width: 48px; height: 48px; flex-basis: 48px; border: 1px solid rgba(101,228,255,.46); border-radius: 14px;
+  background: radial-gradient(circle at 35% 15%,rgba(110,226,255,.3),transparent 55%),linear-gradient(145deg,rgba(45,91,151,.65),rgba(24,28,61,.95));
+  box-shadow: inset 0 1px rgba(255,255,255,.16),0 10px 28px rgba(25,91,163,.18);
+}
+.sonalit-intelligence-workspace .icw-brand-mark svg { width: 29px; height: 29px; }
+.sonalit-intelligence-workspace .icw-brand-copy strong { color: #f7f9ff; font-family: 'Space Grotesk','Archivo',sans-serif; font-size: 15px; font-weight: 800; letter-spacing: .13em; }
+.sonalit-intelligence-workspace .icw-brand-copy small { color: #c1d5ef; font-size: 10.5px; font-weight: 800; letter-spacing: .1em; }
+.sonalit-intelligence-workspace .icw-brand-copy span { color: #8ea3c1; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; line-height: 1.4; }
+.sonalit-intelligence-workspace .icw-nav-group { gap: 7px; }
+.sonalit-intelligence-workspace .icw-nav-group-label { padding: 2px 9px 5px; color: #93a9ca; font-size: 10.5px; font-weight: 850; letter-spacing: .15em; }
+.sonalit-intelligence-workspace .icw-nav-item {
+  grid-template-columns: 42px minmax(0,1fr); min-height: 60px; gap: 11px; padding: 8px 9px;
+  border: 1px solid transparent; border-radius: 12px; color: #c1cde0;
+  transition: background .2s ease,border-color .2s ease,color .2s ease,transform .2s ease,box-shadow .2s ease;
+}
+.sonalit-intelligence-workspace .icw-nav-item:hover { transform: translateX(2px); border-color: rgba(119,174,237,.3); background: linear-gradient(100deg,rgba(66,118,180,.2),rgba(31,49,93,.18)); color: #fff; }
+.sonalit-intelligence-workspace .icw-nav-item[aria-current="page"] {
+  border-color: rgba(101,228,255,.4); background: linear-gradient(110deg,rgba(32,108,147,.34),rgba(75,68,141,.2)); color: #fff;
+  box-shadow: inset 3px 0 var(--icw-cyan),inset 0 1px rgba(255,255,255,.08),0 8px 22px rgba(0,0,0,.16);
+}
+.sonalit-intelligence-workspace .icw-nav-icon {
+  width: 42px; height: 42px; border-color: rgba(143,182,226,.22); border-radius: 11px;
+  background: linear-gradient(145deg,rgba(44,66,104,.64),rgba(16,28,51,.78)); color: #a6c4e5;
+  box-shadow: inset 0 1px rgba(255,255,255,.06);
+}
+.sonalit-intelligence-workspace .icw-nav-icon svg { width: 27px; height: 27px; }
+.sonalit-intelligence-workspace .icw-nav-item[aria-current="page"] .icw-nav-icon { border-color: rgba(101,228,255,.47); background: linear-gradient(145deg,rgba(39,142,174,.42),rgba(47,61,125,.48)); color: #b9f5ff; box-shadow: 0 0 22px rgba(62,191,226,.12),inset 0 1px rgba(255,255,255,.12); }
+.sonalit-intelligence-workspace .icw-nav-copy { gap: 3px; }
+.sonalit-intelligence-workspace .icw-nav-copy strong { color: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: .025em; line-height: 1.2; }
+.sonalit-intelligence-workspace .icw-nav-copy small { color: #92a6c2; font-size: 10.5px; font-weight: 600; line-height: 1.3; }
+.sonalit-intelligence-workspace .icw-nav-index { display: none; }
+.sonalit-intelligence-workspace .icw-rail-foot { padding: 14px 10px 2px; border-top-color: rgba(135,169,226,.18); }
+.sonalit-intelligence-workspace .icw-rail-foot span { color: #90a5c1; font-size: 10px; font-weight: 850; }
+.sonalit-intelligence-workspace .icw-rail-foot strong { display: flex; align-items: center; gap: 7px; color: #dfeaff; font-size: 11.5px; font-weight: 800; }
+.sonalit-intelligence-workspace .icw-rail-foot small { display: block; margin-top: 5px; color: #8ca1bd; font-size: 10.5px; line-height: 1.45; }
+.sonalit-intelligence-workspace .icw-main { min-width: 0; padding: 0 clamp(18px,2.2vw,34px) 42px; }
+.sonalit-intelligence-workspace .icw-topbar { min-height: 104px; gap: 22px; padding: 21px 0 18px; border-bottom-color: rgba(135,169,226,.2); }
+.sonalit-intelligence-workspace .icw-topbar-title > span { color: #9db9df; font-size: 10.5px; font-weight: 850; letter-spacing: .14em; }
+.sonalit-intelligence-workspace .icw-topbar-title h1 { margin: 5px 0 4px; color: #f6f8ff; font-family: 'Space Grotesk','Archivo',sans-serif; font-size: clamp(28px,2.35vw,36px); font-weight: 800; letter-spacing: -.045em; line-height: 1; }
+.sonalit-intelligence-workspace .icw-topbar-title p { max-width: 840px; color: #b3c1d7; font-size: 13px; font-weight: 550; line-height: 1.48; }
+.sonalit-intelligence-workspace .icw-topbar-meta { gap: 10px; }
+.sonalit-intelligence-workspace .icw-secure-tag,
+.sonalit-intelligence-workspace .icw-clock-tag {
+  min-height: 38px; padding: 0 13px; border-color: rgba(125,175,226,.25); border-radius: 9px;
+  background: linear-gradient(145deg,rgba(19,37,64,.86),rgba(9,19,36,.9)); color: #d5e5fa; font-size: 10.5px; font-weight: 850; letter-spacing: .08em;
+  box-shadow: inset 0 1px rgba(255,255,255,.055),0 6px 16px rgba(0,0,0,.1);
+}
+.sonalit-intelligence-workspace .icw-secure-tag svg,
+.sonalit-intelligence-workspace .icw-clock-tag svg { color: var(--icw-cyan); }
+.sonalit-intelligence-workspace .icw-main-content { padding-top: 22px; }
+.sonalit-intelligence-workspace .icw-loading { font-size: 15px; }
+.sonalit-intelligence-workspace .icw-mobile-nav { border-bottom: 1px solid rgba(135,169,226,.18); padding: 12px 0 10px; }
+.sonalit-intelligence-workspace .icw-mobile-nav button {
+  min-height: 44px; padding: 0 13px; border-color: rgba(135,169,226,.23); border-radius: 10px;
+  background: linear-gradient(145deg,rgba(16,31,54,.95),rgba(9,18,35,.95)); color: #c0cee2; font-size: 11.5px; font-weight: 800;
+}
+.sonalit-intelligence-workspace .icw-mobile-nav button[aria-current="page"] { border-color: rgba(101,228,255,.48); background: linear-gradient(110deg,rgba(30,102,142,.38),rgba(72,65,133,.28)); color: #f5fcff; }
+
+/* ── Command picture ───────────────────────────────────────────────────── */
+.sonalit-intelligence-workspace .icv-root { gap: 18px; }
+.sonalit-intelligence-workspace .icv-heading { align-items: flex-end; gap: 24px; }
+.sonalit-intelligence-workspace .icv-eyebrow { color: #a2bfdf; font-size: 10.5px; font-weight: 850; letter-spacing: .16em; }
+.sonalit-intelligence-workspace .icv-title-block h1 { margin: 7px 0 8px; color: #f5f8ff; font-family: 'Space Grotesk','Archivo',sans-serif; font-size: clamp(34px,3.3vw,48px); font-weight: 780; letter-spacing: -.055em; line-height: .99; }
+.sonalit-intelligence-workspace .icv-title-block p { max-width: 920px; color: #b4c3d9; font-size: 14px; line-height: 1.55; }
+.sonalit-intelligence-workspace .icv-heading-actions { gap: 10px; }
+.sonalit-intelligence-workspace .icv-access-tag { min-height: 40px; padding: 0 13px; border-radius: 9px; color: #cfe4fa; font-size: 10.5px; }
+.sonalit-intelligence-workspace .icv-refresh {
+  min-height: 42px; padding: 0 15px; border-color: rgba(101,228,255,.42); border-radius: 9px;
+  background: linear-gradient(120deg,rgba(20,99,128,.56),rgba(42,55,113,.55)); color: #ecfbff; font-size: 12px; font-weight: 800;
+  box-shadow: inset 0 1px rgba(255,255,255,.1),0 8px 20px rgba(0,0,0,.15); transition: transform .2s ease,box-shadow .2s ease,border-color .2s ease;
+}
+.sonalit-intelligence-workspace .icv-refresh:hover { transform: translateY(-1px); border-color: rgba(101,228,255,.72); background: linear-gradient(120deg,rgba(25,121,151,.68),rgba(63,72,137,.64)); box-shadow: 0 10px 25px rgba(23,130,173,.16); }
+.sonalit-intelligence-workspace .icv-controls {
+  gap: 14px 18px; min-height: 66px; padding: 12px 16px; border-color: rgba(131,174,228,.22); border-radius: 13px;
+  background: linear-gradient(115deg,rgba(18,34,58,.91),rgba(9,18,36,.94)); box-shadow: inset 0 1px rgba(255,255,255,.06),0 12px 24px rgba(0,0,0,.12);
+  backdrop-filter: blur(14px) saturate(125%);
+}
+.sonalit-intelligence-workspace .icv-control-group { gap: 10px; }
+.sonalit-intelligence-workspace .icv-control-group > span { color: #9bb1cf; font-size: 10.5px; font-weight: 850; letter-spacing: .13em; }
+.sonalit-intelligence-workspace .icv-control-group select { min-height: 40px; max-width: 260px; padding: 0 34px 0 12px; border-color: rgba(135,174,222,.3); border-radius: 8px; background: rgba(6,15,31,.92); color: #f0f5ff; font-size: 13px; font-weight: 700; }
+.sonalit-intelligence-workspace .icv-clear-scope { font-size: 12px; font-weight: 800; }
+.sonalit-intelligence-workspace .icv-window-note { color: #a9b9d0; font-size: 12px; font-weight: 600; }
+.sonalit-intelligence-workspace .icv-health-strip {
+  grid-template-columns: 7px minmax(0,1fr) auto; min-height: 92px; gap: 15px; padding: 15px 18px;
+  border-color: rgba(131,174,228,.3); border-radius: 13px;
+  background: radial-gradient(ellipse at 0% 50%,rgba(72,148,190,.13),transparent 45%),linear-gradient(105deg,rgba(17,36,61,.96),rgba(8,17,34,.97));
+  box-shadow: inset 0 1px rgba(255,255,255,.055),0 12px 26px rgba(0,0,0,.13);
+}
+.sonalit-intelligence-workspace .icv-health-mark { width: 6px; }
+.sonalit-intelligence-workspace .icv-health-copy { gap: 4px; }
+.sonalit-intelligence-workspace .icv-health-copy span { color: #9ab1d0; font-size: 10.5px; font-weight: 900; letter-spacing: .15em; }
+.sonalit-intelligence-workspace .icv-health-copy strong { color: #f4f8ff; font-family: 'Space Grotesk',sans-serif; font-size: 17px; font-weight: 800; }
+.sonalit-intelligence-workspace .icv-health-copy small { color: #b3c1d7; font-size: 12px; line-height: 1.45; }
+.sonalit-intelligence-workspace .icv-health-stats { gap: 16px; }
+.sonalit-intelligence-workspace .icv-health-stats span { gap: 4px; color: #a7b8d0; font-size: 10.5px; font-weight: 700; }
+.sonalit-intelligence-workspace .icv-health-stats b { color: #f1f6ff; font-family: 'Space Grotesk',sans-serif; font-size: 21px; font-weight: 800; }
+.sonalit-intelligence-workspace .icv-metrics { grid-template-columns: repeat(5,minmax(0,1fr)); gap: 12px; }
+.sonalit-intelligence-workspace .icv-metric {
+  position: relative; min-height: 146px; padding: 18px 18px 16px; overflow: hidden;
+  border-color: rgba(132,171,224,.22); border-radius: 14px;
+  background: radial-gradient(ellipse at 100% 0%,rgba(78,119,190,.19),transparent 52%),linear-gradient(145deg,rgba(17,31,55,.98),rgba(8,16,32,.98));
+  box-shadow: inset 0 1px rgba(255,255,255,.06),0 14px 28px rgba(0,0,0,.16);
+  transition: transform .22s ease,border-color .22s ease,box-shadow .22s ease;
+}
+.sonalit-intelligence-workspace .icv-metric::after { content:""; position:absolute; right:-14px; bottom:-32px; width:112px; height:112px; border:1px solid rgba(121,173,233,.12); border-radius:50%; box-shadow: 0 0 0 13px rgba(121,173,233,.025),0 0 0 27px rgba(121,173,233,.018); pointer-events:none; }
+.sonalit-intelligence-workspace .icv-metric:hover { transform: translateY(-3px); border-color: rgba(109,218,255,.38); box-shadow: inset 0 1px rgba(255,255,255,.09),0 18px 34px rgba(0,0,0,.22),0 0 24px rgba(67,170,226,.07); }
+.sonalit-intelligence-workspace .icv-metric:before { left: 18px; width: 48px; height: 3px; }
+.sonalit-intelligence-workspace .icv-metric span { position:relative; z-index:1; color:#b4c6e0; font-size:11px; font-weight:850; letter-spacing:.095em; }
+.sonalit-intelligence-workspace .icv-metric strong { position:relative; z-index:1; margin:12px 0 8px; color:#f6f8ff; font-family:'Space Grotesk','Archivo',sans-serif; font-size:clamp(34px,3.1vw,43px); font-weight:800; letter-spacing:-.055em; line-height:.98; }
+.sonalit-intelligence-workspace .icv-metric small { position:relative; z-index:1; color:#a8b9d2; font-size:11.5px; font-weight:600; line-height:1.4; }
+.sonalit-intelligence-workspace .icv-main-grid { grid-template-columns:minmax(0,1.62fr) minmax(340px,.82fr); gap:16px; }
+.sonalit-intelligence-workspace .icv-right-rail { gap:16px; }
+.sonalit-intelligence-workspace .icv-panel {
+  border-color: rgba(131,169,226,.22); border-radius:15px;
+  background: radial-gradient(ellipse at 100% 0%,rgba(49,91,154,.1),transparent 48%),linear-gradient(150deg,rgba(15,27,49,.98),rgba(7,14,28,.99));
+  box-shadow: inset 0 1px rgba(255,255,255,.055),0 16px 34px rgba(0,0,0,.17);
+}
+.sonalit-intelligence-workspace .icv-panel-head { min-height:86px; gap:15px; padding:16px 18px; border-bottom-color:rgba(135,169,226,.16); }
+.sonalit-intelligence-workspace .icv-panel-head > div > span { color:#91add2; font-size:10.5px; font-weight:900; letter-spacing:.145em; }
+.sonalit-intelligence-workspace .icv-panel-head h2 { margin:5px 0 4px; color:#f0f5ff; font-family:'Space Grotesk',sans-serif; font-size:18px; font-weight:760; letter-spacing:-.02em; }
+.sonalit-intelligence-workspace .icv-panel-head p { color:#a8bad2; font-size:12.5px; line-height:1.4; }
+.sonalit-intelligence-workspace .icv-panel-head > svg { color:#8bbef4; }
+.sonalit-intelligence-workspace .icv-panel-count { flex-basis:42px; width:42px; height:42px; border-color:rgba(101,228,255,.32); border-radius:11px; background:linear-gradient(145deg,rgba(31,100,131,.34),rgba(38,48,93,.36)); color:#d8f8ff; font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:800; }
+.sonalit-intelligence-workspace .icv-map-canvas {
+  height: clamp(440px,48vh,610px); min-height:420px;
+  background: linear-gradient(rgba(123,170,231,.045) 1px,transparent 1px) 0 0 / 48px 48px,linear-gradient(90deg,rgba(123,170,231,.045) 1px,transparent 1px) 0 0 / 48px 48px,#07101f;
+}
+.sonalit-intelligence-workspace .icv-map-canvas::after { content:""; position:absolute; inset:0; z-index:1; pointer-events:none; background:linear-gradient(180deg,rgba(5,11,24,.12),transparent 25%,transparent 73%,rgba(5,11,24,.28)); box-shadow:inset 0 0 0 1px rgba(130,174,230,.08); }
+.sonalit-intelligence-workspace .icv-map-tools { display:flex; align-items:center; justify-content:flex-end; gap:13px; flex-wrap:wrap; }
+.sonalit-intelligence-workspace .icv-map-legend { gap:12px; color:#bdcbe0; font-size:10.5px; font-weight:750; }
+.sonalit-intelligence-workspace .icv-map-legend span { gap:7px; }
+.sonalit-intelligence-workspace .icv-map-legend i { width:9px; height:9px; }
+.sonalit-intelligence-workspace .icv-basemap-toggle { display:inline-flex; align-items:center; gap:3px; padding:3px; border:1px solid rgba(131,174,229,.28); border-radius:9px; background:rgba(5,13,29,.82); }
+.sonalit-intelligence-workspace .icv-basemap-toggle button { min-height:31px; padding:0 10px; border:1px solid transparent; border-radius:6px; background:transparent; color:#9caec8; font-size:10px; font-weight:850; letter-spacing:.08em; cursor:pointer; }
+.sonalit-intelligence-workspace .icv-basemap-toggle button.active { border-color:rgba(101,228,255,.32); background:linear-gradient(110deg,rgba(27,108,144,.42),rgba(63,61,129,.34)); color:#effbff; box-shadow:0 3px 12px rgba(31,126,169,.14); }
+.sonalit-intelligence-workspace .icv-map-marker { width:21px; height:21px; border:2px solid rgba(238,249,255,.92); background:rgba(95,221,246,.9); box-shadow:0 0 0 5px rgba(95,221,246,.17),0 0 18px rgba(95,221,246,.32),0 4px 11px rgba(0,0,0,.45); transition:transform .18s ease,box-shadow .18s ease; }
+.sonalit-intelligence-workspace .icv-map-marker:hover { transform:scale(1.13); }
+.sonalit-intelligence-workspace .icv-map-marker i { width:6px; height:6px; background:#061326; }
+.sonalit-intelligence-workspace .icv-map-marker.icv-severity-critical { background:#ff7588; box-shadow:0 0 0 6px rgba(255,117,136,.18),0 0 22px rgba(255,117,136,.35),0 4px 11px rgba(0,0,0,.45); }
+.sonalit-intelligence-workspace .icv-map-marker.icv-severity-high { background:#ffc477; box-shadow:0 0 0 5px rgba(255,196,119,.18),0 0 20px rgba(255,196,119,.28),0 4px 11px rgba(0,0,0,.45); }
+.sonalit-intelligence-workspace .icv-map-readout { z-index:2; left:18px; bottom:18px; min-width:208px; padding:14px 16px; border-color:rgba(152,193,244,.35); border-radius:11px; background:linear-gradient(145deg,rgba(7,20,42,.94),rgba(6,12,27,.92)); box-shadow:inset 0 1px rgba(255,255,255,.08),0 12px 32px rgba(0,0,0,.28); backdrop-filter:blur(15px) saturate(140%); }
+.sonalit-intelligence-workspace .icv-map-readout span { color:#aec8e7; font-size:10.5px; font-weight:850; letter-spacing:.1em; }
+.sonalit-intelligence-workspace .icv-map-readout strong { margin:5px 0; color:#fff; font-family:'Space Grotesk',sans-serif; font-size:36px; font-weight:800; line-height:1; }
+.sonalit-intelligence-workspace .icv-map-readout small { color:#c0cee2; font-size:11px; line-height:1.4; }
+.sonalit-intelligence-workspace .icv-map-footer { min-height:42px; padding:9px 16px; border-top-color:rgba(135,169,226,.17); color:#a7b9d2; font-size:11px; }
+.sonalit-intelligence-workspace .icv-map-footer svg { color:var(--icw-cyan); }
+.sonalit-intelligence-workspace .icv-warning-row { min-height:74px; gap:12px; padding:13px 16px; border-bottom-color:rgba(135,169,226,.14); background:rgba(8,17,34,.5); transition:background .18s ease,transform .18s ease; }
+.sonalit-intelligence-workspace .icv-warning-row:hover { transform:translateX(2px); background:rgba(34,58,91,.42); }
+.sonalit-intelligence-workspace .icv-warning-row > span:nth-child(2) strong { color:#edf4ff; font-size:13.5px; font-weight:750; line-height:1.36; }
+.sonalit-intelligence-workspace .icv-warning-row > span:nth-child(2) small { color:#a2b5d0; font-size:11.5px; }
+.sonalit-intelligence-workspace .icv-warning-row > b { font-size:10px; font-weight:900; letter-spacing:.08em; }
+.sonalit-intelligence-workspace .icv-panel-state { min-height:116px; padding:24px 20px; color:#b0bfd5; font-size:13px; line-height:1.55; }
+.sonalit-intelligence-workspace .icv-country-row { min-height:76px; grid-template-columns:76px minmax(0,1fr) 55px; gap:4px 10px; padding:12px 16px; border-bottom-color:rgba(135,169,226,.14); background:rgba(8,17,34,.46); }
+.sonalit-intelligence-workspace .icv-country-row:hover { background:rgba(31,56,88,.43); }
+.sonalit-intelligence-workspace .icv-country-row > span:first-child { grid-row:span 2; }
+.sonalit-intelligence-workspace .icv-country-row > span:first-child b { color:#d5eaff; font-size:13px; font-weight:850; }
+.sonalit-intelligence-workspace .icv-country-row > span:first-child small { color:#9fb4d1; font-size:10.5px; }
+.sonalit-intelligence-workspace .icv-country-row > strong { color:#fff; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:800; }
+.sonalit-intelligence-workspace .icv-country-row > small { grid-column:2 / 4; color:#92a8c3; font-size:10px; font-weight:650; }
+.sonalit-intelligence-workspace .icv-country-activity { grid-column:2 / 4; display:block; height:4px; overflow:hidden; border-radius:99px; background:rgba(130,157,194,.17); }
+.sonalit-intelligence-workspace .icv-country-activity i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#4fc7e6,#948bff); box-shadow:0 0 9px rgba(81,190,228,.3); }
+.sonalit-intelligence-workspace .icv-lower-grid { grid-template-columns:minmax(0,1.28fr) minmax(310px,.72fr); gap:16px; }
+.sonalit-intelligence-workspace .icv-event-row { min-height:72px; grid-template-columns:10px minmax(0,1fr) 122px 18px; gap:12px; padding:13px 16px; border-bottom-color:rgba(135,169,226,.13); transition:background .18s ease,padding .18s ease; }
+.sonalit-intelligence-workspace .icv-event-row:hover { padding-left:19px; background:rgba(35,61,97,.33); }
+.sonalit-intelligence-workspace .icv-event-copy strong { color:#edf4ff; font-size:13.5px; font-weight:750; line-height:1.35; }
+.sonalit-intelligence-workspace .icv-event-copy small { color:#9fb1cb; font-size:11.5px; }
+.sonalit-intelligence-workspace .icv-event-meta { gap:4px; }
+.sonalit-intelligence-workspace .icv-event-meta b { color:#d6e5f7; font-size:10px; font-weight:900; }
+.sonalit-intelligence-workspace .icv-event-meta small { color:#98abc4; font-size:10px; }
+.sonalit-intelligence-workspace .icv-assurance-lines > div { min-height:54px; padding:12px 17px; border-bottom-color:rgba(135,169,226,.13); }
+.sonalit-intelligence-workspace .icv-assurance-lines span { color:#a2b4cf; font-size:12px; }
+.sonalit-intelligence-workspace .icv-assurance-lines b { color:#edf4ff; font-size:12px; font-weight:750; }
+.sonalit-intelligence-workspace .icv-assurance-note { margin:14px; padding:14px 15px; border-color:rgba(140,164,220,.19); border-radius:10px; background:linear-gradient(120deg,rgba(39,58,109,.2),rgba(9,20,38,.65)); color:#b6c4d8; font-size:12px; line-height:1.55; }
+.sonalit-intelligence-workspace .icv-drawer { width:min(700px,96vw); border-left-color:rgba(119,171,230,.29); background:radial-gradient(ellipse at 100% 0%,rgba(74,93,172,.2),transparent 45%),linear-gradient(180deg,#0a1428,#060b19); }
+.sonalit-intelligence-workspace .icv-drawer > header { padding:22px 24px; }
+.sonalit-intelligence-workspace .icv-drawer > header h2 { color:#f6f8ff; font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:780; line-height:1.2; }
+.sonalit-intelligence-workspace .icv-drawer-body { padding:19px 24px 28px; }
+.sonalit-intelligence-workspace .icv-drawer-body > p { color:#c4d0e2; font-size:14px; line-height:1.65; }
+.sonalit-intelligence-workspace .icv-drawer-body h3 { color:#dce9fc; font-size:14px; font-weight:800; }
+.sonalit-intelligence-workspace .icv-drawer-fields > div { padding:13px; border:1px solid rgba(135,169,226,.14); border-radius:9px; background:rgba(12,25,47,.72); }
+.sonalit-intelligence-workspace .icv-drawer-fields small { color:#9bb1ce; font-size:10px; font-weight:850; letter-spacing:.11em; }
+.sonalit-intelligence-workspace .icv-drawer-fields b { color:#eef4ff; font-size:12.5px; font-weight:750; line-height:1.45; }
+.sonalit-intelligence-workspace .icv-drawer footer { padding:15px 24px; border-top-color:rgba(135,169,226,.16); color:#a3b5d0; font-size:11px; }
+
+/* ── Collection control: source records become readable register rows ───── */
+.sonalit-intelligence-workspace .ics-root { gap:18px; color:#edf4ff; }
+.sonalit-intelligence-workspace .ics-heading { gap:22px; }
+.sonalit-intelligence-workspace .ics-eyebrow { color:#9bb9dc; font-size:10.5px; font-weight:900; letter-spacing:.15em; }
+.sonalit-intelligence-workspace .ics-heading h1 { margin:7px 0; color:#f4f7ff; font-family:'Space Grotesk',sans-serif; font-size:clamp(28px,2.5vw,36px); font-weight:800; letter-spacing:-.045em; }
+.sonalit-intelligence-workspace .ics-heading p { color:#b1c1d8; font-size:14px; line-height:1.55; }
+.sonalit-intelligence-workspace .ics-run-button { min-height:45px; padding:0 16px; border:1px solid rgba(101,228,255,.48); border-radius:10px; background:linear-gradient(115deg,rgba(25,115,148,.72),rgba(59,64,132,.72)); color:#f2fcff; font-size:12px; font-weight:900; letter-spacing:.06em; box-shadow:inset 0 1px rgba(255,255,255,.12),0 10px 24px rgba(0,0,0,.2); }
+.sonalit-intelligence-workspace .ics-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); gap:11px; }
+.sonalit-intelligence-workspace .ics-metrics > div { min-height:134px; padding:18px 17px; border-color:rgba(135,169,226,.2); border-radius:13px; background:radial-gradient(ellipse at 100% 0%,rgba(73,121,195,.16),transparent 57%),linear-gradient(145deg,rgba(16,30,54,.98),rgba(7,15,30,.98)); box-shadow:inset 0 1px rgba(255,255,255,.05),0 11px 22px rgba(0,0,0,.12); }
+.sonalit-intelligence-workspace .ics-metrics > div > span { color:#b0c3df; font-size:10.5px; font-weight:900; letter-spacing:.1em; }
+.sonalit-intelligence-workspace .ics-metrics > div > strong { margin:10px 0 7px; color:#f5f8ff; font-family:'Space Grotesk',sans-serif; font-size:35px; font-weight:800; letter-spacing:-.045em; }
+.sonalit-intelligence-workspace .ics-metrics > div > small { color:#a6b7d1; font-size:11.5px; line-height:1.4; }
+.sonalit-intelligence-workspace .ics-quality-strip { grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:0; border-color:rgba(135,169,226,.19); border-radius:12px; background:linear-gradient(105deg,rgba(15,29,53,.92),rgba(8,16,31,.95)); overflow:hidden; }
+.sonalit-intelligence-workspace .ics-quality-strip > div { min-height:88px; padding:15px 17px; border-right:1px solid rgba(135,169,226,.13); }
+.sonalit-intelligence-workspace .ics-quality-strip > div > span { color:#a2b6d1; font-size:10px; font-weight:850; letter-spacing:.1em; }
+.sonalit-intelligence-workspace .ics-quality-strip > div > b { margin-top:6px; color:#f3f6ff; font-family:'Space Grotesk',sans-serif; font-size:23px; font-weight:800; }
+.sonalit-intelligence-workspace .ics-quality-strip p { grid-column:1/-1; margin:0; padding:11px 17px; border-top:1px solid rgba(135,169,226,.13); color:#a5b8d3; font-size:11.5px; line-height:1.45; }
+.sonalit-intelligence-workspace .ics-register-tools { gap:10px; padding:12px; border:1px solid rgba(135,169,226,.18); border-radius:12px; background:rgba(9,18,36,.86); }
+.sonalit-intelligence-workspace .ics-register-tools label { min-height:43px; padding:0 12px; border-color:rgba(135,169,226,.23); border-radius:8px; background:rgba(8,16,32,.92); color:#a8bdd9; font-size:11px; }
+.sonalit-intelligence-workspace .ics-register-tools select,
+.sonalit-intelligence-workspace .ics-search input { color:#f0f5ff; font-size:13px; font-weight:650; }
+.sonalit-intelligence-workspace .ics-search input::placeholder { color:#859bb9; }
+.sonalit-intelligence-workspace .ics-refresh { min-height:43px; padding:0 14px; border-color:rgba(135,169,226,.25); border-radius:8px; background:linear-gradient(120deg,rgba(35,63,111,.54),rgba(10,26,48,.85)); color:#e3edff; font-size:12px; font-weight:800; }
+.sonalit-intelligence-workspace .ics-grid { grid-template-columns:1fr; gap:9px; }
+.sonalit-intelligence-workspace .ics-source-card {
+  display:grid; grid-template-columns:minmax(220px,1.15fr) minmax(300px,1.25fr) minmax(170px,.7fr); grid-template-rows:auto auto auto;
+  gap:7px 22px; min-height:122px; padding:17px 19px; border-color:rgba(135,169,226,.19); border-radius:12px;
+  background:radial-gradient(ellipse at 100% 0%,rgba(69,108,181,.12),transparent 40%),linear-gradient(110deg,rgba(14,27,50,.96),rgba(7,15,30,.97));
+  box-shadow:inset 0 1px rgba(255,255,255,.045),0 8px 17px rgba(0,0,0,.12);
+  transition:border-color .2s ease,transform .2s ease,background .2s ease,box-shadow .2s ease;
+}
+.sonalit-intelligence-workspace .ics-source-card:hover { transform:translateY(-1px); border-color:rgba(101,228,255,.34); background:linear-gradient(110deg,rgba(20,39,69,.98),rgba(8,19,38,.98)); box-shadow:inset 0 1px rgba(255,255,255,.08),0 13px 25px rgba(0,0,0,.17); }
+.sonalit-intelligence-workspace .ics-source-card-top { grid-column:1; grid-row:1; }
+.sonalit-intelligence-workspace .ics-source-type { color:#9bb9de; font-size:10px; font-weight:900; letter-spacing:.12em; }
+.sonalit-intelligence-workspace .ics-state-pill { padding:5px 8px; border-radius:6px; font-size:9.5px; font-weight:900; }
+.sonalit-intelligence-workspace .ics-source-card h3 { grid-column:1; grid-row:2; margin:0; color:#f3f7ff; font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:760; line-height:1.2; }
+.sonalit-intelligence-workspace .ics-source-card > p { grid-column:1; grid-row:3; margin:0; color:#a5b8d2; font-size:12px; line-height:1.35; }
+.sonalit-intelligence-workspace .ics-source-details { grid-column:2; grid-row:1/4; align-self:center; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.sonalit-intelligence-workspace .ics-source-details > span { gap:5px; }
+.sonalit-intelligence-workspace .ics-source-details small { color:#91a9c7; font-size:9.5px; font-weight:850; letter-spacing:.08em; }
+.sonalit-intelligence-workspace .ics-source-details b { color:#eff5ff; font-family:'Space Grotesk',sans-serif; font-size:18px; font-weight:800; }
+.sonalit-intelligence-workspace .ics-source-card footer { grid-column:3; grid-row:1/4; align-self:stretch; justify-content:space-between; flex-direction:column; gap:8px; padding:2px 0 2px 14px; border-left:1px solid rgba(135,169,226,.15); color:#a5b9d4; font-size:10px; font-weight:850; letter-spacing:.07em; }
+.sonalit-intelligence-workspace .ics-source-card footer svg { color:var(--icw-cyan); }
+.sonalit-intelligence-workspace .ics-footnote { padding:14px 16px; border-color:rgba(135,169,226,.17); border-radius:10px; background:rgba(11,21,40,.72); color:#b1c1d7; font-size:12px; line-height:1.5; }
+
+/* ── Analysis workbench ────────────────────────────────────────────────── */
+.sonalit-intelligence-workspace .icd-root {
+  padding:0 0 40px; color:#eaf2ff; font-family:'Archivo','Inter',sans-serif; font-size:14px;
+  background:radial-gradient(ellipse at 75% 0%,rgba(65,84,167,.13),transparent 44%),linear-gradient(180deg,rgba(7,14,29,.88),rgba(5,10,23,.92));
+}
+.sonalit-intelligence-workspace .icd-eyebrow,
+.sonalit-intelligence-workspace .icd-kicker { color:#9dbbe1; font-size:10.5px; font-weight:900; letter-spacing:.15em; }
+.sonalit-intelligence-workspace .icd-top { align-items:center; padding:18px 0 17px; border-bottom-color:rgba(135,169,226,.2); }
+.sonalit-intelligence-workspace .icd-top h1 { margin:6px 0 5px; color:#f4f7ff; font-family:'Space Grotesk',sans-serif; font-size:clamp(28px,2.5vw,36px); font-weight:800; letter-spacing:-.045em; line-height:1; }
+.sonalit-intelligence-workspace .icd-top p { color:#b0bfd5; font-size:13px; line-height:1.5; }
+.sonalit-intelligence-workspace .icd-top-readout { gap:12px; color:#a7bad6; font-size:10.5px; font-weight:850; }
+.sonalit-intelligence-workspace .icd-top-readout b { color:#f1f6ff; font-size:13px; }
+.sonalit-intelligence-workspace .icd-top-readout small { color:#9bb0ce; font-size:10px; }
+.sonalit-intelligence-workspace .icd-top-readout button { min-height:39px; padding:0 13px; border-color:rgba(101,228,255,.35); border-radius:8px; background:linear-gradient(110deg,rgba(30,104,144,.44),rgba(58,58,120,.42)); color:#e8f8ff; font-size:11px; font-weight:850; }
+.sonalit-intelligence-workspace .icd-fabric-banner { gap:20px; margin:14px 0; padding:17px 19px; border-color:rgba(135,169,226,.28); border-radius:13px; background:linear-gradient(105deg,rgba(16,32,59,.95),rgba(7,17,35,.96)); box-shadow:inset 0 1px rgba(255,255,255,.055),0 10px 25px rgba(0,0,0,.12); }
+.sonalit-intelligence-workspace .icd-fabric-banner-main > span { color:#a5bfdf; font-size:10.5px; font-weight:900; letter-spacing:.13em; }
+.sonalit-intelligence-workspace .icd-fabric-banner-main > strong { display:block; margin-top:5px; color:#f4f7ff; font-family:'Space Grotesk',sans-serif; font-size:18px; font-weight:800; }
+.sonalit-intelligence-workspace .icd-fabric-banner-main p { margin-top:5px; color:#b1c1d8; font-size:12px; line-height:1.5; }
+.sonalit-intelligence-workspace .icd-fabric-banner-metrics { gap:13px; }
+.sonalit-intelligence-workspace .icd-fabric-banner-metrics span { color:#b0c0d8; font-size:10.5px; font-weight:700; }
+.sonalit-intelligence-workspace .icd-fabric-banner-metrics b { color:#f2f7ff; font-family:'Space Grotesk',sans-serif; font-size:20px; font-weight:800; }
+.sonalit-intelligence-workspace .icd-fabric-banner-metrics button { min-height:36px; padding:0 11px; border-radius:7px; color:#c9edfa; font-size:10px; font-weight:850; }
+.sonalit-intelligence-workspace .icd-theatre { grid-template-columns:minmax(210px,.9fr) 155px 155px 96px minmax(240px,1.55fr); gap:9px; padding:13px 0; }
+.sonalit-intelligence-workspace .icd-theatre > label,
+.sonalit-intelligence-workspace .icd-query {
+  gap:5px; min-height:65px; padding:10px 12px; border-color:rgba(135,169,226,.22); border-radius:9px;
+  background:linear-gradient(145deg,rgba(12,25,48,.94),rgba(6,15,31,.96));
+}
+.sonalit-intelligence-workspace .icd-theatre label > span,
+.sonalit-intelligence-workspace .icd-theatre-id span { color:#9bb1ce; font-size:10px; font-weight:900; letter-spacing:.12em; }
+.sonalit-intelligence-workspace .icd-theatre select { color:#f0f5ff; font-size:13px; font-weight:700; }
+.sonalit-intelligence-workspace .icd-theatre-id strong { color:#f4f7ff; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:800; }
+.sonalit-intelligence-workspace .icd-theatre-id small { color:#a0b3d0; font-size:10.5px; line-height:1.35; }
+.sonalit-intelligence-workspace .icd-query input { color:#f2f7ff; font-size:13px; }
+.sonalit-intelligence-workspace .icd-query input::placeholder { color:#869bb9; }
+.sonalit-intelligence-workspace .icd-query kbd { font-size:10px; }
+.sonalit-intelligence-workspace .icd-nav {
+  display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:7px; padding:7px;
+  border:1px solid rgba(135,169,226,.22); border-radius:12px; background:linear-gradient(110deg,rgba(11,23,44,.96),rgba(6,14,29,.98));
+  box-shadow:inset 0 1px rgba(255,255,255,.05);
+}
+.sonalit-intelligence-workspace .icd-nav button { justify-content:flex-start; min-height:48px; gap:9px; padding:0 12px; border:1px solid transparent; border-radius:8px; background:transparent; color:#a9bad3; }
+.sonalit-intelligence-workspace .icd-nav button span { color:#8199ba; font-size:10px; font-weight:850; }
+.sonalit-intelligence-workspace .icd-nav button svg { width:18px; height:18px; color:#9bbbe2; }
+.sonalit-intelligence-workspace .icd-nav button b { color:inherit; font-size:10.5px; font-weight:850; letter-spacing:.045em; line-height:1.2; }
+.sonalit-intelligence-workspace .icd-nav button.active { border-color:rgba(101,228,255,.34); background:linear-gradient(105deg,rgba(27,105,142,.35),rgba(63,58,127,.28)); color:#f1fbff; box-shadow:inset 0 1px rgba(255,255,255,.07); }
+.sonalit-intelligence-workspace .icd-nav button.active svg { color:var(--icw-cyan); }
+.sonalit-intelligence-workspace .icd-filterbar { gap:10px; padding:13px 0 15px; color:#a0b4d1; font-size:10.5px; font-weight:900; letter-spacing:.12em; }
+.sonalit-intelligence-workspace .icd-filterbar select,
+.sonalit-intelligence-workspace .scope-chip { min-height:36px; padding:7px 11px; border-color:rgba(135,169,226,.2); border-radius:8px; background:rgba(9,19,38,.9); color:#d7e5f8; font-size:11px; font-weight:800; }
+.sonalit-intelligence-workspace .icd-main { gap:14px; }
+.sonalit-intelligence-workspace .icd-hero {
+  min-height:280px; gap:24px; padding:clamp(22px,2.5vw,34px); border-color:rgba(135,169,226,.25); border-radius:17px;
+  background:radial-gradient(ellipse at 66% 38%,rgba(62,113,198,.2),transparent 38%),radial-gradient(ellipse at 92% 0%,rgba(139,106,219,.14),transparent 38%),linear-gradient(125deg,#0c1932,#071226 60%,#0b1730);
+  box-shadow:inset 0 1px rgba(255,255,255,.07),0 20px 42px rgba(0,0,0,.2);
+}
+.sonalit-intelligence-workspace .icd-hero h2 { margin:9px 0 13px; color:#f4f7ff; font-family:'Space Grotesk',sans-serif; font-size:clamp(40px,4vw,56px); font-weight:800; line-height:.98; letter-spacing:-.055em; }
+.sonalit-intelligence-workspace .icd-hero h2 em { color:#9ec7ff; font-style:normal; }
+.sonalit-intelligence-workspace .icd-hero p { max-width:720px; color:#b4c4dc; font-size:14px; line-height:1.58; }
+.sonalit-intelligence-workspace .icd-hero-pills { gap:8px; margin-top:20px; }
+.sonalit-intelligence-workspace .icd-hero-pills span { min-height:36px; padding:8px 11px; border-color:rgba(135,176,230,.24); border-radius:8px; background:rgba(7,18,39,.58); color:#b3c9e6; font-size:10px; font-weight:850; }
+.sonalit-intelligence-workspace .icd-orbit { min-height:230px; border:1px solid rgba(135,176,230,.13); border-radius:50%; background:radial-gradient(circle,rgba(64,122,194,.17),transparent 63%); }
+.sonalit-intelligence-workspace .icd-orbit:before,
+.sonalit-intelligence-workspace .icd-orbit:after,
+.sonalit-intelligence-workspace .icd-orbit > div { border-color:rgba(104,180,255,.27); box-shadow:0 0 35px rgba(70,152,230,.12); }
+.sonalit-intelligence-workspace .icd-orbit strong { color:#f5f8ff; font-family:'Space Grotesk',sans-serif; font-size:58px; font-weight:800; }
+.sonalit-intelligence-workspace .icd-orbit small { color:#a5c6ea; font-size:10px; font-weight:900; letter-spacing:.15em; }
+.sonalit-intelligence-workspace .icd-kpis { gap:10px; border:0; background:transparent; }
+.sonalit-intelligence-workspace .icd-kpi { min-height:120px; padding:17px 16px; border:1px solid rgba(135,169,226,.2); border-radius:12px; background:linear-gradient(145deg,rgba(16,30,54,.96),rgba(7,15,30,.98)); box-shadow:inset 0 1px rgba(255,255,255,.05),0 9px 20px rgba(0,0,0,.14); }
+.sonalit-intelligence-workspace .icd-kpi span,
+.sonalit-intelligence-workspace .icd-kpi small { color:#a6bad7; font-size:10.5px; font-weight:850; letter-spacing:.09em; }
+.sonalit-intelligence-workspace .icd-kpi strong { margin:8px 0 5px; color:#f6f8ff; font-family:'Space Grotesk',sans-serif; font-size:32px; font-weight:800; }
+.sonalit-intelligence-workspace .icd-panel { border-color:rgba(135,169,226,.2); border-radius:13px; background:linear-gradient(150deg,rgba(14,27,50,.96),rgba(6,14,28,.98)); box-shadow:inset 0 1px rgba(255,255,255,.045),0 12px 26px rgba(0,0,0,.14); }
+.sonalit-intelligence-workspace .icd-panel > header { min-height:65px; padding:14px 17px; border-bottom-color:rgba(135,169,226,.16); background:linear-gradient(180deg,rgba(20,38,67,.72),rgba(10,20,39,.7)); }
+.sonalit-intelligence-workspace .icd-panel > header span { color:#9bb7db; font-size:10px; font-weight:900; letter-spacing:.12em; }
+.sonalit-intelligence-workspace .icd-panel > header b { color:#f0f5ff; font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:780; letter-spacing:-.015em; }
+.sonalit-intelligence-workspace .icd-panel > header small { color:#9db1cd; font-size:10px; font-weight:800; }
+.sonalit-intelligence-workspace .icd-row { min-height:67px; grid-template-columns:32px minmax(0,1fr) auto 18px; gap:11px; padding:12px 15px; border-bottom-color:rgba(135,169,226,.12); background:rgba(5,14,29,.5); transition:background .18s ease,padding .18s ease; }
+.sonalit-intelligence-workspace .icd-row:hover { padding-left:18px; background:rgba(31,56,94,.4); }
+.sonalit-intelligence-workspace .icd-row .index { color:#91a9ca; font-size:10px; font-weight:900; }
+.sonalit-intelligence-workspace .icd-row > div b { color:#edf4ff; font-size:13.5px; font-weight:750; line-height:1.35; }
+.sonalit-intelligence-workspace .icd-row > div span { color:#a3b5cf; font-size:11.5px; line-height:1.4; }
+.sonalit-intelligence-workspace .icd-row aside { gap:6px; }
+.sonalit-intelligence-workspace .icd-row aside small { color:#95aac7; font-size:10px; font-weight:750; }
+.sonalit-intelligence-workspace .icd-empty { min-height:190px; gap:10px; padding:30px 23px; color:#a5b8d4; }
+.sonalit-intelligence-workspace .icd-empty b { color:#e4efff; font-size:12px; font-weight:900; letter-spacing:.12em; }
+.sonalit-intelligence-workspace .icd-empty span { max-width:510px; color:#a5b8d4; font-size:13px; line-height:1.55; }
+.sonalit-intelligence-workspace .icd-viewhead h2 { color:#f2f6ff; font-family:'Space Grotesk',sans-serif; font-size:29px; font-weight:800; letter-spacing:-.04em; }
+.sonalit-intelligence-workspace .icd-viewhead p { color:#adbed5; font-size:13px; line-height:1.5; }
+.sonalit-intelligence-workspace .icd-country-grid { gap:11px; }
+.sonalit-intelligence-workspace .icd-country { min-height:155px; padding:17px; border-color:rgba(135,169,226,.2); border-radius:12px; background:linear-gradient(145deg,rgba(17,33,59,.95),rgba(7,15,30,.98)); }
+.sonalit-intelligence-workspace .icd-country strong { margin-top:13px; color:#f5f8ff; font-family:'Space Grotesk',sans-serif; font-size:36px; }
+.sonalit-intelligence-workspace .icd-country small,
+.sonalit-intelligence-workspace .icd-country em { color:#a4b8d4; font-size:10.5px; }
+.sonalit-intelligence-workspace .icd-map-shell { height:min(58vh,640px); min-height:440px; border-color:rgba(135,169,226,.22); border-radius:15px; box-shadow:0 17px 36px rgba(0,0,0,.2); }
+.sonalit-intelligence-workspace .icd-map-overlay { border-color:rgba(135,169,226,.26); border-radius:10px; background:rgba(7,18,38,.9); color:#bed3ee; backdrop-filter:blur(12px); }
+.sonalit-intelligence-workspace .icd-map-overlay b { color:#fff; font-family:'Space Grotesk',sans-serif; font-size:32px; }
+.sonalit-intelligence-workspace .icd-map-overlay small { font-size:11px; }
+.sonalit-intelligence-workspace .icd-overlay { background:rgba(3,7,18,.76); backdrop-filter:blur(8px); }
+.sonalit-intelligence-workspace .icd-drawer { border-left-color:rgba(130,174,234,.28); background:linear-gradient(180deg,#0b1730,#050b19); color:#e8f1ff; }
+.sonalit-intelligence-workspace .icd-drawer header h2 { color:#f4f7ff; font-family:'Space Grotesk',sans-serif; font-size:23px; font-weight:780; }
+.sonalit-intelligence-workspace .icd-drawer p { color:#b5c5dc; font-size:13px; line-height:1.55; }
+.sonalit-intelligence-workspace .icd-drawer .field small { color:#96accb; font-size:10px; }
+.sonalit-intelligence-workspace .icd-drawer .field span { color:#e1ebfa; font-size:12px; line-height:1.5; }
+
+/* ── Newsroom and Incident Fabric ─────────────────────────────────────── */
+.sonalit-intelligence-workspace .intelligence-live,
+.sonalit-intelligence-workspace .ia-page { padding:14px 0 40px; color:#edf4ff; background:transparent; }
+.sonalit-intelligence-workspace .in-head,
+.sonalit-intelligence-workspace .ia-head { gap:16px; padding:12px 0 17px; border-bottom-color:rgba(135,169,226,.19); }
+.sonalit-intelligence-workspace .in-brand h1,
+.sonalit-intelligence-workspace .ia-head h1 { color:#f3f7ff; font-family:'Space Grotesk',sans-serif; font-size:27px; font-weight:800; letter-spacing:-.045em; }
+.sonalit-intelligence-workspace .in-brand > span,
+.sonalit-intelligence-workspace .ia-head .ic-command-eyebrow { color:#9db9de; font-size:10.5px; font-weight:900; }
+.sonalit-intelligence-workspace .in-live,
+.sonalit-intelligence-workspace .ia-head-posture { color:#bdcce1; font-size:11px; font-weight:800; letter-spacing:.08em; }
+.sonalit-intelligence-workspace .in-search { min-height:46px; padding:0 13px; border-color:rgba(135,169,226,.24); border-radius:9px; background:linear-gradient(145deg,rgba(11,22,43,.95),rgba(7,14,28,.96)); }
+.sonalit-intelligence-workspace .in-search input { color:#f2f6ff; font-size:13px; }
+.sonalit-intelligence-workspace .in-search input::placeholder { color:#8ca2c0; }
+.sonalit-intelligence-workspace .in-search kbd { color:#aec5e1; font-size:10px; }
+.sonalit-intelligence-workspace .in-controls { gap:7px; }
+.sonalit-intelligence-workspace .in-controls button,
+.sonalit-intelligence-workspace .ia-refresh { min-height:42px; padding:0 13px; border-color:rgba(135,169,226,.24); border-radius:8px; background:linear-gradient(145deg,rgba(18,37,67,.9),rgba(7,17,35,.96)); color:#c8d9ed; font-size:10.5px; font-weight:900; letter-spacing:.07em; }
+.sonalit-intelligence-workspace .in-controls button.active,
+.sonalit-intelligence-workspace .ia-scope-control button.active,
+.sonalit-intelligence-workspace .ia-cat-control button.active { border-color:rgba(101,228,255,.44); background:linear-gradient(110deg,rgba(27,111,148,.46),rgba(69,63,134,.38)); color:#f4fbff; }
+.sonalit-intelligence-workspace .in-subbar { gap:10px; padding:12px 0; color:#9bb2d1; font-size:10px; font-weight:900; letter-spacing:.12em; }
+.sonalit-intelligence-workspace .in-subbar b,
+.sonalit-intelligence-workspace .in-substatus { color:#c5d8ef; }
+.sonalit-intelligence-workspace .in-grid { gap:15px; }
+.sonalit-intelligence-workspace .in-strip,
+.sonalit-intelligence-workspace .ia-metrics { gap:10px; margin-bottom:13px; border:0; background:transparent; }
+.sonalit-intelligence-workspace .in-metric,
+.sonalit-intelligence-workspace .ia-metrics > div { min-height:112px; padding:16px; border:1px solid rgba(135,169,226,.19); border-radius:11px; background:linear-gradient(145deg,rgba(16,31,55,.96),rgba(7,15,30,.98)); }
+.sonalit-intelligence-workspace .in-metric small,
+.sonalit-intelligence-workspace .in-metric span,
+.sonalit-intelligence-workspace .ia-metrics small,
+.sonalit-intelligence-workspace .ia-metrics span { color:#a3b8d5; font-size:10px; font-weight:850; letter-spacing:.09em; }
+.sonalit-intelligence-workspace .in-metric strong,
+.sonalit-intelligence-workspace .ia-metrics strong { margin:7px 0 5px; color:#f4f7ff; font-family:'Space Grotesk',sans-serif; font-size:31px; font-weight:800; }
+.sonalit-intelligence-workspace .in-section,
+.sonalit-intelligence-workspace .ia-feed,
+.sonalit-intelligence-workspace .ia-side { border-color:rgba(135,169,226,.2); border-radius:13px; background:linear-gradient(145deg,rgba(14,28,51,.97),rgba(6,14,28,.98)); box-shadow:inset 0 1px rgba(255,255,255,.045),0 12px 25px rgba(0,0,0,.15); }
+.sonalit-intelligence-workspace .in-section-head,
+.sonalit-intelligence-workspace .ia-feed-head { padding:15px 17px; border-bottom-color:rgba(135,169,226,.15); }
+.sonalit-intelligence-workspace .in-section-head b,
+.sonalit-intelligence-workspace .ia-feed-head b { margin-top:5px; color:#f0f5ff; font-size:14px; font-weight:850; letter-spacing:.04em; }
+.sonalit-intelligence-workspace .in-section-head > span,
+.sonalit-intelligence-workspace .ia-feed-head > span { color:#a2b6d2; font-size:10px; font-weight:800; letter-spacing:.07em; }
+.sonalit-intelligence-workspace .in-card { min-height:205px; padding:17px; border-right-color:rgba(135,169,226,.14); border-bottom-color:rgba(135,169,226,.14); background:linear-gradient(145deg,rgba(13,27,50,.96),rgba(7,15,30,.98)); transition:background .2s ease,transform .2s ease,border-color .2s ease; }
+.sonalit-intelligence-workspace .in-card:hover { transform:translateY(-2px); background:linear-gradient(145deg,rgba(21,43,77,.98),rgba(8,19,38,.99)); }
+.sonalit-intelligence-workspace .in-card-top,
+.sonalit-intelligence-workspace .in-card-meta { color:#a2b7d3; font-size:10px; font-weight:800; }
+.sonalit-intelligence-workspace .in-card h3 { margin:15px 0; color:#eff5ff; font-size:16px; font-weight:760; line-height:1.42; }
+.sonalit-intelligence-workspace .in-card-foot { padding-top:14px; color:#9bb1cf; font-size:10px; font-weight:850; }
+.sonalit-intelligence-workspace .in-event { padding:13px 15px; border-bottom-color:rgba(135,169,226,.14); color:#edf4ff; }
+.sonalit-intelligence-workspace .in-event small { color:#9cb1ce; font-size:10px; }
+.sonalit-intelligence-workspace .in-event b { margin:6px 0; color:#f1f6ff; font-size:13.5px; font-weight:750; }
+.sonalit-intelligence-workspace .in-event span { color:#b2c1d8; font-size:12px; line-height:1.5; }
+.sonalit-intelligence-workspace .in-analysis { padding:15px; }
+.sonalit-intelligence-workspace .in-principle { padding:13px 0; border-bottom-color:rgba(135,169,226,.14); }
+.sonalit-intelligence-workspace .in-principle strong { color:#eaf3ff; font-size:13px; }
+.sonalit-intelligence-workspace .in-principle span { color:#adbed5; font-size:12px; line-height:1.55; }
+.sonalit-intelligence-workspace .in-system-line { padding:10px 0; border-bottom-color:rgba(135,169,226,.14); color:#b5c7df; font-size:10px; }
+.sonalit-intelligence-workspace .in-system-line span { color:#9fb4d1; }
+.sonalit-intelligence-workspace .in-system-line b { color:#dce9fb; font-size:10.5px; }
+.sonalit-intelligence-workspace .ia-control-deck { grid-template-columns:230px minmax(0,1fr) auto; gap:11px; margin:14px 0; }
+.sonalit-intelligence-workspace .ia-scope-control,
+.sonalit-intelligence-workspace .ia-cat-control { padding:12px; border-color:rgba(135,169,226,.2); border-radius:10px; background:linear-gradient(145deg,rgba(13,27,50,.95),rgba(7,15,30,.97)); }
+.sonalit-intelligence-workspace .ia-scope-control button,
+.sonalit-intelligence-workspace .ia-cat-control button { min-height:34px; padding:7px 10px; border-color:rgba(135,169,226,.2); border-radius:7px; background:rgba(6,15,31,.85); color:#bacbe2; font-size:10px; font-weight:850; }
+.sonalit-intelligence-workspace .ia-alert { grid-template-columns:40px minmax(0,1fr) 82px; gap:13px; min-height:112px; padding:16px 17px; border-bottom-color:rgba(135,169,226,.14); background:rgba(6,15,31,.4); }
+.sonalit-intelligence-workspace .ia-alert:hover { background:rgba(31,55,92,.37); }
+.sonalit-intelligence-workspace .ia-alert-icon { width:38px; height:38px; border-color:rgba(135,169,226,.24); border-radius:10px; background:linear-gradient(145deg,rgba(37,71,118,.46),rgba(12,25,48,.9)); }
+.sonalit-intelligence-workspace .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-alert-top em { font-size:10px; font-weight:900; }
+.sonalit-intelligence-workspace .ia-alert h3 { margin:7px 0 5px; color:#f2f6ff; font-size:15px; font-weight:760; line-height:1.38; }
+.sonalit-intelligence-workspace .ia-alert p { color:#b3c2d9; font-size:12px; line-height:1.45; }
+.sonalit-intelligence-workspace .ia-unverified { margin-top:7px; color:#9cabc4; font-size:9.5px; font-weight:850; letter-spacing:.07em; }
+.sonalit-intelligence-workspace .ia-meta { color:#a6b9d4; font-size:10.5px; }
+.sonalit-intelligence-workspace .ia-meta small { font-size:10px; }
+.sonalit-intelligence-workspace .ia-side { display:block; border:1px solid rgba(135,169,226,.2); }
+.sonalit-intelligence-workspace .ia-side section { padding:16px; border-bottom-color:rgba(135,169,226,.14); }
+.sonalit-intelligence-workspace .ia-side h3 { color:#eaf2ff; font-size:13px; font-weight:850; }
+.sonalit-intelligence-workspace .ia-side p { color:#b0bfd6; font-size:12px; line-height:1.55; }
+.sonalit-intelligence-workspace .ia-posture-grid { gap:7px; background:transparent; }
+.sonalit-intelligence-workspace .ia-posture-grid span { padding:11px; border:1px solid rgba(135,169,226,.14); border-radius:8px; background:rgba(7,16,33,.76); color:#a6b8d1; font-size:10px; }
+.sonalit-intelligence-workspace .ia-posture-grid b { color:#edf4ff; font-size:12px; }
+.sonalit-intelligence-workspace .in-feed-state,
+.sonalit-intelligence-workspace .ia-empty { padding:48px 24px; color:#a5b9d4; }
+.sonalit-intelligence-workspace .in-feed-state b,
+.sonalit-intelligence-workspace .ia-empty b { color:#eff5ff; font-size:12px; font-weight:900; }
+.sonalit-intelligence-workspace .in-feed-state span,
+.sonalit-intelligence-workspace .ia-empty span { max-width:520px; color:#acbed8; font-size:13px; line-height:1.55; }
+.sonalit-intelligence-workspace .ic-evidence-drawer,
+.sonalit-intelligence-workspace .ia-drawer { width:min(680px,95vw); border-left-color:rgba(135,169,226,.26); background:linear-gradient(180deg,#0b1730,#050b19); color:#eaf2ff; }
+.sonalit-intelligence-workspace .ic-evidence-drawer header h2,
+.sonalit-intelligence-workspace .ia-drawer header h2 { color:#f5f7ff; font-size:24px; line-height:1.25; }
+.sonalit-intelligence-workspace .ic-evidence-grid b { color:#e8f0ff; font-size:12px; }
+.sonalit-intelligence-workspace .ic-evidence-body p,
+.sonalit-intelligence-workspace .ic-evidence-note p { color:#b8c7dc; font-size:13px; line-height:1.6; }
+
+/* ── Publications ─────────────────────────────────────────────────────── */
+.sonalit-intelligence-workspace .ipd-root { padding:22px 0 44px; color:#edf4ff; background:transparent; }
+.sonalit-intelligence-workspace .ipd-head { padding-bottom:20px; border-bottom-color:rgba(135,169,226,.19); }
+.sonalit-intelligence-workspace .ipd-head > div:first-child > span { color:#9db9dc; font-size:10.5px; font-weight:900; }
+.sonalit-intelligence-workspace .ipd-head h1 { color:#f4f7ff; font-family:'Space Grotesk',sans-serif; font-size:clamp(30px,3.1vw,42px); font-weight:800; letter-spacing:-.05em; }
+.sonalit-intelligence-workspace .ipd-head p { color:#b4c3d9; font-size:14px; line-height:1.55; }
+.sonalit-intelligence-workspace .ipd-headline-meta { gap:8px; }
+.sonalit-intelligence-workspace .ipd-headline-meta span { padding:6px 9px; border-color:rgba(135,169,226,.18); border-radius:6px; background:rgba(8,18,37,.8); color:#adbed8; font-size:10px; font-weight:850; }
+.sonalit-intelligence-workspace .ipd-coverage { min-width:220px; padding:17px 19px; border-color:rgba(135,169,226,.25); border-radius:12px; background:linear-gradient(145deg,rgba(16,32,58,.94),rgba(7,15,30,.97)); }
+.sonalit-intelligence-workspace .ipd-coverage b { color:#f6f8ff; font-family:'Space Grotesk',sans-serif; font-size:38px; }
+.sonalit-intelligence-workspace .ipd-coverage span,
+.sonalit-intelligence-workspace .ipd-coverage small { color:#a5bad7; font-size:10px; font-weight:850; }
+.sonalit-intelligence-workspace .ipd-controls { gap:12px; padding:14px 0; }
+.sonalit-intelligence-workspace .ipd-controls label { min-width:210px; color:#a3b8d5; font-size:10.5px; }
+.sonalit-intelligence-workspace .ipd-controls select { min-height:42px; padding:0 12px; border-color:rgba(135,169,226,.23); border-radius:8px; background:rgba(7,16,33,.95); color:#edf4ff; font-size:13px; }
+.sonalit-intelligence-workspace .ipd-card { min-height:275px; padding:18px; border-color:rgba(135,169,226,.19); border-radius:13px; background:radial-gradient(ellipse at 100% 0%,rgba(68,98,165,.14),transparent 43%),linear-gradient(145deg,rgba(16,31,55,.97),rgba(6,14,29,.98)); box-shadow:inset 0 1px rgba(255,255,255,.045),0 10px 23px rgba(0,0,0,.12); }
+.sonalit-intelligence-workspace .ipd-card:hover { border-color:rgba(101,228,255,.32); background:linear-gradient(145deg,rgba(19,39,70,.97),rgba(7,16,32,.99)); }
+.sonalit-intelligence-workspace .ipd-top span,
+.sonalit-intelligence-workspace .ipd-top em { font-size:10px; font-weight:900; }
+.sonalit-intelligence-workspace .ipd-card h2 { color:#f2f6ff; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:780; line-height:1.18; }
+.sonalit-intelligence-workspace .ipd-card p { color:#b6c5dc; font-size:13px; line-height:1.55; }
+.sonalit-intelligence-workspace .ipd-signal-row { gap:8px; }
+.sonalit-intelligence-workspace .ipd-signal-row > div { padding:11px; border-color:rgba(135,169,226,.15); border-radius:8px; background:rgba(5,14,29,.7); }
+.sonalit-intelligence-workspace .ipd-signal-row small { color:#9bb2d0; font-size:9.5px; }
+.sonalit-intelligence-workspace .ipd-signal-row b { color:#eff5ff; font-size:16px; }
+.sonalit-intelligence-workspace .ipd-signal-row span { color:#a5b7d0; font-size:10px; line-height:1.35; }
+.sonalit-intelligence-workspace .ipd-card-actions { color:#a1b5d2; font-size:10px; }
+.sonalit-intelligence-workspace .ipd-card-actions button { min-height:36px; padding:0 11px; border-color:rgba(135,169,226,.25); border-radius:7px; background:rgba(15,31,57,.9); color:#e1edff; font-size:10px; }
+.sonalit-intelligence-workspace .ipd-card-actions button:last-child { border-color:rgba(101,228,255,.44); background:linear-gradient(110deg,rgba(22,111,151,.7),rgba(55,63,131,.72)); color:#f4fcff; }
+.sonalit-intelligence-workspace .ipd-modal { background:rgba(2,6,17,.82); backdrop-filter:blur(13px); }
+.sonalit-intelligence-workspace .ipd-modal article { border-color:rgba(135,169,226,.29); border-radius:14px; background:linear-gradient(145deg,#0d1b36,#050c1d); box-shadow:0 30px 90px rgba(0,0,0,.54); }
+.sonalit-intelligence-workspace .ipd-modal h2 { color:#f4f7ff; font-family:'Space Grotesk',sans-serif; font-size:28px; line-height:1.2; }
+.sonalit-intelligence-workspace .ipd-summary p,
+.sonalit-intelligence-workspace .ipd-sections p { color:#c0cde0; font-size:13px; line-height:1.65; }
+.sonalit-intelligence-workspace .ipd-sections { background:rgba(135,169,226,.13); }
+.sonalit-intelligence-workspace .ipd-sections > div { background:rgba(7,17,34,.94); }
+.sonalit-intelligence-workspace .ipd-sections small,
+.sonalit-intelligence-workspace .ipd-summary small { color:#a3bbd9; font-size:10px; font-weight:900; }
+.sonalit-intelligence-workspace .ipd-handling { border-top-color:rgba(135,169,226,.17); background:rgba(8,17,34,.65); }
+.sonalit-intelligence-workspace .ipd-handling-head h3 { color:#f3f7ff; font-family:'Space Grotesk',sans-serif; font-size:21px; }
+.sonalit-intelligence-workspace .ipd-handling-head p { color:#b1c1d7; font-size:12px; line-height:1.5; }
+.sonalit-intelligence-workspace .ipd-handling-fields label { color:#a6bad6; font-size:10px; }
+.sonalit-intelligence-workspace .ipd-handling-fields select,
+.sonalit-intelligence-workspace .ipd-handling-fields textarea { min-height:42px; border-color:rgba(135,169,226,.25); border-radius:8px; background:rgba(5,14,30,.94); color:#edf4ff; font-size:12.5px; }
+.sonalit-intelligence-workspace .ipd-handling-fields button { min-height:42px; border:1px solid rgba(101,228,255,.4); border-radius:8px; background:linear-gradient(110deg,#1682a6,#4c59a3); color:white; font-size:10.5px; }
+.sonalit-intelligence-workspace .ipts-root { background:linear-gradient(180deg,#061022,#050b19); color:#eaf2ff; }
+.sonalit-intelligence-workspace .ipts-brand h1 { color:#f3f7ff; font-family:'Space Grotesk',sans-serif; }
+.sonalit-intelligence-workspace .ipts-brand p { color:#b3c2d9; font-size:13px; }
+.sonalit-intelligence-workspace .ipts-warning { border-color:rgba(255,196,119,.34); border-radius:10px; background:linear-gradient(110deg,rgba(118,80,28,.22),rgba(11,20,39,.8)); color:#ffd18f; }
+.sonalit-intelligence-workspace .ipts-warning p { color:#c4cde0; font-size:12px; }
+
+/* ── Responsive composition ───────────────────────────────────────────── */
+@media (max-width: 1280px) {
+  .sonalit-intelligence-workspace .icv-metrics,
+  .sonalit-intelligence-workspace .ics-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .icv-main-grid { grid-template-columns: minmax(0,1.25fr) minmax(300px,.85fr); }
+  .sonalit-intelligence-workspace .ics-source-card { grid-template-columns: minmax(190px,1fr) minmax(250px,1fr); }
+  .sonalit-intelligence-workspace .ics-source-card footer { grid-column:1/-1; grid-row:4; flex-direction:row; padding:9px 0 0; border-left:0; border-top:1px solid rgba(135,169,226,.15); }
+  .sonalit-intelligence-workspace .ics-source-details { grid-column:2; grid-row:1/4; }
+  .sonalit-intelligence-workspace .icd-theatre { grid-template-columns: minmax(180px,1fr) repeat(3,minmax(110px,.5fr)); }
+  .sonalit-intelligence-workspace .icd-query { grid-column:1/-1; }
+}
+@media (max-width: 960px) {
+  .sonalit-intelligence-workspace .icw-shell { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .icw-rail { position:relative; min-height:0; padding:12px 16px; border-right:0; border-bottom:1px solid rgba(135,169,226,.2); }
+  .sonalit-intelligence-workspace .icw-brand { min-height:48px; padding:0 2px 10px; }
+  .sonalit-intelligence-workspace .icw-main { padding:0 17px 28px; }
+  .sonalit-intelligence-workspace .icw-topbar { min-height:90px; }
+  .sonalit-intelligence-workspace .icw-nav-item { min-height:42px; width:auto; display:flex; gap:8px; padding:5px 9px; }
+  .sonalit-intelligence-workspace .icw-nav-icon { width:30px; height:30px; flex-basis:30px; }
+  .sonalit-intelligence-workspace .icw-nav-icon svg { width:20px; height:20px; }
+  .sonalit-intelligence-workspace .icw-nav-copy strong { font-size:10.5px; }
+  .sonalit-intelligence-workspace .icw-nav-copy small { display:none; }
+  .sonalit-intelligence-workspace .icw-rail-foot { display:none; }
+  .sonalit-intelligence-workspace .icv-main-grid,
+  .sonalit-intelligence-workspace .icv-lower-grid { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .icv-right-rail { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
+  .sonalit-intelligence-workspace .icv-map-canvas { height:430px; }
+  .sonalit-intelligence-workspace .icd-nav { grid-template-columns:repeat(5,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .icd-theatre { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .icd-query { grid-column:1/-1; }
+}
+@media (max-width: 680px) {
+  .sonalit-intelligence-workspace .icw-main { padding:0 11px 22px; }
+  .sonalit-intelligence-workspace .icw-topbar { min-height:84px; align-items:flex-start; flex-direction:column; gap:9px; padding:14px 0; }
+  .sonalit-intelligence-workspace .icw-topbar-title h1 { font-size:27px; }
+  .sonalit-intelligence-workspace .icw-topbar-meta { justify-content:flex-start; }
+  .sonalit-intelligence-workspace .icw-secure-tag,
+  .sonalit-intelligence-workspace .icw-clock-tag { min-height:34px; font-size:9.5px; }
+  .sonalit-intelligence-workspace .icw-mobile-nav { margin-inline:-1px; }
+  .sonalit-intelligence-workspace .icv-heading,
+  .sonalit-intelligence-workspace .ics-heading { align-items:flex-start; flex-direction:column; }
+  .sonalit-intelligence-workspace .icv-heading-actions { width:100%; justify-content:space-between; }
+  .sonalit-intelligence-workspace .icv-controls { align-items:stretch; flex-direction:column; }
+  .sonalit-intelligence-workspace .icv-control-group { justify-content:space-between; }
+  .sonalit-intelligence-workspace .icv-control-group select { flex:1; max-width:none; }
+  .sonalit-intelligence-workspace .icv-window-note { margin-left:0; }
+  .sonalit-intelligence-workspace .icv-health-strip { grid-template-columns:6px minmax(0,1fr); }
+  .sonalit-intelligence-workspace .icv-health-stats { grid-column:2; justify-content:flex-start; }
+  .sonalit-intelligence-workspace .icv-metrics,
+  .sonalit-intelligence-workspace .ics-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .icv-right-rail { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .icv-map-canvas { min-height:330px; height:350px; }
+  .sonalit-intelligence-workspace .icv-map-tools { align-items:flex-start; flex-direction:column; }
+  .sonalit-intelligence-workspace .icv-map-legend { gap:8px; }
+  .sonalit-intelligence-workspace .icv-map-footer { align-items:flex-start; flex-direction:column; }
+  .sonalit-intelligence-workspace .icv-event-row { grid-template-columns:10px minmax(0,1fr) 18px; }
+  .sonalit-intelligence-workspace .icv-event-meta { display:none; }
+  .sonalit-intelligence-workspace .ics-quality-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .ics-grid { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .ics-register-tools { align-items:stretch; flex-direction:column; }
+  .sonalit-intelligence-workspace .ics-register-tools label:not(.ics-search) select { flex:1; max-width:none; }
+  .sonalit-intelligence-workspace .ics-run-button { width:100%; min-height:44px; justify-content:center; }
+  .sonalit-intelligence-workspace .ics-source-card { grid-template-columns:minmax(0,1fr); grid-template-rows:auto; gap:10px; padding:15px; }
+  .sonalit-intelligence-workspace .ics-source-card-top,
+  .sonalit-intelligence-workspace .ics-source-card h3,
+  .sonalit-intelligence-workspace .ics-source-card > p,
+  .sonalit-intelligence-workspace .ics-source-details,
+  .sonalit-intelligence-workspace .ics-source-card footer { grid-column:1; grid-row:auto; }
+  .sonalit-intelligence-workspace .ics-source-details { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .ics-source-card footer { padding:10px 0 0; }
+  .sonalit-intelligence-workspace .icd-nav { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .icd-theatre { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .icd-hero { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .icd-orbit { min-height:160px; }
+  .sonalit-intelligence-workspace .icd-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .icd-grid { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .icd-row { grid-template-columns:24px minmax(0,1fr) 15px; }
+  .sonalit-intelligence-workspace .icd-row aside { display:none; }
+  .sonalit-intelligence-workspace .in-head { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .in-news { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .in-strip,
+  .sonalit-intelligence-workspace .ia-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sonalit-intelligence-workspace .ia-control-deck { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .ia-alert { grid-template-columns:38px minmax(0,1fr); }
+  .sonalit-intelligence-workspace .ia-meta { display:none; }
+  .sonalit-intelligence-workspace .ipd-head { align-items:flex-start; flex-direction:column; }
+  .sonalit-intelligence-workspace .ipd-coverage { width:100%; text-align:left; }
+  .sonalit-intelligence-workspace .ipd-grid { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .ipd-controls { align-items:stretch; flex-direction:column; }
+  .sonalit-intelligence-workspace .ipd-controls label { min-width:0; }
+  .sonalit-intelligence-workspace .ipd-template-open { width:100%; align-self:stretch; margin:0; }
+  .sonalit-intelligence-workspace .ipd-summary { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .ipd-sections { grid-template-columns:1fr; }
+  .sonalit-intelligence-workspace .ipd-incident-grid { grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sonalit-intelligence-workspace *,
+  .sonalit-intelligence-workspace *::before,
+  .sonalit-intelligence-workspace *::after {
+    scroll-behavior:auto !important;
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+  }
+}
+
+
+/* Last-mile legibility audit: metadata remains readable at working distance. */
+.sonalit-intelligence-workspace .icd-top-readout,
+.sonalit-intelligence-workspace .icd-theatre label > span,
+.sonalit-intelligence-workspace .icd-theatre-id span,
+.sonalit-intelligence-workspace .icd-theatre-id small,
+.sonalit-intelligence-workspace .icd-query kbd,
+.sonalit-intelligence-workspace .icd-nav button span,
+.sonalit-intelligence-workspace .icd-filterbar,
+.sonalit-intelligence-workspace .icd-filterbar select,
+.sonalit-intelligence-workspace .scope-chip,
+.sonalit-intelligence-workspace .icd-hero-pills span,
+.sonalit-intelligence-workspace .icd-orbit small,
+.sonalit-intelligence-workspace .icd-kpi span,
+.sonalit-intelligence-workspace .icd-kpi small,
+.sonalit-intelligence-workspace .icd-panel > header span,
+.sonalit-intelligence-workspace .icd-panel > header small,
+.sonalit-intelligence-workspace .icd-row .index,
+.sonalit-intelligence-workspace .icd-row aside em,
+.sonalit-intelligence-workspace .icd-row aside small,
+.sonalit-intelligence-workspace .icd-sev,
+.sonalit-intelligence-workspace .icd-empty b,
+.sonalit-intelligence-workspace .icd-country > div span,
+.sonalit-intelligence-workspace .icd-country small,
+.sonalit-intelligence-workspace .icd-country em,
+.sonalit-intelligence-workspace .icd-drawer header span,
+.sonalit-intelligence-workspace .icd-drawer-meta > span,
+.sonalit-intelligence-workspace .icd-field-grid small,
+.sonalit-intelligence-workspace .icd-evidence > b,
+.sonalit-intelligence-workspace .icd-open,
+.sonalit-intelligence-workspace .icd-drawer footer,
+.sonalit-intelligence-workspace .icd-drawer pre,
+.sonalit-intelligence-workspace .in-live,
+.sonalit-intelligence-workspace .in-subbar,
+.sonalit-intelligence-workspace .in-card-top,
+.sonalit-intelligence-workspace .in-card-meta,
+.sonalit-intelligence-workspace .in-card-foot,
+.sonalit-intelligence-workspace .in-feed-state b,
+.sonalit-intelligence-workspace .ia-head-posture,
+.sonalit-intelligence-workspace .ia-alert-top b,
+.sonalit-intelligence-workspace .ia-alert-top em,
+.sonalit-intelligence-workspace .ia-unverified,
+.sonalit-intelligence-workspace .ia-meta,
+.sonalit-intelligence-workspace .ia-posture-grid span,
+.sonalit-intelligence-workspace .ipd-handling-head small,
+.sonalit-intelligence-workspace .ipd-handling-head > span,
+.sonalit-intelligence-workspace .ipd-handling-fields label,
+.sonalit-intelligence-workspace .ipd-handling-fields button,
+.sonalit-intelligence-workspace .ipd-template-open,
+.sonalit-intelligence-workspace .ipd-template-use {
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.sonalit-intelligence-workspace .icd-nav button b { font-size: 11px; }
+.sonalit-intelligence-workspace .icd-viewhead > strong { font-size: 11px; }
+.sonalit-intelligence-workspace .icd-country > div span { font-weight: 850; letter-spacing: .07em; }
+.sonalit-intelligence-workspace .icd-field-grid span { font-size: 12px; line-height: 1.5; }
+.sonalit-intelligence-workspace .icv-map-legend,
+.sonalit-intelligence-workspace .icv-map-footer { font-size: 11px; }
+.sonalit-intelligence-workspace .icv-drawer-tags span { font-size: 10.5px; }
+.sonalit-intelligence-workspace .ics-state-pill { font-size: 10.5px; }
+.sonalit-intelligence-workspace .ics-source-type { font-size: 10.5px; }
+
+@media (max-width: 680px) {
+  .sonalit-intelligence-workspace .icd-nav button b { font-size: 10.5px; }
+  .sonalit-intelligence-workspace .icd-nav button span { font-size: 10px; }
+}

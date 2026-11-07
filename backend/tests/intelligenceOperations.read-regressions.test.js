@@ -35,11 +35,15 @@ describe('intelligence operations read endpoints', () => {
     const [eventSql,eventParams] = mockDbQuery.mock.calls[0];
     expect(eventParams).toEqual(['00000000-0000-0000-0000-000000000002', 6]);
     expect(eventSql).toContain('e.last_seen_at>=now()-($2::int * interval');
+    expect(eventSql).toContain('COUNT(DISTINCT eo.observation_id)::int AS observation_count');
+    expect(eventSql).not.toContain('AS source_count');
+    expect(eventSql).toContain("COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant'");
     const [summarySql,summaryParams] = mockDbQuery.mock.calls[1];
     expect(summaryParams).toEqual(['00000000-0000-0000-0000-000000000002', 6]);
     expect(summarySql).toContain('COUNT(*) FILTER(WHERE e.last_seen_at>=now()-($2::int * interval');
     expect(summarySql).not.toContain('WHERE e.org_id=$1 AND e.last_seen_at>=now()-($2::int');
     expect(summarySql).toContain('priority_events_in_window');
+    expect(summarySql).toContain("COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant'");
   });
 
   test('overview rejects an unsupported analytic window before querying', async () => {
@@ -55,6 +59,16 @@ describe('intelligence operations read endpoints', () => {
     const [sql,params] = mockDbQuery.mock.calls[0];
     expect(params).toEqual(['00000000-0000-0000-0000-000000000002', null, null, 6, 40]);
     expect(sql).toContain('($4::int IS NULL OR e.last_seen_at>=now()-($4::int * interval');
+    expect(sql).toContain("COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant'");
+    expect(sql).toContain('COUNT(DISTINCT eo.observation_id)::int AS observation_count');
+    expect(sql).not.toContain('AS source_count');
+  });
+
+  test('event detail cannot be fetched after triage excludes a non-security public signal', async () => {
+    const res = await request(app).get('/intelligence/events/33333333-3333-4333-8333-333333333333');
+    expect(res.status).toBe(404);
+    const [sql] = mockDbQuery.mock.calls[0];
+    expect(sql).toContain("COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant'");
   });
 
   test('global requirements does not leave untyped unused scope parameters', async () => {

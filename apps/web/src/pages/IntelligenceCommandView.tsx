@@ -4,8 +4,8 @@ import { ArrowUpRight, Clock3, ExternalLink, Globe2, MapPin, RefreshCw, ShieldAl
 import MapLibreMap, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
-import { STREET_STYLE } from '../lib/mapStyles.js';
-import { assessIntelFabricHealth } from './intelligenceFabricHealth.js';
+import { safeExternalUrl } from '../lib/intelligenceText.js';
+import { DARK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
 
 type Row = Record<string, any>;
 type ScopeType = 'global' | 'continent' | 'region' | 'country';
@@ -112,6 +112,7 @@ function WarningRow({ item, onOpen }: { item: Row; onOpen: (row: Row) => void })
 export default function IntelligenceCommandView() {
   const [scope, setScope] = useState<Scope>({ type: 'global', key: 'global', label: 'GLOBAL' });
   const [windowHours, setWindowHours] = useState(24);
+  const [basemap, setBasemap] = useState<'dark' | 'street'>('dark');
   const [selectedEvent, setSelectedEvent] = useState<Row | null>(null);
   const [selectedWarning, setSelectedWarning] = useState<Row | null>(null);
   const scopeParams = useMemo(() => scope.type === 'global'
@@ -123,16 +124,6 @@ export default function IntelligenceCommandView() {
     queryKey: ['intel-command-overview', scopeParams, windowHours],
     queryFn: async () => (await api.get('/risk/intelligence/overview', { params: { ...scopeParams, window_hours: windowHours } })).data,
     staleTime: 15000, refetchInterval: 30000, retry: 1,
-  });
-  const collectionQ = useQuery({
-    queryKey: ['intel-command-collection', scopeParams],
-    queryFn: async () => (await api.get('/risk/intelligence/collection/status', { params: scopeParams })).data,
-    staleTime: 30000, refetchInterval: 60000, retry: 1,
-  });
-  const sourceRegistryQ = useQuery({
-    queryKey: ['intel-command-source-registry'],
-    queryFn: async () => (await api.get('/risk/intelligence/sources')).data,
-    staleTime: 30000, refetchInterval: 60000, retry: 1,
   });
   const warningsQ = useQuery({
     queryKey: ['intel-command-warnings', scopeParams],
@@ -160,28 +151,7 @@ export default function IntelligenceCommandView() {
   const overview = overviewQ.data?.summary || null;
   const events = list(overviewQ.data, 'events');
   const warnings = list(warningsQ.data, 'warnings');
-  const sourceRows = list(collectionQ.data?.collection, 'sources');
-  const registryRows = list(sourceRegistryQ.data, 'sources');
-  const registryById = new Map(registryRows.map(source => [String(source.id), source]));
-  const healthSources = sourceRows.filter(source => {
-    const registry = registryById.get(String(source.id));
-    const metadata = registry?.metadata && typeof registry.metadata === 'object'
-      ? registry.metadata
-      : (() => { try { return JSON.parse(String(registry?.metadata || '{}')); } catch { return {}; } })();
-    const discovery = String(metadata.role || '').toLowerCase() === 'discovery'
-      || String(metadata.collection_mode || '').toLowerCase() === 'link_out'
-      || metadata.observation_ingestion === false;
-    const authorizationPending = metadata.authorized_only === true && metadata.configured !== true;
-    return !discovery && !authorizationPending;
-  });
   const countries = list(countriesQ.data, 'countries');
-  const health = assessIntelFabricHealth([
-    { label: 'Operating picture', isError: overviewQ.isError, isPending: overviewQ.isPending, data: overviewQ.data },
-    { label: 'Early warnings', isError: warningsQ.isError, isPending: warningsQ.isPending, data: warningsQ.data },
-    { label: 'Collection status', isError: collectionQ.isError, isPending: collectionQ.isPending, data: collectionQ.data },
-    { label: 'Source registry', isError: sourceRegistryQ.isError, isPending: sourceRegistryQ.isPending, data: sourceRegistryQ.data },
-    { label: 'Country register', isError: countriesQ.isError, isPending: countriesQ.isPending, data: countriesQ.data },
-  ], healthSources);
   const located = events.filter(event => validCoordinate(event.latitude, -90, 90) && validCoordinate(event.longitude, -180, 180));
   const regionFallback = scope.type === 'region'
     ? REGION_CENTRES[scope.key]
@@ -217,11 +187,12 @@ export default function IntelligenceCommandView() {
     if (scope.type === 'continent') return Object.values(REGIONS).flat().includes(code);
     return true;
   }).slice(0, 8);
+  const maxCountryEvents = Math.max(1, ...visibleCountries.map(row => Number(row.events_24h) || 0));
   const summaryUnavailable = overviewQ.isError || !overview;
   const selected = selectedWarning || eventDetailQ.data || selectedEvent;
 
   const refresh = () => {
-    void overviewQ.refetch(); void collectionQ.refetch(); void sourceRegistryQ.refetch(); void warningsQ.refetch(); void countriesQ.refetch();
+    void overviewQ.refetch(); void warningsQ.refetch(); void countriesQ.refetch();
   };
   const chooseCountry = (code: string) => setScope({ type: 'country', key: code, label: code });
   const clearScope = () => setScope({ type: 'global', key: 'global', label: 'GLOBAL' });
@@ -231,7 +202,7 @@ export default function IntelligenceCommandView() {
       <div className="icv-title-block">
         <div className="icv-eyebrow">SONALIT / INTELLIGENCE / COMMAND</div>
         <h1>Operating picture</h1>
-        <p>Evidence-led security awareness across the selected theatre. Signals, events, warnings and source health remain distinct.</p>
+        <p>Security events, persisted warnings and geographic context across the selected theatre.</p>
       </div>
       <div className="icv-heading-actions">
         <span className="icv-access-tag"><ShieldCheck size={13}/> RESTRICTED · ADMIN</span>
@@ -261,18 +232,6 @@ export default function IntelligenceCommandView() {
       </div>
       <div className="icv-window-note"><Clock3 size={13}/> Exact server window · {windowHours}h · API snapshot {time(overviewQ.data?.generated_at)}</div>
     </section>
-
-    <section className="icv-health-strip" data-tone={health.tone} role={health.tone === 'danger' ? 'alert' : 'status'} aria-live="polite">
-      <div className="icv-health-mark"><i /></div>
-      <div className="icv-health-copy"><span>COLLECTION HEALTH</span><strong>{health.label}</strong><small>{health.detail}</small></div>
-      <div className="icv-health-stats">
-        <span><b>{health.healthySources}</b> recent success</span>
-        <span><b>{health.failedSources}</b> failed</span>
-        <span><b>{health.staleSources}</b> stale</span>
-        <span><b>{health.unknownSources}</b> unknown</span>
-      </div>
-    </section>
-
     <section className="icv-metrics" aria-label="Time-window metrics">
       <Metric label={'EVENTS · ' + windowHours + 'H'} value={summaryUnavailable ? '—' : overview.events_in_window ?? '—'} note="Distinct event objects · selected window" tone="aqua"/>
       <Metric label="HIGH / CRITICAL" value={summaryUnavailable ? '—' : overview.priority_events_in_window ?? '—'} note="Persisted event severity · not keyword cues" tone="amber"/>
@@ -283,9 +242,9 @@ export default function IntelligenceCommandView() {
 
     <div className="icv-main-grid">
       <section className="icv-panel icv-map-panel">
-        <header className="icv-panel-head"><div><span>01 / SPATIAL CONTEXT</span><h2>Geographic event picture</h2><p>Only event records with stored coordinates are plotted.</p></div><div className="icv-map-legend"><span><i className="critical"/> Critical</span><span><i className="high"/> High</span><span><i className="other"/> Other / unclassified</span></div></header>
+        <header className="icv-panel-head"><div><span>01 / SPATIAL CONTEXT</span><h2>Geographic event picture</h2><p>Only event records with stored coordinates are plotted.</p></div><div className="icv-map-tools"><div className="icv-map-legend"><span><i className="critical"/> Critical</span><span><i className="high"/> High</span><span><i className="other"/> Other / unclassified</span></div><div className="icv-basemap-toggle" role="group" aria-label="Map basemap"><button type="button" className={basemap === 'dark' ? 'active' : ''} aria-pressed={basemap === 'dark'} onClick={() => setBasemap('dark')}>DARK</button><button type="button" className={basemap === 'street' ? 'active' : ''} aria-pressed={basemap === 'street'} onClick={() => setBasemap('street')}>STREET</button></div></div></header>
         <div className="icv-map-canvas">
-          <MapLibreMap ref={mapRef} key={scope.type + ':' + scope.key} initialViewState={centre} mapStyle={STREET_STYLE} style={{ width: '100%', height: '100%' }} attributionControl>
+          <MapLibreMap ref={mapRef} key={scope.type + ':' + scope.key} initialViewState={centre} mapStyle={basemap === 'dark' ? DARK_STREET_STYLE : STREET_STYLE} style={{ width: '100%', height: '100%' }} attributionControl>
             <NavigationControl position="top-right" showCompass={false}/>
             {located.slice(0, 250).map((event, index) => <Marker key={event.id || index} longitude={Number(event.longitude)} latitude={Number(event.latitude)} anchor="center" onClick={click => { click.originalEvent.stopPropagation(); setSelectedEvent(event); setSelectedWarning(null); }}>
               <button type="button" className={'icv-map-marker icv-severity-' + severity(event.severity)} title={event.title || 'Intelligence event'} aria-label={'Open ' + (event.title || 'intelligence event')}><i/></button>
@@ -293,7 +252,7 @@ export default function IntelligenceCommandView() {
           </MapLibreMap>
           <div className="icv-map-readout"><span>GEOLOCATED EVENT OBJECTS</span><strong>{summaryUnavailable ? '—' : located.length}</strong><small>{events.length} event records returned · {Math.max(0, events.length - located.length)} without coordinates</small></div>
         </div>
-        <footer className="icv-map-footer"><span><MapPin size={12}/> Geographic placement reflects recorded coordinates only.</span><span>Basemap: Esri World Street Map</span></footer>
+        <footer className="icv-map-footer"><span><MapPin size={12}/> Geographic placement reflects recorded coordinates only.</span><span>Basemap: {basemap === 'dark' ? 'OpenFreeMap · Dark' : 'Esri World Street Map'}</span></footer>
       </section>
 
       <aside className="icv-right-rail">
@@ -315,6 +274,7 @@ export default function IntelligenceCommandView() {
                <span><b>{row.country_code}</b><small>{countryName(String(row.country_code || '').toUpperCase())}</small></span>
                <strong>{row.events_24h ?? '—'}</strong>
                <small>{row.confidence == null ? 'CONF —' : 'MEAN EVENT CONF. ' + row.confidence + '%'}</small>
+               <span className="icv-country-activity" aria-label={String(row.events_24h ?? 0) + ' events in 24 hours'}><i style={{ width: Math.max(0, Math.min(100, (Number(row.events_24h) || 0) / maxCountryEvents * 100)) + '%' }} /></span>
              </button>) :
              <div className="icv-panel-state">No country-level event aggregates were returned for this theatre.</div>}
           </div>
@@ -329,7 +289,7 @@ export default function IntelligenceCommandView() {
           {overviewQ.isPending ? <div className="icv-panel-state">Retrieving the operating picture…</div> :
            overviewQ.isError ? <div className="icv-panel-state error">Operating picture request failed. Event state is unknown.</div> :
            events.length ? events.slice(0, 12).map(event => <EventRow key={event.id} event={event} onOpen={setSelectedEvent}/>) :
-           <div className="icv-panel-state">No event objects were returned in this window. Check collection health and coverage before drawing conclusions.</div>}
+           <div className="icv-panel-state">No event records were returned for this time window. This is not confirmation that the theatre is incident-free.</div>}
         </div>
       </section>
       <section className="icv-panel icv-assurance-panel">
@@ -337,7 +297,7 @@ export default function IntelligenceCommandView() {
         <div className="icv-assurance-lines">
           <div><span>Latest event update</span><b>{time(overview?.latest_event_at)}</b></div>
           <div><span>Latest observation</span><b>{time(overview?.latest_observation_at)}</b></div>
-          <div><span>Collection sources</span><b>{collectionQ.isError ? 'Unknown' : sourceRows.length}</b></div>
+          
           <div><span>Geolocated events in returned set</span><b>{summaryUnavailable ? '—' : located.length}</b></div>
         </div>
         <p className="icv-assurance-note">Event severity, event confidence, source reliability and collection freshness are independent fields. A recent successful collection run is not proof that all relevant incidents were collected.</p>
@@ -361,7 +321,7 @@ export default function IntelligenceCommandView() {
             {Array.isArray(warningActionsQ.data?.actions) && warningActionsQ.data.actions.length ? warningActionsQ.data.actions.map((item: Row, index: number) => <article className="icv-evidence-row" key={item.id || index}><div><strong>{item.action || item.action_type || 'Warning action'}</strong><small>{item.actor_name || item.actor_id || 'Actor not returned'} · {time(item.created_at)}</small><p>{item.notes || item.reason || 'No action notes recorded.'}</p></div></article>) : <div className="icv-panel-state">No warning actions were returned.</div>}
           </> : <>
             <h3>Linked observations</h3>
-            {Array.isArray(selected?.evidence) && selected.evidence.length ? selected.evidence.map((item: Row, index: number) => <article className="icv-evidence-row" key={item.id || index}><div><strong>{item.title || 'Source observation'}</strong><small>{item.source?.name || item.source_name || 'Source not identified'} · {time(item.observed_at)}</small><p>{item.body || 'No source text is attached.'}</p></div>{item.url && <a href={item.url} target="_blank" rel="noreferrer" aria-label="Open original source"><ExternalLink size={15}/></a>}</article>) :
+            {Array.isArray(selected?.evidence) && selected.evidence.length ? selected.evidence.map((item: Row, index: number) => { const sourceUrl = safeExternalUrl(item.url); return <article className="icv-evidence-row" key={item.id || index}><div><strong>{item.title || 'Source observation'}</strong><small>{item.source?.name || item.source_name || 'Source not identified'} · {time(item.observed_at)}</small><p>{item.body || 'No source text is attached.'}</p></div>{sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer" aria-label="Open original source"><ExternalLink size={15}/></a>}</article>; }) :
              <div className="icv-panel-state">No linked observations were returned for this event.</div>}
             {Array.isArray(selected?.related_events) && selected.related_events.length > 0 && <><h3>Related event objects</h3>{selected.related_events.map((item: Row, index: number) => <div className="icv-related-row" key={item.event_id || index}><b>{item.title || 'Related event'}</b><span>{item.relationship || 'Relationship not classified'} · {confidence(item.confidence)}</span></div>)}</>}
           </>}

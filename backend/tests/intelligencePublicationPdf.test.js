@@ -24,6 +24,11 @@ describe('ultra publication PDF invariants',()=>{
     expect(s).toContain('researchSources');
   });
 
+  test('PDF source totals use the fused independent-publisher count',()=>{
+    const s=source();
+    expect(s).toContain('source_count:new Set((Array.isArray(event.observations)?event.observations:[]).filter(o=>o&&o.source_id).map(independentSourceKey)).size');
+    expect(s).toContain('COUNT(DISTINCT o.source_id)::int AS feed_source_count');
+  });
   test('successful regeneration stamps the renderer version checked by PDF delivery',()=>{
     const s=source();
     const ready=s.slice(s.indexOf("UPDATE intel_publications SET pdf_status='ready'"),s.indexOf("UPDATE intel_publications SET pdf_status='ready'")+850);

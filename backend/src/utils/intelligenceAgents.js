@@ -2,6 +2,7 @@
 const aiClient=require('./aiClient');
 const crypto=require('crypto');
 const {translateItems}=require('./intelligenceTranslation');
+const {independentSourceKey}=require('./intelligenceTriage');
 const {runPublicationEditorialBoard,AGENT_ROLES}=require('./intelligencePublicationEditorialBoard');
 const {query,globalQuery}=require('../config/database');
 const {withOrg}=require('./orgScopedDb');
@@ -191,7 +192,7 @@ async function translateQueue(orgId){
   return{queued:rows.length,translated:done};
 }
 async function synthesizeEvents(orgId){
-  const {rows}=await query(`SELECT e.id,e.title,e.summary,e.country_code,e.severity,e.confidence,e.last_seen_at,COALESCE(json_agg(json_build_object('id',o.id,'title',COALESCE(o.title_en,o.title),'body',COALESCE(o.body_en,o.body),'language',o.language,'credibility',o.credibility,'source',s.name,'source_reliability',s.reliability,'observed_at',o.observed_at)) FILTER (WHERE o.id IS NOT NULL),'[]') AS evidence FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id LEFT JOIN intel_sources s ON s.id=o.source_id WHERE e.org_id=$1 AND (e.synthesized_at IS NULL OR e.last_seen_at>e.synthesized_at) GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $2`,[orgId,MAX_SYNTHESIS]);
+  const {rows}=await query(`SELECT e.id,e.title,e.summary,e.country_code,e.severity,e.confidence,e.last_seen_at,COALESCE(json_agg(json_build_object('id',o.id,'title',COALESCE(o.title_en,o.title),'body',COALESCE(o.body_en,o.body),'language',o.language,'credibility',o.credibility,'source',s.name,'source_reliability',s.reliability,'observed_at',o.observed_at)) FILTER (WHERE o.id IS NOT NULL),'[]') AS evidence FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id LEFT JOIN intel_sources s ON s.id=o.source_id WHERE e.org_id=$1 AND COALESCE(e.assessment->>'triage_disposition','')<>'not_security_relevant' AND (e.synthesized_at IS NULL OR e.last_seen_at>e.synthesized_at) GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $2`,[orgId,MAX_SYNTHESIS]);
   if(!rows.length)return{queued:0,synthesized:0};
   // Event records may contain observations from non-public sources. Never inherit
   // the publication classification here: this pipeline defaults to internal unless
@@ -300,11 +301,11 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
       e.assessment,e.key_facts,e.why_it_matters,e.caveats,e.synthesis_confidence,e.synthesis_provider,
       e.latitude,e.longitude,e.region,e.risk_velocity,e.occurred_from,e.occurred_to,e.last_seen_at,e.updated_at,
       COUNT(DISTINCT eo.observation_id)::int AS observation_count,
-      COUNT(DISTINCT o.source_id)::int AS source_count,
+      COUNT(DISTINCT o.source_id)::int AS feed_source_count,
       COALESCE(
         json_agg(DISTINCT jsonb_build_object(
           'id',o.id,'source_id',o.source_id,'source_name',s.name,
-          'title',COALESCE(o.title_en,o.title),'url',o.url,
+          'title',COALESCE(o.title_en,o.title),'url',o.url,'provider',s.provider,'raw_metadata',o.raw_metadata,
           'observed_at',o.observed_at,'published_at',o.published_at,'credibility',o.credibility
         )) FILTER (WHERE o.id IS NOT NULL),'[]'::json
       ) AS evidence
@@ -317,12 +318,15 @@ async function publicationForCountryUnsafe(orgId,country,type='daily',options={}
       ORDER BY CASE e.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'moderate' THEN 2 ELSE 1 END DESC,e.last_seen_at DESC
       LIMIT 160`,[orgId,country,start,end]
   );
-  const events=rawEvents.filter(isSecurityRelevantEvent);
+  const events=rawEvents.filter(isSecurityRelevantEvent).map(event=>{
+    const publishers=new Set((Array.isArray(event.evidence)?event.evidence:[]).filter(obs=>obs&&obs.source_id).map(independentSourceKey));
+    return {...event,source_count:publishers.size};
+  });
 
   const evidenceCount=events.reduce((n,e)=>n+Number(e.observation_count||0),0);
-  const sourceIds=new Set();
-  for(const e of events) for(const obs of Array.isArray(e.evidence)?e.evidence:[]) if(obs&&obs.source_id) sourceIds.add(String(obs.source_id));
-  const sourceCount=sourceIds.size;
+  const sourceKeys=new Set();
+  for(const e of events) for(const obs of Array.isArray(e.evidence)?e.evidence:[]) if(obs&&obs.source_id) sourceKeys.add(independentSourceKey(obs));
+  const sourceCount=sourceKeys.size;
   const evidenceContract=evidenceCount>=3&&sourceCount>=2;
   const periodClosed=end.getTime()<=now.getTime();
   const priorCoverage=existing[0]?.body?.collection_coverage||{};
