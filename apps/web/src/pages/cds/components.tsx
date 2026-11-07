@@ -461,6 +461,8 @@ export function FilterChip({
 }) {
   return (
     <button
+      type="button"
+      aria-pressed={Boolean(active)}
       className={`text-[11.5px] font-mono px-3 py-1.5 rounded-lg cursor-pointer border transition-colors ${active ? 'bg-cds-orange/15 text-cds-orange border-cds-orange/20' : 'text-text-2 border-[rgba(255,255,255,0.12)] bg-ink-2 hover:bg-ink-3'}`}
       onClick={onClick}
     >
