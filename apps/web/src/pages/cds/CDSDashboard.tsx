@@ -6,6 +6,7 @@ import { lazy, memo, Suspense, useState, useEffect, useRef } from 'react';
 import './CDSDesignSystem.css';
 import './CDSOverviewVisual.css';
 import './CDSCosmicVisual.css';
+import './CDSOperationalPolish.css';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { NavArtwork } from '../../components/layout/Rail.js';
@@ -73,9 +74,58 @@ function CDSWorkspaceFallback() {
   );
 }
 
+const CDS_MODULE_HEADINGS: Partial<Record<CDSView, { eyebrow: string; description: string }>> = {
+  live: {
+    eyebrow: 'MOVEMENT CONTROL / POSITION EVIDENCE',
+    description: 'Review open journeys, distinguish current GPS fixes from last-known positions and inspect vehicle movement.',
+  },
+  locks: {
+    eyebrow: 'EQUIPMENT SECURITY / DEVICE CONTROL',
+    description: 'Review e-lock connectivity, battery condition, assignments and integrity events across the equipment fleet.',
+  },
+  port: {
+    eyebrow: 'PORT OPERATIONS / RELEASE CONTROL',
+    description: 'Verify arrivals and coordinate lock removal against recorded delivery and custody evidence.',
+  },
+  pulse: {
+    eyebrow: 'BOOKING CONTROL / LIFECYCLE MONITORING',
+    description: 'Identify ageing bookings, delayed journeys and records that need an operator review.',
+  },
+  analytics: {
+    eyebrow: 'OPERATIONAL INTELLIGENCE / PERFORMANCE',
+    description: 'Explore measured throughput, equipment utilisation, delivery performance and recorded operational trends.',
+  },
+  reports: {
+    eyebrow: 'RECORDS & ASSURANCE / REPORTING',
+    description: 'Generate and retrieve operational reports from persisted activity and evidence-backed records.',
+  },
+  settings: {
+    eyebrow: 'WORKSPACE GOVERNANCE / CONFIGURATION',
+    description: 'Manage Container Management workspace preferences and controlled field access.',
+  },
+};
+
+function CDSModuleHeading({ activeView }: { activeView: CDSView }) {
+  const meta = CDS_MODULE_HEADINGS[activeView];
+  const view = CDS_VIEWS.find(item => item.id === activeView);
+  if (!meta || !view) return null;
+
+  return (
+    <header className="cds-module-heading" aria-labelledby={`cds-module-heading-${activeView}`}>
+      <div className="cds-module-heading__copy">
+        <span className="cds-module-heading__eyebrow">{meta.eyebrow}</span>
+        <h1 id={`cds-module-heading-${activeView}`}>{view.label}</h1>
+        <p>{meta.description}</p>
+      </div>
+      <span className="cds-module-heading__context">CONTAINER MANAGEMENT <i aria-hidden="true">/</i> CDS</span>
+    </header>
+  );
+}
+
 const CDSWorkspace = memo(function CDSWorkspace({ activeView }: { activeView: CDSView }) {
   return (
-    <div key={activeView} className="cds-view-stage">
+    <div key={activeView} className="cds-view-stage" data-view={activeView}>
+      <CDSModuleHeading activeView={activeView} />
       <Suspense fallback={<CDSWorkspaceFallback />}>
         {activeView === 'dashboard' && <DashboardView />}
         {activeView === 'live' && <LiveView />}
