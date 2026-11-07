@@ -111,6 +111,11 @@ describe('Intelligence observation text normalization and threat triage',()=>{
   expect(assessIncidentSeverity('armed_attack','No evidence of an armed attack was found').severity).toBe('low');
   expect(assessIncidentSeverity('kidnapping','No hostage crisis was reported').severity).toBe('low');
   expect(assessIncidentSeverity('kidnapping','No hostage was taken during the incident').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No mass-hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No mass hostage crisis was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No mass-hostage-taking was reported').severity).toBe('low');
+  expect(assessIncidentSeverity('kidnapping','No mass-hostage crisis was reported, but one person was kidnapped').severity).toBe('high');
+  expect(assessIncidentSeverity('kidnapping','No mass-hostage crisis was reported, but five people were taken hostage').severity).toBe('critical');
   expect(assessIncidentSeverity('ied','Bomb threat reported; no explosion or detonation occurred').severity).toBe('medium');
   expect(assessIncidentSeverity('ied','An unexploded device was found at the station').severity).toBe('medium');
  });
