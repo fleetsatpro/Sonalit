@@ -1579,3 +1579,63 @@
       background .22s ease;
   }
 }
+
+
+/* --------------------------------------------------------------------------
+   INTEL HUB PALETTE ISOLATION
+   The global theme bridge intentionally remaps legacy white/slate surfaces.
+   This workspace has its own Gilded Obsidian art direction, so resolve those
+   bridge tokens locally. This prevents an Arctic/Daylight shell palette from
+   turning Intel Hub cards pale while its information typography stays white.
+   -------------------------------------------------------------------------- */
+.sonalit-intelligence-workspace {
+  color-scheme: dark;
+
+  /* Legacy Sonalit theme utility bridge, scoped to this workspace only. */
+  --son-theme-bg: #080b11;
+  --son-theme-surface: #11151d;
+  --son-theme-surface-2: #1d2531;
+  --son-theme-border: rgba(255, 214, 110, .22);
+  --son-theme-text: #f4f8ff;
+  --son-theme-muted: #c3d0e0;
+  --son-theme-accent: #ffd66e;
+  --son-theme-accent-2: #ffe9a8;
+  --son-theme-positive: #79e7c5;
+  --son-theme-warning: #f2d989;
+  --son-theme-danger: #ff9ca7;
+  --son-theme-glow: rgba(255, 214, 110, .16);
+
+  /* Deep theme-coverage token bridge. These values keep every mapped
+     bg-white/bg-slate/bg-ink surface dark beneath the workspace's light copy. */
+  --d-void: #080b11;
+  --d-carbon: #11151d;
+  --d-deep: #171e29;
+  --d-well: #1d2531;
+  --d-surf: #252e3b;
+  --d-lift: #303b4c;
+  --d-lift2: #303b4c;
+  --d-rim: rgba(255, 214, 110, .12);
+  --d-rim2: rgba(255, 214, 110, .24);
+  --d-rim3: rgba(255, 214, 110, .4);
+  --d-sig: #ffd66e;
+  --d-sig2: #e6ad45;
+  --d-sig3: #b77b25;
+  --d-sg: rgba(255, 214, 110, .12);
+  --d-sg2: rgba(255, 214, 110, .065);
+  --d-sglow: rgba(255, 214, 110, .42);
+  --d-orange: #ffd66e;
+  --d-og: rgba(255, 214, 110, .12);
+  --d-oglow: rgba(255, 214, 110, .42);
+  --d-fire: #ff9ca7;
+  --d-fg: rgba(255, 156, 167, .12);
+  --d-fglow: rgba(255, 156, 167, .42);
+  --d-warn: #ffc08a;
+  --d-wg: rgba(255, 192, 138, .12);
+  --d-ok: #79e7c5;
+  --d-okg: rgba(121, 231, 197, .12);
+  --d-purple: #c0b4ff;
+  --d-t1: #f4f8ff;
+  --d-t2: #d3e0f0;
+  --d-t3: #c3d0e0;
+  --d-t4: #a0b0c3;
+}
