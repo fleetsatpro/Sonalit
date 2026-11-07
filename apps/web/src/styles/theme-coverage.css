@@ -202,7 +202,7 @@ html[data-theme] #root {
 
 :root[data-theme] :where(
   .icd-top p, .icd-viewhead p, .icd-row > div span,
-  .icd-row aside small, .icd-country small, .icd-country em,
+  .icd-row aside em, .icd-row aside small, .icd-country small, .icd-country em,
   .icd-panel > header span, .icd-panel > header small,
   .ipd-head p, .ipd-card p, .ipd-meta,
   .ipd-coverage span, .ipd-coverage small,
