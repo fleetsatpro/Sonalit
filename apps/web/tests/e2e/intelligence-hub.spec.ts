@@ -77,6 +77,14 @@ async function seedAdmin(page: Page, role: string = 'admin') {
 }
 
 async function stubIntelApi(page: Page, options: { alertsFailure?: boolean } = {}) {
+  // Keep this browser-only workspace suite independent from the API server.
+  // Explicit Intel Hub fixtures registered below take precedence over this fail-closed fallback.
+  await page.route('**/api/**', async route => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'E2E endpoint not stubbed' }),
+  }));
+
   await page.route('**/api/v1/risk/intelligence/**', async route => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api\/v1/, '');
@@ -147,7 +155,7 @@ async function stubIntelApi(page: Page, options: { alertsFailure?: boolean } = {
 }
 
 test.describe('Intel Hub restricted workspace', () => {
-  test('renders the six-workspace shell and administrator boundary', async ({ page }) => {
+  test('renders the six-workspace shell and administrator boundary', async ({ page }, testInfo: TestInfo) => {
     await seedAdmin(page);
     await stubIntelApi(page);
     await page.goto('/intelligence');
@@ -284,7 +292,7 @@ test.describe('Intel Hub restricted workspace', () => {
       contentType: 'image/png',
     });
 
-    const finalWorkspace = mobileNavigation.getByRole('button', { name: 'Publications' });
+    const finalWorkspace = mobileNavigation.getByRole('button', { name: 'Publication desk' });
     await finalWorkspace.click();
     await expect(page.getByRole('heading', { name: 'SECURITY PUBLICATION DESK' })).toBeVisible();
     await expect(finalWorkspace).toHaveAttribute('aria-current', 'page');
