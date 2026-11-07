@@ -9,15 +9,18 @@ const bookings = read('./CDSBookings.tsx');
 const manifest = read('./BookingManifest.tsx');
 const group = read('./BookingGroup.tsx');
 const dashboard = read('./CDSDashboard.tsx');
+const polish = read('./CDSOperationalPolish.css');
 
 describe('CDS cosmic surface and booking desk visual contract', () => {
   it('loads the cosmic crystalline layer after the CDS design and overview systems', () => {
     const design = dashboard.indexOf("import './CDSDesignSystem.css'");
     const overview = dashboard.indexOf("import './CDSOverviewVisual.css'");
     const cosmicImport = dashboard.indexOf("import './CDSCosmicVisual.css'");
+    const polishImport = dashboard.indexOf("import './CDSOperationalPolish.css'");
     expect(design).toBeGreaterThanOrEqual(0);
     expect(overview).toBeGreaterThan(design);
     expect(cosmicImport).toBeGreaterThan(overview);
+    expect(polishImport).toBeGreaterThan(cosmicImport);
   });
 
   it('uses animated spatial atmosphere without communicating fabricated operational telemetry', () => {
@@ -64,6 +67,30 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
     expect(overviewCss).toMatch(/\.cds-shell\s+\.cds-overview-metric\s*\{[^}]*min-height:\s*112px\s*!important/s);
     expect(overviewCss).toMatch(/\.cds-overview-secondary__item\s*\{[^}]*min-height:\s*76px\s*!important/s);
     expect(cosmic).toContain('animation: none !important;');
+  });
+
+  it('gives every legacy CDS submodule a clear, non-duplicated workspace heading', () => {
+    expect(dashboard).toContain('data-view={activeView}');
+    expect(dashboard).toContain('<CDSModuleHeading activeView={activeView} />');
+    for (const id of ['live', 'locks', 'port', 'pulse', 'analytics', 'reports', 'settings']) {
+      expect(dashboard).toContain(`${id}:`);
+    }
+    expect(polish).toContain('.cds-module-heading');
+    expect(polish).toContain('@media (max-width: 767px)');
+  });
+
+  it('extends the shared high-contrast operational finish across CDS modules', () => {
+    expect(polish).toContain('[data-view="containers"]');
+    expect(polish).toContain('[data-view="transporters"]');
+    expect(polish).toContain('[data-view="inbox"]');
+    expect(polish).toContain('[data-view="locks"]');
+    expect(polish).toContain('[data-view="port"]');
+    expect(polish).toContain('[data-view="pulse"]');
+    expect(polish).toContain('[data-view="analytics"]');
+    expect(polish).toContain('[data-view="reports"]');
+    expect(polish).toContain('[data-view="settings"]');
+    expect(polish).toContain('prefers-reduced-motion: reduce');
+    expect(polish).toContain('position: sticky');
   });
 
   it('provides a responsive, keyboard-readable, reduced-motion-safe booking intake dialog', () => {
