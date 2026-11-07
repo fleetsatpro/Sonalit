@@ -108,7 +108,7 @@ function lockHealth(row: Row) {
     return { key: 'stale', label: 'STALE TELEMETRY', note: 'Last persisted heartbeat ' + lockAgeLabel(row['last_heartbeat_event_at']) };
   }
   if (battery !== null && battery < 25) return { key: 'low-battery', label: 'LOW BATTERY', note: 'Reported charge below the 25% attention threshold' };
-  if (signal === 'weak' || signal === 'medium') return { key: 'degraded', label: 'WEAK SIGNAL', note: 'Reported device link needs attention' };
+  if (signal === 'weak') return { key: 'degraded', label: 'WEAK SIGNAL', note: 'Reported device link needs attention' };
   return { key: 'secure', label: 'REPORTING', note: 'Persisted heartbeat within 15 minutes' };
 }
 function LockHealthBadge({ row }: { row: Row }) {
@@ -119,7 +119,6 @@ function LockBatteryReadout({ row, large = false }: { row: Row; large?: boolean 
   const level = lockBattery(row);
   const inventoryLevel = lockInventoryBattery(row);
   const lastReportedLevel = lockLastReportedBattery(row);
-  const batteryAge = lockTelemetryAge(row, 'reported_battery_at');
   const solar = lockSolarState(row);
   const charging = solar === 'charging';
   const low = level !== null && level < 25;
@@ -205,7 +204,7 @@ function LockDossier({ lock }: { lock: Row }) {
         <LockBatteryReadout row={lock} large />
       </section>
       <div className="cds-lock-dossier__metrics">
-        <div><small>CONNECTION</small><LockSignalReadout value={lock['signal_strength']} /></div>
+        <div><small>CONNECTION</small><LockSignalReadout value={lockSignal(lock)} /></div>
         <div><small>LAST HEARTBEAT</small><b>{lockAgeLabel(lock['last_heartbeat_event_at'])}</b><span>{lock['last_heartbeat_event_at'] ? new Date(String(lock['last_heartbeat_event_at'])).toLocaleString() : 'No heartbeat event'}</span></div>
         <div><small>THERMAL TELEMETRY</small><b>{temperature}</b><span>{lockAgeLabel(lock['reported_temperature_at'])} · EVENT-BACKED</span></div>
         <div><small>SOLAR INPUT</small><b>{lockSolarState(lock) === 'charging' ? 'CHARGING' : lockSolarState(lock) === 'idle' ? 'NOT CHARGING' : 'NOT REPORTED'}</b><span>Latest persisted heartbeat payload</span></div>
