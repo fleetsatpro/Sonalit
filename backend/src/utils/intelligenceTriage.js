@@ -210,7 +210,8 @@ function assessIncidentSeverity(category, value) {
     } else if (cat === 'ied') {
       const noDetonationClaim = /\b(?:no|without|zero)\s+(?:(?:reported|confirmed|known)\s+)?(?:explosion|detonation|blast|bombing)\b|\b(?:did not|never did|failed to)\s+(?:explode|detonate|go off)\b|\b(?:unexploded|undetonated)\b/.test(text);
       const detonation = !noDetonationClaim && /\b(?:bombing|bomb exploded|bomb detonated|ied attack|explosion|exploded|detonated|detonation)\b/.test(text);
-      const deviceThreat = /\b(?:bomb threat|suspicious package|suspicious device|explosive device found|bomb found|ied found|device discovered|device confirmed|device defused|unexploded (?:bomb|device|ordnance)|undetonated (?:bomb|device|ordnance)|bomb disposal|explosive ordnance disposal)\b/.test(text);
+      const noDeviceFoundClaim = /\b(?:no|without)\s+(?:(?:reported|confirmed|known)\s+)?(?:a\s+)?(?:(?:unexploded|undetonated|explosive|suspicious)\s+)?(?:bomb|device|ordnance|ied)\s+(?:(?:was|were|has been|have been)\s+)?(?:found|discovered|located|detected|recovered)\b/.test(text);
+      const deviceThreat = /\b(?:bomb threat|suspicious package|suspicious device|bomb disposal|explosive ordnance disposal)\b/.test(text) || (!noDeviceFoundClaim && /\b(?:explosive device found|bomb found|ied found|device discovered|device confirmed|device defused|unexploded (?:bomb|device|ordnance)|undetonated (?:bomb|device|ordnance))\b/.test(text));
       if (detonation) {
         severity = 'high';
         basis.push('Reported explosive detonation or explosive attack; no mass-casualty threshold established');
