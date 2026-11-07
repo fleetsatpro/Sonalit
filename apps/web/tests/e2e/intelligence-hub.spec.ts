@@ -2,6 +2,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 const EVENT_ID = 'e2e-intel-event-0001';
+const FIXTURE_NOW = Date.now();
 const EVENT = {
   id: EVENT_ID,
   title: '[E2E FIXTURE] Two reported fatalities in a targeted attack',
@@ -15,7 +16,7 @@ const EVENT = {
   country_code: 'KE',
   source_count: 2,
   confidence: 65,
-  last_seen_at: '2026-11-06T18:00:00.000Z',
+  last_seen_at: new Date(FIXTURE_NOW - 60_000).toISOString(),
   assessment: {
     security_relevance: 'security_relevant',
     severity_assessment: {
@@ -39,7 +40,7 @@ const ALERT = {
   source_count: 2,
   confidence: 65,
   verification_state: 'unverified',
-  last_seen_at: '2026-11-06T18:05:00.000Z',
+  last_seen_at: new Date(FIXTURE_NOW - 30_000).toISOString(),
   metadata: {
     security_relevance: 'security_relevant',
     source_reliability: 0.8,
@@ -59,7 +60,7 @@ const OBSERVATION = {
   url: 'javascript:alert(1)',
   source_name: 'E2E source fixture',
   country_code: 'KE',
-  observed_at: '2026-11-06T18:10:00.000Z',
+  observed_at: new Date(FIXTURE_NOW - 10_000).toISOString(),
 };
  
 async function seedAdmin(page: Page, role: string = 'admin') {
@@ -155,6 +156,15 @@ async function stubIntelApi(page: Page, options: { alertsFailure?: boolean } = {
 }
 
 test.describe('Intel Hub restricted workspace', () => {
+  test('keeps time-windowed fixtures inside their default view windows', () => {
+    const now = Date.now();
+    const eventAge = now - Date.parse(EVENT.last_seen_at);
+    const alertAge = now - Date.parse(ALERT.last_seen_at);
+    expect(eventAge).toBeGreaterThanOrEqual(0);
+    expect(eventAge).toBeLessThan(24 * 60 * 60 * 1000);
+    expect(alertAge).toBeGreaterThanOrEqual(0);
+    expect(alertAge).toBeLessThan(180 * 60 * 1000);
+  });
   test('renders the six-workspace shell and administrator boundary', async ({ page }, testInfo: TestInfo) => {
     await seedAdmin(page);
     await stubIntelApi(page);
