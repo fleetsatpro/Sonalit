@@ -140,5 +140,24 @@ describe('Intel Hub crystalline clarity contract', () => {
     expect(clarity).toContain('.icd-root .icd-sev.critical');
     expect(clarity).toContain('.ia-page .ia-severity-critical');
   });
+  it('isolates Gilded Obsidian from global light-theme surface remapping', () => {
+    const backgrounds = ['--d-void', '--d-carbon', '--d-well', '--d-surf', '--d-lift'];
+    const foregrounds = ['--d-t1', '--d-t2', '--d-t3'];
+
+    expect(clarity).toContain('--son-theme-bg: #080b11;');
+    expect(clarity).toContain('--son-theme-surface: #11151d;');
+    expect(clarity).toContain('--son-theme-text: #f4f8ff;');
+    expect(clarity).toContain('--d-surf: #252e3b;');
+    expect(clarity).toContain('--d-sig: #ffd66e;');
+    expect(clarity).toContain('color-scheme: dark;');
+
+    for (const backgroundName of backgrounds) {
+      for (const foregroundName of foregrounds) {
+        const ratio = contrastRatio(hexToken(foregroundName), hexToken(backgroundName));
+        expect(ratio, foregroundName + ' on ' + backgroundName).toBeGreaterThanOrEqual(7);
+      }
+    }
+  });
+
 
 });
