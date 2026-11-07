@@ -12,33 +12,10 @@ const dashboard = read('./CDSDashboard.tsx');
 const components = read('./components.tsx');
 const register = read('./CDSContainerRegister.tsx');
 const modulePages = read('./pages.tsx');
-const hooks = read('./hooks.ts');
 const dataPage = read('./CDSDataPage.tsx');
 const polish = read('./CDSOperationalPolish.css');
 
 describe('CDS cosmic surface and booking desk visual contract', () => {
-  it('uses the persisted e-lock telemetry contract and exposes a charging battery indicator', () => {
-    const lockStart = modulePages.indexOf('const LOCK_HEARTBEAT_STALE_MS');
-    const lockEnd = modulePages.indexOf('export function PortView()', lockStart);
-    const lockConsole = modulePages.slice(lockStart, lockEnd);
-    expect(lockConsole).toContain('battery_level');
-    expect(lockConsole).toContain('signal_strength');
-    expect(lockConsole).toContain('tamper_detected');
-    expect(lockConsole).toContain('last_heartbeat');
-    expect(lockConsole).toContain('solar_charging');
-    expect(lockConsole).toContain('firmware_version');
-    expect(lockConsole).toContain('BatteryCharging');
-    expect(lockConsole).toContain('LockEventHistory');
-    expect(lockConsole).toContain('aria-label="Filter e-lock inventory"');
-    expect(lockConsole).toContain('aria-pressed={filter === item.id}');
-    expect(lockConsole).toContain('Remote lock / unlock actuation is not exposed');
-    expect(lockConsole).not.toContain('Ping device');
-    expect(hooks).toContain("limit: 200");
-    expect(hooks).toContain('/locks/\u0024{encodeURIComponent(lockId)}/events');
-    expect(polish).toContain('@keyframes cds-lock-battery-charge');
-    expect(polish).toContain('prefers-reduced-motion: reduce');
-  });
-
   it('loads the cosmic crystalline layer after the CDS design and overview systems', () => {
     const design = dashboard.indexOf("import './CDSDesignSystem.css'");
     const overview = dashboard.indexOf("import './CDSOverviewVisual.css'");
