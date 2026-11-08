@@ -1,0 +1,644 @@
+import { useMemo, useState } from 'react';
+import {
+  Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, BatteryWarning,
+  CheckCircle2, Clock3, Gauge, PackageCheck, RefreshCw, ShieldAlert, Truck, Users,
+  XCircle,
+} from 'lucide-react';
+import type { CDSAnalyticsPayload, CDSAnalyticsSummary } from './types.js';
+import { LoadingState } from './CDSDashboard.js';
+import { useAcknowledgeAlert, useCDSAnalytics } from './hooks.js';
+import { useCDSStore } from './store.js';
+import './CDSPerformanceAnalysis.css';
+
+type TrendMetric = 'bookings_received' | 'containers_clamped' | 'containers_unclamped' | 'trips_started' | 'deliveries_completed';
+type TrendBucket = {
+  start: string; end: string; bookings_received: number; containers_clamped: number;
+  containers_unclamped: number; trips_started: number; deliveries_completed: number;
+};
+
+const trendOptions: Array<{ id: TrendMetric; label: string; color: string }> = [
+  { id: 'bookings_received', label: 'Bookings', color: '#f3bd70' },
+  { id: 'containers_clamped', label: 'Clamped', color: '#5ce0c3' },
+  { id: 'containers_unclamped', label: 'Unclamped', color: '#83b8ff' },
+  { id: 'trips_started', label: 'Trips started', color: '#c0a6ff' },
+  { id: 'deliveries_completed', label: 'Delivered', color: '#e5d18a' },
+];
+
+const bookingStages = [
+  { status: 'clamped', label: 'Clamped', color: '#5ce0c3' },
+  { status: 'cancelled', label: 'Cancelled', color: '#f07d88' },
+  { status: 'completed', label: 'Completed', color: '#d8bd75' },
+  { status: 'yard', label: 'Yard · not yet clamped', color: '#83b8ff' },
+  { status: 'in_progress', label: 'In-progress', color: '#b29aff' },
+] as const;
+
+const numberFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+const fmt = (value: number | null | undefined) => value == null || !Number.isFinite(Number(value)) ? '—' : numberFormat.format(Number(value));
+const pct = (value: number | null | undefined) => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value).toFixed(1) + '%';
+const dateLabel = (value: string) => {
+  const date = new Date(value + (value.length === 10 ? 'T12:00:00' : ''));
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+const signedHours = (value: number | null | undefined) => {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  const amount = Number(value);
+  return (amount > 0 ? '+' : '') + amount.toFixed(1) + 'h';
+};
+const duration = (value: number | null | undefined) => value == null ? '—' : Number(value).toFixed(1) + 'h';
+const safeRatio = (numerator: number, denominator: number) => denominator > 0 ? numerator / denominator * 100 : null;
+const displayDateTime = (value: string | null | undefined) => {
+  if (!value) return 'Not recorded';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Time unavailable' : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+function compareLabel(current: number | null | undefined, previous: number | null | undefined) {
+  if (current == null || previous == null) return 'No comparable baseline';
+  const delta = Number(current) - Number(previous);
+  if (previous === 0) return delta === 0 ? 'No change' : 'New activity';
+  const change = Math.abs(delta / Number(previous) * 100);
+  return (delta > 0 ? '+' : delta < 0 ? '−' : '') + fmt(Math.abs(delta)) + ' · ' + change.toFixed(1) + '%';
+}
+
+function SectionHeading({ index, kicker, title, aside }: { index: string; kicker: string; title: string; aside?: React.ReactNode }) {
+  return (
+    <div className="cpa-v2__section-heading">
+      <div className="min-w-0">
+        <div className="cpa-v2__kicker"><span>{index}</span>{kicker}</div>
+        <h3>{title}</h3>
+      </div>
+      {aside}
+    </div>
+  );
+}
+
+function GlassPanel({ children, className = '', id }: { children: React.ReactNode; className?: string; id?: string }) {
+  return <section id={id} className={'cpa-v2__panel ' + className}>{children}</section>;
+}
+
+function KpiTile({
+  label, value, note, comparison, color, icon: Icon, emphasis = false,
+}: {
+  label: string; value: string; note: string; comparison?: string; color: string;
+  icon: typeof Activity; emphasis?: boolean;
+}) {
+  return (
+    <article className={'cpa-v2__kpi cpa-v2__kpi--' + color + (emphasis ? ' is-emphasis' : '')}>
+      <div className="cpa-v2__kpi-top">
+        <span>{label}</span>
+        <span className="cpa-v2__kpi-icon"><Icon size={15} strokeWidth={1.8} /></span>
+      </div>
+      <strong>{value}</strong>
+      <div className="cpa-v2__kpi-foot">
+        <span>{note}</span>
+        {comparison ? <span className="cpa-v2__delta">{comparison}</span> : null}
+      </div>
+    </article>
+  );
+}
+
+function ProgressLine({ label, value, denominator, color, suffix }: {
+  label: string; value: number; denominator: number; color: string; suffix?: string;
+}) {
+  const width = denominator > 0 ? Math.max(0, Math.min(100, value / denominator * 100)) : 0;
+  return (
+    <div className="cpa-v2__progress-row">
+      <div className="cpa-v2__progress-meta">
+        <span>{label}</span>
+        <strong>{fmt(value)}{suffix ? ' ' + suffix : ''}</strong>
+      </div>
+      <div className="cpa-v2__progress-track"><span style={{ width: width + '%', background: color }} /></div>
+    </div>
+  );
+}
+
+function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days: number }) {
+  const [metric, setMetric] = useState<TrendMetric>('bookings_received');
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+
+  const buckets = useMemo<TrendBucket[]>(() => {
+    const span = days === 365 ? 7 : days === 90 ? 3 : 1;
+    const result: TrendBucket[] = [];
+    for (let index = 0; index < daily.length; index += span) {
+      const rows = daily.slice(index, index + span);
+      if (!rows.length) continue;
+      const bucket: TrendBucket = {
+        start: rows[0].day,
+        end: rows[rows.length - 1].day,
+        bookings_received: 0,
+        containers_clamped: 0,
+        containers_unclamped: 0,
+        trips_started: 0,
+        deliveries_completed: 0,
+      };
+      rows.forEach(row => {
+        bucket.bookings_received += Number(row.bookings_received || 0);
+        bucket.containers_clamped += Number(row.containers_clamped || 0);
+        bucket.containers_unclamped += Number(row.containers_unclamped || 0);
+        bucket.trips_started += Number(row.trips_started || 0);
+        bucket.deliveries_completed += Number(row.deliveries_completed || 0);
+      });
+      result.push(bucket);
+    }
+    return result;
+  }, [daily, days]);
+
+  const values = buckets.map(row => row[metric]);
+  const maximum = Math.max(1, ...values);
+  const minimum = Math.min(0, ...values);
+  const range = Math.max(1, maximum - minimum);
+  const points = values.map((value, index) => ({
+    x: buckets.length <= 1 ? 50 : 44 + index * (912 / (buckets.length - 1)),
+    y: 196 - ((value - minimum) / range) * 164,
+  }));
+  const path = points.map((point, index) => (index === 0 ? 'M' : 'L') + point.x.toFixed(1) + ' ' + point.y.toFixed(1)).join(' ');
+  const area = points.length ? path + ' L ' + points[points.length - 1].x + ' 204 L ' + points[0].x + ' 204 Z' : '';
+  const selected = trendOptions.find(option => option.id === metric) ?? trendOptions[0];
+  const activeIndex = focusIndex == null ? Math.max(0, buckets.length - 1) : focusIndex;
+  const active = buckets[activeIndex];
+
+  return (
+    <GlassPanel className="cpa-v2__trend-panel" id="cds-throughput">
+      <div className="cpa-v2__panel-head">
+        <div>
+          <div className="cpa-v2__kicker"><span>01</span> ACTIVITY / EVENT DATE</div>
+          <h3>Operational throughput</h3>
+          <p>Choose one event stream at a time. Each line is counted on its own event date.</p>
+        </div>
+        <div className="cpa-v2__metric-select" role="group" aria-label="Select throughput metric">
+          {trendOptions.map(option => (
+            <button key={option.id} type="button" aria-pressed={metric === option.id} onClick={() => { setMetric(option.id); setFocusIndex(null); }}>
+              <i style={{ background: option.color }} />{option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="cpa-v2__chart-topline">
+        <div><strong>{fmt(buckets.reduce((sum, row) => sum + row[metric], 0))}</strong><span>{selected.label.toLowerCase()} in selected window</span></div>
+        <div className="cpa-v2__chart-unit">EVENT COUNT · {days} DAYS</div>
+      </div>
+      {buckets.length && values.some(value => value > 0) ? (
+        <div className="cpa-v2__chart-wrap">
+          <svg viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label={selected.label + ' across the selected reporting period'} onMouseLeave={() => setFocusIndex(null)}>
+            <defs>
+              <linearGradient id="cpa-v2-area" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={selected.color} stopOpacity=".26" />
+                <stop offset="100%" stopColor={selected.color} stopOpacity="0" />
+              </linearGradient>
+              <filter id="cpa-v2-glow" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+            {[0, 1, 2, 3].map(index => {
+              const value = maximum * (3 - index) / 3;
+              const y = 28 + index * 56;
+              return <g key={index}>
+                <line x1="38" x2="970" y1={y} y2={y} stroke="rgba(178,205,233,.12)" strokeDasharray="3 8" />
+                <text x="1" y={y + 4} fill="rgba(193,211,232,.55)" fontSize="11">{Math.round(value)}</text>
+              </g>;
+            })}
+            <path d={area} fill="url(#cpa-v2-area)" />
+            <path d={path} fill="none" stroke={selected.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" filter="url(#cpa-v2-glow)" vectorEffect="non-scaling-stroke" />
+            {points.map((point, index) => (
+              <g key={buckets[index].start} onMouseEnter={() => setFocusIndex(index)} onFocus={() => setFocusIndex(index)} onClick={() => setFocusIndex(index)} tabIndex={0} role="button" aria-label={dateLabel(buckets[index].start) + ': ' + fmt(values[index]) + ' ' + selected.label.toLowerCase()}>
+                <circle cx={point.x} cy={point.y} r={activeIndex === index ? 8 : 3.5} fill={selected.color} opacity={activeIndex === index ? 1 : .78} />
+                <circle cx={point.x} cy={point.y} r="14" fill="transparent" />
+              </g>
+            ))}
+            {active ? <line x1={points[activeIndex]?.x ?? 0} x2={points[activeIndex]?.x ?? 0} y1="18" y2="204" stroke="rgba(210,226,243,.28)" strokeDasharray="3 5" /> : null}
+            <text x="42" y="222" fill="rgba(193,211,232,.62)" fontSize="11">{buckets.length ? dateLabel(buckets[0].start) : ''}</text>
+            <text x="970" y="222" fill="rgba(193,211,232,.62)" fontSize="11" textAnchor="end">{buckets.length ? dateLabel(buckets[buckets.length - 1].end) : ''}</text>
+          </svg>
+          <div className="cpa-v2__chart-readout" aria-live="polite">
+            <span>{active ? (active.start === active.end ? dateLabel(active.start) : dateLabel(active.start) + ' – ' + dateLabel(active.end)) : 'Select a chart point'}</span>
+            <strong style={{ color: selected.color }}>{active ? fmt(active[metric]) : '—'}</strong>
+            <small>{selected.label}</small>
+          </div>
+        </div>
+      ) : (
+        <div className="cpa-v2__empty-chart"><BarChart3 size={22} /><strong>No activity recorded in this window</strong><span>The chart will populate from persisted CDS event timestamps when activity exists.</span></div>
+      )}
+      <div className="cpa-v2__chart-footnote">Daily counts are grouped into 3-day or 7-day buckets for longer windows. Different event streams are not treated as a conversion funnel.</div>
+    </GlassPanel>
+  );
+}
+
+function BookingMix({ data }: { data: CDSAnalyticsPayload }) {
+  const rows = bookingStages.map(stage => ({
+    ...stage,
+    count: data.booking_pipeline.find(row => row.status === stage.status)?.count ?? 0,
+  }));
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
+  return (
+    <GlassPanel className="cpa-v2__mix-panel">
+      <div className="cpa-v2__panel-head">
+        <div><div className="cpa-v2__kicker"><span>02</span> BOOKING COHORT / SNAPSHOT STAGE</div><h3>Booking Mix</h3><p>Five exclusive stages for bookings created in this reporting window.</p></div>
+        <div className="cpa-v2__mix-total"><strong>{fmt(total)}</strong><span>bookings received</span></div>
+      </div>
+      <div className="cpa-v2__mix-track" role="img" aria-label={rows.map(row => row.label + ': ' + row.count).join(', ')}>
+        {rows.map(row => row.count > 0 ? <span key={row.status} style={{ width: (row.count / Math.max(1, total) * 100) + '%', background: row.color }} /> : null)}
+      </div>
+      <div className="cpa-v2__mix-list">
+        {rows.map(row => (
+          <div key={row.status} className="cpa-v2__mix-row">
+            <i style={{ background: row.color }} />
+            <span>{row.label}</span>
+            <strong>{fmt(row.count)}</strong>
+            <small>{total ? (row.count / total * 100).toFixed(1) + '%' : '0.0%'}</small>
+          </div>
+        ))}
+      </div>
+      <div className="cpa-v2__cohort-note">Stage is evaluated from the latest persisted booking, trip and clamp evidence; the reporting-window filter applies to booking creation time.</div>
+    </GlassPanel>
+  );
+}
+
+function BookingCohort({ data }: { data: CDSAnalyticsPayload }) {
+  const cohort = data.booking_cohort;
+  const received = Number(cohort?.bookings_received ?? 0);
+  const steps = [
+    { label: 'Booking received', value: received, color: '#f3bd70', note: 'Created in selected window' },
+    { label: 'Clamp recorded', value: Number(cohort?.bookings_with_clamp ?? 0), color: '#5ce0c3', note: 'At least one linked clamp timestamp' },
+    { label: 'Trip linked', value: Number(cohort?.bookings_with_trip ?? 0), color: '#83b8ff', note: 'At least one linked CDS trip' },
+    { label: 'Delivery recorded', value: Number(cohort?.bookings_delivered ?? 0), color: '#d8bd75', note: 'At least one linked delivery timestamp' },
+  ];
+  return (
+    <GlassPanel className="cpa-v2__cohort-panel">
+      <div className="cpa-v2__panel-head">
+        <div><div className="cpa-v2__kicker"><span>03</span> COHORT CONVERSION</div><h3>Booking progression</h3><p>Distinct bookings are followed through persisted downstream records.</p></div>
+        <span className="cpa-v2__tag">SAME BOOKING COHORT</span>
+      </div>
+      <div className="cpa-v2__cohort-steps">
+        {steps.map((step, index) => (
+          <div className="cpa-v2__cohort-step" key={step.label}>
+            <div className="cpa-v2__cohort-step-head">
+              <span className="cpa-v2__cohort-number">{String(index + 1).padStart(2, '0')}</span>
+              <span>{step.label}</span>
+              <strong>{fmt(step.value)}</strong>
+            </div>
+            <div className="cpa-v2__progress-track"><span style={{ width: (received > 0 ? Math.min(100, step.value / received * 100) : 0) + '%', background: step.color }} /></div>
+            <small>{received > 0 ? (step.value / received * 100).toFixed(1) + '% of cohort' : 'No cohort records'} · {step.note}</small>
+          </div>
+        ))}
+      </div>
+      <div className="cpa-v2__cohort-foot">These are evidence milestones, not an assumed funnel: a record can carry a later milestone without every earlier event being present.</div>
+    </GlassPanel>
+  );
+}
+
+function ServiceQuality({ data }: { data: CDSAnalyticsPayload }) {
+  const s = data.summary;
+  const adherence = s.eta_attainment_pct;
+  const etaTone = adherence == null ? 'neutral' : adherence >= 90 ? 'good' : adherence >= 75 ? 'watch' : 'risk';
+  return (
+    <div className="cpa-v2__service-grid" id="cds-service">
+      <GlassPanel className="cpa-v2__service-card">
+        <div className="cpa-v2__panel-head">
+          <div><div className="cpa-v2__kicker"><span>04</span> DELIVERY RELIABILITY</div><h3>ETA adherence</h3></div>
+          <span className={'cpa-v2__status-tag is-' + etaTone}>{adherence == null ? 'NO SAMPLE' : etaTone === 'good' ? 'ON TRACK' : etaTone === 'watch' ? 'WATCH' : 'BELOW THRESHOLD'}</span>
+        </div>
+        <div className="cpa-v2__reliability">
+          <div className="cpa-v2__reliability-value">{pct(adherence)}</div>
+          <div className="cpa-v2__reliability-gauge" style={{ '--cpa-value': Math.max(0, Math.min(100, adherence ?? 0)) + '%' } as React.CSSProperties}><span /></div>
+          <div className="cpa-v2__reliability-foot"><span>{fmt(s.eta_met)} on or before ETA</span><strong>{fmt(s.eta_observed)} delivered with ETA</strong></div>
+        </div>
+        <div className="cpa-v2__stat-pair">
+          <div><small>Mean ETA variance</small><strong>{signedHours(s.avg_eta_variance_hours)}</strong><span>Positive = late · negative = early</span></div>
+          <div><small>90th percentile lateness</small><strong>{duration(s.p90_eta_late_hours)}</strong><span>Late deliveries only</span></div>
+        </div>
+      </GlassPanel>
+      <GlassPanel className="cpa-v2__service-card">
+        <div className="cpa-v2__panel-head"><div><div className="cpa-v2__kicker"><span>05</span> JOURNEY DURATION</div><h3>Transit-time profile</h3></div><span className="cpa-v2__tag">COMPLETED TRIPS</span></div>
+        <div className="cpa-v2__transit-main"><strong>{duration(s.p50_transit_hours)}</strong><span>Median transit time</span></div>
+        <div className="cpa-v2__stat-pair">
+          <div><small>Mean transit</small><strong>{duration(s.avg_transit_hours)}</strong><span>Average of valid trips</span></div>
+          <div><small>90th percentile</small><strong>{duration(s.p90_transit_hours)}</strong><span>Long-tail journey duration</span></div>
+        </div>
+        <p className="cpa-v2__method-note">Transit duration requires both departure and delivery timestamps. Missing timestamps are excluded, not estimated.</p>
+      </GlassPanel>
+    </div>
+  );
+}
+
+function LaneAnalysis({ data }: { data: CDSAnalyticsPayload }) {
+  const lanes = data.lanes ?? [];
+  const highest = Math.max(1, ...lanes.map(row => row.trips_started));
+  return (
+    <GlassPanel className="cpa-v2__lane-panel" id="cds-lanes">
+      <div className="cpa-v2__panel-head">
+        <div><div className="cpa-v2__kicker"><span>06</span> NETWORK FLOW</div><h3>Corridor performance</h3><p>Trip-start cohort by origin and destination; completion is observed as of this snapshot.</p></div>
+        <span className="cpa-v2__tag">{lanes.length} CORRIDORS</span>
+      </div>
+      {lanes.length ? (
+        <div className="cpa-v2__table-scroll">
+          <table className="cpa-v2__table">
+            <thead><tr><th>Corridor</th><th>Trips started</th><th>Delivered to date</th><th>Completion</th><th>Median transit</th><th>Delayed now</th></tr></thead>
+            <tbody>{lanes.map((lane, index) => (
+              <tr key={lane.origin + '|' + lane.destination + '|' + index}>
+                <td><strong>{lane.origin}</strong><span>→ {lane.destination}</span></td>
+                <td><b>{fmt(lane.trips_started)}</b><i className="cpa-v2__table-meter"><span style={{ width: (lane.trips_started / highest * 100) + '%' }} /></i></td>
+                <td>{fmt(lane.deliveries_completed)}</td>
+                <td><strong>{pct(lane.delivery_completion_pct)}</strong></td>
+                <td>{duration(lane.p50_transit_hours ?? lane.avg_transit_hours)}</td>
+                <td><span className={'cpa-v2__number-pill ' + (lane.currently_delayed > 0 ? 'is-risk' : 'is-clear')}>{fmt(lane.currently_delayed)}</span></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : <div className="cpa-v2__empty-state">No corridor records are available for this reporting window.</div>}
+    </GlassPanel>
+  );
+}
+
+function PartnerAnalysis({ data }: { data: CDSAnalyticsPayload }) {
+  const partners = data.transporter_leaderboard ?? [];
+  return (
+    <GlassPanel id="cds-partners" className="cpa-v2__partner-panel">
+      <div className="cpa-v2__panel-head">
+        <div><div className="cpa-v2__kicker"><span>07</span> CARRIER NETWORK</div><h3>Transport partner scorecard</h3><p>Volume, delivery activity and ETA adherence for completed deliveries with a recorded ETA.</p></div>
+        <span className="cpa-v2__tag">{partners.length} ACTIVE PARTNERS</span>
+      </div>
+      {partners.length ? (
+        <div className="cpa-v2__partner-list">
+          {partners.slice(0, 8).map((partner, index) => (
+            <article className="cpa-v2__partner-row" key={partner.transporter_id}>
+              <span className="cpa-v2__rank">{String(index + 1).padStart(2, '0')}</span>
+              <div className="cpa-v2__partner-name"><strong>{partner.company_name}</strong><span>{fmt(partner.containers_handled)} containers · {fmt(partner.trips_started)} trips started</span></div>
+              <div className="cpa-v2__partner-deliveries"><strong>{fmt(partner.deliveries_completed)}</strong><span>Delivered</span></div>
+              <div className="cpa-v2__partner-rate"><strong>{pct(partner.on_time_rate)}</strong><span>{fmt(partner.on_time_deliveries)} / {fmt(partner.delivery_eta_observed)} ETA sample</span></div>
+              <span className={'cpa-v2__number-pill ' + (partner.currently_delayed > 0 ? 'is-risk' : 'is-clear')}>{fmt(partner.currently_delayed)} delayed now</span>
+            </article>
+          ))}
+        </div>
+      ) : <div className="cpa-v2__empty-state">No partner-linked trips or container activity in this period.</div>}
+      <div className="cpa-v2__method-note">ETA adherence is not a contractual on-time-delivery score unless the recorded ETA represents the agreed customer commitment.</div>
+    </GlassPanel>
+  );
+}
+
+function AssetIntegrity({ data }: { data: CDSAnalyticsPayload }) {
+  const s = data.summary;
+  const usableContainers = s.available_containers + s.containers_in_use;
+  const vehicleReadyPool = s.available_vehicles + s.vehicles_in_use;
+  return (
+    <div className="cpa-v2__asset-grid" id="cds-assets">
+      <GlassPanel className="cpa-v2__asset-card">
+        <div className="cpa-v2__panel-head"><div><div className="cpa-v2__kicker"><span>08</span> CONTAINER INVENTORY</div><h3>Availability & condition</h3></div><PackageCheck size={17} /></div>
+        <div className="cpa-v2__asset-big"><strong>{fmt(s.total_containers)}</strong><span>registered containers</span></div>
+        <div className="cpa-v2__asset-stack">
+          <ProgressLine label="In use" value={s.containers_in_use} denominator={Math.max(1, s.total_containers)} color="#5ce0c3" />
+          <ProgressLine label="Available" value={s.available_containers} denominator={Math.max(1, s.total_containers)} color="#83b8ff" />
+          <ProgressLine label="Maintenance" value={s.containers_in_maintenance} denominator={Math.max(1, s.total_containers)} color="#f3bd70" />
+        </div>
+        <div className="cpa-v2__asset-foot">
+          <div><strong>{pct(s.container_utilization_pct)}</strong><span>Registered-fleet share in use</span></div>
+          <div><strong>{fmt(s.damaged_containers + s.retired_containers)}</strong><span>Damaged or retired</span></div>
+        </div>
+        <small className="cpa-v2__method-note">Inventory share is a point-in-time status ratio, not a time-based utilization rate.</small>
+      </GlassPanel>
+      <GlassPanel className="cpa-v2__asset-card">
+        <div className="cpa-v2__panel-head"><div><div className="cpa-v2__kicker"><span>09</span> VEHICLE REGISTER</div><h3>Fleet deployment state</h3></div><Truck size={17} /></div>
+        <div className="cpa-v2__asset-big"><strong>{fmt(s.total_vehicles)}</strong><span>registered vehicles</span></div>
+        <div className="cpa-v2__asset-stack">
+          <ProgressLine label="In use" value={s.vehicles_in_use} denominator={Math.max(1, s.total_vehicles)} color="#5ce0c3" />
+          <ProgressLine label="Available" value={s.available_vehicles} denominator={Math.max(1, s.total_vehicles)} color="#83b8ff" />
+          <ProgressLine label="Maintenance" value={s.vehicles_in_maintenance} denominator={Math.max(1, s.total_vehicles)} color="#f3bd70" />
+        </div>
+        <div className="cpa-v2__asset-foot">
+          <div><strong>{pct(s.vehicle_utilization_pct)}</strong><span>In-use share of ready vehicles</span></div>
+          <div><strong>{fmt(s.active_drivers)}</strong><span>Active drivers</span></div>
+        </div>
+        <small className="cpa-v2__method-note">Status-derived deployment share; operating hours and idle time are not available in this measure.</small>
+      </GlassPanel>
+      <GlassPanel className="cpa-v2__asset-card">
+        <div className="cpa-v2__panel-head"><div><div className="cpa-v2__kicker"><span>10</span> E-LOCK POSTURE</div><h3>Device integrity</h3></div><ShieldAlert size={17} /></div>
+        <div className="cpa-v2__asset-big"><strong>{fmt(s.total_locks)}</strong><span>registered locks</span></div>
+        <div className="cpa-v2__lock-tiles">
+          <div><strong>{fmt(s.locks_in_use)}</strong><span>Assigned / installed</span></div>
+          <div className={s.locks_needing_attention > 0 ? 'is-risk' : ''}><strong>{fmt(s.locks_needing_attention)}</strong><span>Need attention</span></div>
+          <div className={s.tampered_locks > 0 ? 'is-risk' : ''}><strong>{fmt(s.tampered_locks)}</strong><span>Tamper flags</span></div>
+          <div><strong>{fmt(s.stale_lock_heartbeats)}</strong><span>Stale heartbeat</span></div>
+        </div>
+        <div className="cpa-v2__asset-foot"><div><strong>{fmt(s.low_battery_locks)}</strong><span>Battery below 25%</span></div><div><strong>{fmt(s.open_incidents)}</strong><span>Open incidents</span></div></div>
+        <small className="cpa-v2__method-note">Counts are current persisted inventory fields, not a live hardware poll.</small>
+      </GlassPanel>
+      <GlassPanel className="cpa-v2__asset-card cpa-v2__inspection-card">
+        <div className="cpa-v2__panel-head"><div><div className="cpa-v2__kicker"><span>11</span> READINESS / COMPLIANCE</div><h3>Inspection exposure</h3></div><Clock3 size={17} /></div>
+        <div className="cpa-v2__inspection-stats">
+          <div className="is-risk"><strong>{fmt(s.overdue_inspections)}</strong><span>Overdue inspections</span></div>
+          <div><strong>{fmt(s.inspections_due_30_days)}</strong><span>Due within 30 days</span></div>
+          <div><strong>{fmt(s.containers_missing_location)}</strong><span>Without location</span></div>
+          <div><strong>{fmt(s.unclamped_locks)}</strong><span>Unclamped locks</span></div>
+        </div>
+        <small className="cpa-v2__method-note">Missing inspection due dates are not counted as overdue; no date is a separate data gap.</small>
+      </GlassPanel>
+    </div>
+  );
+}
+
+function OperationsAnalysis({ data }: { data: CDSAnalyticsPayload }) {
+  const s = data.summary;
+  const operatorRows = data.operator_leaderboard ?? [];
+  const operatorMax = Math.max(1, ...operatorRows.map(row => row.clamp_actions + row.unclamp_actions));
+  const dataGaps = [
+    { label: 'Vehicle missing', value: s.trips_missing_vehicle },
+    { label: 'Driver missing', value: s.trips_missing_driver },
+    { label: 'Container missing', value: s.trips_missing_container },
+    { label: 'E-Lock missing', value: s.trips_missing_lock },
+    { label: 'ETA missing', value: s.trips_missing_eta },
+  ];
+  const dataGapTotal = dataGaps.reduce((sum, row) => sum + row.value, 0);
+  return (
+    <div className="cpa-v2__ops-grid">
+      <GlassPanel className="cpa-v2__operator-panel">
+        <div className="cpa-v2__panel-head"><div><div className="cpa-v2__kicker"><span>12</span> FIELD EXECUTION</div><h3>Operator activity</h3><p>Distinct containers and recorded clamp / unclamp audit actions within the selected period.</p></div><Users size={17} /></div>
+        {operatorRows.length ? <div className="cpa-v2__operator-list">
+          {operatorRows.slice(0, 8).map(operator => {
+            const actions = operator.clamp_actions + operator.unclamp_actions;
+            return <div className="cpa-v2__operator-row" key={operator.operator_id}>
+              <div className="cpa-v2__operator-meta"><strong>{operator.operator_name}</strong><span>{fmt(operator.containers_clamped)} clamped · {fmt(operator.containers_unclamped)} unclamped</span><b>{fmt(actions)} actions</b></div>
+              <div className="cpa-v2__progress-track"><span style={{ width: (actions / operatorMax * 100) + '%' }} /></div>
+              <small>Last recorded action · {displayDateTime(operator.last_action_at)}</small>
+            </div>;
+          })}
+        </div> : <div className="cpa-v2__empty-state">No clamp or unclamp audit events were attributed to operators in this window.</div>}
+        <div className="cpa-v2__method-note">Activity counts are not productivity rankings: labor hours, shift time and task complexity are not part of the source data.</div>
+      </GlassPanel>
+      <GlassPanel className="cpa-v2__quality-panel">
+        <div className="cpa-v2__panel-head"><div><div className="cpa-v2__kicker"><span>13</span> RECORD INTEGRITY</div><h3>Trip data completeness</h3><p>Assignment checks apply only to lifecycle stages that require those fields.</p></div><Gauge size={17} /></div>
+        <div className="cpa-v2__quality-total"><strong>{fmt(s.trips_with_data_gaps)}</strong><span>active trips with one or more missing fields</span></div>
+        <div className="cpa-v2__quality-list">
+          {dataGaps.map(item => <div key={item.label}><span>{item.label}</span><strong>{fmt(item.value)}</strong></div>)}
+        </div>
+        <div className="cpa-v2__quality-foot">{fmt(dataGapTotal)} missing-field signals across {fmt(s.trips_with_data_gaps)} affected trips. Signals can overlap on the same trip.</div>
+      </GlassPanel>
+    </div>
+  );
+}
+
+function ExceptionQueue({ data }: { data: CDSAnalyticsPayload }) {
+  const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all');
+  const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const acknowledge = useAcknowledgeAlert();
+  const { addToast } = useCDSStore();
+  const alerts = (data.alerts ?? []).filter(alert => {
+    const severity = String(alert.severity || 'low').toLowerCase();
+    const q = query.trim().toLowerCase();
+    return (filter === 'all' || severity === filter)
+      && (!q || [alert.title, alert.message, alert.type, alert.entity_type, alert.entity_id].some(value => String(value || '').toLowerCase().includes(q)));
+  });
+  const visible = expanded ? alerts : alerts.slice(0, 5);
+  return (
+    <GlassPanel id="cds-exceptions" className="cpa-v2__exception-panel">
+      <div className="cpa-v2__panel-head">
+        <div><div className="cpa-v2__kicker"><span>14</span> ACTION / EXCEPTION REGISTER</div><h3>Exceptions requiring attention</h3><p>Open, unacknowledged alerts returned by the persisted CDS snapshot.</p></div>
+        <span className="cpa-v2__tag">{alerts.length} MATCHING</span>
+      </div>
+      <div className="cpa-v2__exception-tools">
+        <div className="cpa-v2__filter-row" role="group" aria-label="Filter alert severity">
+          {(['all', 'critical', 'high', 'medium', 'low'] as const).map(level => <button key={level} type="button" aria-pressed={filter === level} onClick={() => { setFilter(level); setExpanded(false); }}>{level === 'all' ? 'All' : level}</button>)}
+        </div>
+        <input aria-label="Search exceptions" value={query} onChange={event => { setQuery(event.target.value); setExpanded(false); }} placeholder="Search alert, entity or type" />
+      </div>
+      {visible.length ? <div className="cpa-v2__alert-list">
+        {visible.map(alert => {
+          const severity = String(alert.severity || 'low').toLowerCase();
+          return <article className={'cpa-v2__alert-row is-' + severity} key={alert.id}>
+            <span className="cpa-v2__alert-mark"><AlertTriangle size={15} /></span>
+            <div className="cpa-v2__alert-copy"><div><strong>{alert.title || alert.message || 'Untitled alert'}</strong><em>{severity.toUpperCase()}</em></div><p>{alert.message && alert.title ? alert.message : 'No additional message was recorded.'}</p><small>{String(alert.type || 'alert').replaceAll('_', ' ')} · {alert.entity_type || 'Unlinked entity'} · {displayDateTime(alert.created_at)}</small></div>
+            <button type="button" className="cpa-v2__ack-button" disabled={acknowledge.isPending} onClick={() => acknowledge.mutate(alert.id, { onSuccess: () => addToast('Alert acknowledged'), onError: () => addToast('Could not acknowledge this alert', 'error') })}>Acknowledge</button>
+          </article>;
+        })}
+      </div> : <div className="cpa-v2__empty-state">No alert records match these filters.</div>}
+      {alerts.length > 5 ? <button type="button" className="cpa-v2__expand-button" onClick={() => setExpanded(value => !value)}>{expanded ? 'Show fewer' : 'Show all ' + alerts.length + ' alerts'}</button> : null}
+    </GlassPanel>
+  );
+}
+
+function OverdueClamps({ data }: { data: CDSAnalyticsPayload }) {
+  const s = data.summary;
+  const rows = data.overdue_clamps ?? [];
+  return (
+    <GlassPanel className="cpa-v2__overdue-panel">
+      <div className="cpa-v2__panel-head"><div><div className="cpa-v2__kicker"><span>15</span> DWELL / UNRESOLVED CLAMPS</div><h3>Clamp dwell exposure</h3><p>Current clamps older than 24 hours, with manifest and audit attribution where recorded.</p></div><span className="cpa-v2__number-pill is-risk">{fmt(s.containers_clamped_over_24h)} overdue</span></div>
+      <div className="cpa-v2__dwell-stats">
+        <div><small>Currently clamped</small><strong>{fmt(s.containers_currently_clamped)}</strong></div>
+        <div><small>Average completed dwell</small><strong>{duration(s.avg_clamp_duration_hours)}</strong></div>
+        <div><small>Median completed dwell</small><strong>{duration(s.p50_clamp_duration_hours)}</strong></div>
+        <div><small>90th percentile dwell</small><strong>{duration(s.p90_clamp_duration_hours)}</strong></div>
+        <div><small>Unclamped after 24h</small><strong>{fmt(s.unclamps_after_24h)}</strong></div>
+      </div>
+      {rows.length ? <div className="cpa-v2__table-scroll"><table className="cpa-v2__table cpa-v2__clamp-table">
+        <thead><tr><th>Container / booking</th><th>Clamp operator</th><th>Driver / lock</th><th>Clamped since</th><th>Elapsed</th></tr></thead>
+        <tbody>{rows.map((row, index) => <tr key={row.booking_number + '|' + row.container_number + '|' + index}>
+          <td><strong>{row.container_number}</strong><span>Booking {row.booking_number}</span></td>
+          <td>{row.clamp_operator}</td>
+          <td>{row.driver_name}<span>{row.lock_number}</span></td>
+          <td>{displayDateTime(row.clamped_at)}</td>
+          <td><span className="cpa-v2__number-pill is-risk">{Number(row.hours_clamped).toFixed(1)}h</span></td>
+        </tr>)}</tbody>
+      </table></div> : <div className="cpa-v2__empty-state cpa-v2__empty-state--clear"><CheckCircle2 size={18} /> No currently active clamp has exceeded 24 hours.</div>}
+    </GlassPanel>
+  );
+}
+
+export function AnalyticsView() {
+  const [days, setDays] = useState<7 | 30 | 90 | 365>(30);
+  const { data, isLoading, isError, error, isFetching, refetch, dataUpdatedAt } = useCDSAnalytics(days);
+
+  if (isLoading) return <LoadingState />;
+  if (!data || !data.summary) {
+    const details = error && typeof error === 'object'
+      ? error as { response?: { status?: unknown; data?: { error?: unknown } }; code?: unknown }
+      : null;
+    const status = details?.response?.status;
+    const failure = typeof status === 'number'
+      ? 'The analytics endpoint returned HTTP ' + status + '. No sample data has been substituted.'
+      : details?.code === 'ERR_NETWORK'
+        ? 'The analytics endpoint did not return an HTTP response. No sample data has been substituted.'
+        : 'An authoritative CDS analytics snapshot was not returned. No sample data has been substituted.';
+    return <div className="cds-performance-analysis-v2"><div className="cpa-v2__error"><ShieldAlert size={22} /><div><strong>Performance snapshot unavailable</strong><p>{failure}</p><button type="button" onClick={() => { void refetch(); }} disabled={isFetching}><RefreshCw size={14} />{isFetching ? 'Reconnecting' : 'Retry snapshot'}</button></div></div></div>;
+  }
+
+  const s: CDSAnalyticsSummary = data.summary;
+  const previous = data.period_comparison;
+  const comparison = (current: number | null | undefined, old: number | null | undefined) => previous ? compareLabel(current, old) : 'No prior-period baseline';
+  const generatedAt = new Date(data.meta.generated_at);
+  const snapshotAge = Number.isFinite(generatedAt.getTime())
+    ? Math.max(0, Math.floor((Date.now() - generatedAt.getTime()) / 60000))
+    : null;
+  const stale = snapshotAge != null && snapshotAge > 5;
+
+  const kpis = [
+    { label: 'Bookings received', value: fmt(s.bookings_received), note: 'New bookings · selected period', comparison: comparison(s.bookings_received, previous?.bookings_received), color: 'gold', icon: PackageCheck },
+    { label: 'Containers clamped', value: fmt(s.containers_clamped), note: 'Distinct container records', comparison: comparison(s.containers_clamped, previous?.containers_clamped), color: 'teal', icon: CheckCircle2 },
+    { label: 'Trips started', value: fmt(s.trips_started), note: 'Trip creation timestamps', comparison: comparison(s.trips_started, previous?.trips_started), color: 'blue', icon: Truck },
+    { label: 'Deliveries completed', value: fmt(s.deliveries_completed), note: 'Delivery timestamps in window', comparison: comparison(s.deliveries_completed, previous?.deliveries_completed), color: 'violet', icon: PackageCheck },
+    { label: 'ETA adherence', value: pct(s.eta_attainment_pct), note: fmt(s.eta_met) + ' / ' + fmt(s.eta_observed) + ' known-ETA deliveries', comparison: previous?.eta_observed ? comparison(s.eta_attainment_pct, previous.eta_attainment_pct) : 'No comparable ETA sample', color: 'blue', icon: Gauge },
+    { label: 'Clamped beyond 24h', value: fmt(s.containers_clamped_over_24h), note: 'Current unresolved exposure', color: 'risk', icon: AlertTriangle, emphasis: s.containers_clamped_over_24h > 0 },
+  ];
+
+  return (
+    <div className="cds-performance-analysis-v2">
+      <div className="cpa-v2__space" aria-hidden="true"><span /><i /><b /></div>
+      <header className="cpa-v2__hero">
+        <div className="cpa-v2__hero-art" aria-hidden="true"><span /><span /><span /></div>
+        <div className="cpa-v2__hero-main">
+          <div className="cpa-v2__eyebrow"><span className="cpa-v2__brand-mark"><Activity size={14} /></span> SONALIT / CDS INTELLIGENCE <i /> PERFORMANCE ANALYSIS</div>
+          <h2>Performance Analysis</h2>
+          <p>Throughput, conversion, service reliability and asset exposure — grounded in recorded operations.</p>
+          <div className="cpa-v2__hero-meta">
+            <span><small>REPORTING PERIOD</small><strong>{dateLabel(data.meta.period_start)} — {dateLabel(data.meta.period_end)}</strong></span>
+            <span><small>SNAPSHOT</small><strong className={stale ? 'is-stale' : ''}>{snapshotAge == null ? 'Age unknown' : snapshotAge < 1 ? 'Just generated' : snapshotAge + ' min ago'}</strong></span>
+            <span><small>DATA BASIS</small><strong>Persisted CDS records</strong></span>
+          </div>
+        </div>
+        <div className="cpa-v2__hero-controls">
+          <div className="cpa-v2__range-control" role="group" aria-label="Reporting period">
+            {([7, 30, 90, 365] as const).map(value => <button key={value} type="button" aria-pressed={days === value} onClick={() => setDays(value)}>{value}D</button>)}
+          </div>
+          <button type="button" className="cpa-v2__refresh" disabled={isFetching} onClick={() => { void refetch(); }}><RefreshCw size={14} className={isFetching ? 'is-spinning' : ''} />{isFetching ? 'Updating' : 'Refresh'}</button>
+        </div>
+      </header>
+
+      <nav className="cpa-v2__section-nav" aria-label="Analysis sections">
+        <a href="#cds-throughput">Throughput</a><a href="#cds-cohort">Cohort progression</a><a href="#cds-service">Service quality</a><a href="#cds-lanes">Corridors</a><a href="#cds-partners">Partners</a><a href="#cds-assets">Assets</a><a href="#cds-exceptions">Exceptions</a>
+      </nav>
+
+      {isError ? <div className="cpa-v2__stale-banner"><AlertTriangle size={14} /> Latest refresh failed. The previously loaded database snapshot is retained; it has not been replaced with sample figures.</div> : null}
+
+      <section className="cpa-v2__kpi-grid" aria-label="Performance indicators">
+        {kpis.map((kpi, index) => <KpiTile key={kpi.label} {...kpi} style={undefined} />)}
+      </section>
+      <div className="cpa-v2__comparison-note"><span>PERIOD COMPARISON</span><strong>Current {days} days vs immediately preceding {days} days</strong><small>Volume changes are descriptive; a higher count is not automatically a better outcome.</small></div>
+
+      <div className="cpa-v2__flow-grid" id="cds-cohort">
+        <BookingCohort data={data} />
+        <BookingMix data={data} />
+      </div>
+
+      <div className="cpa-v2__analysis-grid">
+        <TrendChart daily={data.daily} days={days} />
+        <ServiceQuality data={data} />
+      </div>
+
+      <LaneAnalysis data={data} />
+      <PartnerAnalysis data={data} />
+      <SectionHeading index="08–11" kicker="FLEET / EQUIPMENT / ASSURANCE" title="Asset integrity & readiness" />
+      <AssetIntegrity data={data} />
+      <SectionHeading index="12–13" kicker="EXECUTION / RECORD QUALITY" title="People & operational discipline" />
+      <OperationsAnalysis data={data} />
+      <div className="cpa-v2__ops-grid">
+        <OverdueClamps data={data} />
+        <ExceptionQueue data={data} />
+      </div>
+
+      <footer className="cpa-v2__method">
+        <div><strong>Method & interpretation</strong><p>Period activity uses event timestamps. Booking Mix follows the selected-period booking cohort and its latest recorded stage. Conversion steps count distinct bookings with linked evidence. ETA adherence uses completed deliveries with a recorded ETA; a contractual SLA cannot be inferred from ETA alone. Inventory and unresolved exposure panels are current-state snapshots. Missing records are excluded where a metric requires them — they are never imputed.</p></div>
+        <div className="cpa-v2__method-stamp"><span>GENERATED</span><strong>{displayDateTime(data.meta.generated_at)}</strong><span>{isFetching ? 'REFRESH IN PROGRESS' : 'PERSISTED SNAPSHOT'}</span></div>
+      </footer>
+    </div>
+  );
+}
