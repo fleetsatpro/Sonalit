@@ -80,7 +80,7 @@ function SectionHeading({ index, kicker, title, aside }: { index: string; kicker
   );
 }
 
-function GlassPanel({ children, className = '', id }: { children: React.ReactNode; className?: string; id?: string }) {
+function GlassPanel({ children, className = '', id }: { children: ReactNode; className?: string; id?: string }) {
   return <section id={id} className={'cpa-v2__panel ' + className}>{children}</section>;
 }
 
