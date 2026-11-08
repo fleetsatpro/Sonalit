@@ -1,6 +1,23 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { STATUS_BADGE_STYLES, RISK_BADGE_STYLES } from './constants.js';
 import { useCDSStore } from './store.js';
+
+/* ------------------------------------------------------------------ */
+/*  Container artwork                                                  */
+/* ------------------------------------------------------------------ */
+
+export function ContainerArtwork({ size = 18, color = 'currentColor', className = '' }: { size?: number; color?: string; className?: string }) {
+  return (
+    <svg data-icon="intermodal-container" width={size} height={size} viewBox="0 0 32 32" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" focusable="false">
+      <path d="M4.25 9.1 25.3 6.35l2.45 2.2v14.2L6.7 25.5l-2.45-2.2V9.1Z" />
+      <path d="m4.25 9.1 2.45 2.2 21.05-2.75M6.7 11.3v14.2M27.75 8.55v14.2" opacity=".72" />
+      <path d="M9.6 10.95v13.9M12.75 10.55v13.9M15.9 10.15v13.9M19.05 9.75v13.9M22.2 9.35v13.9M25.35 8.95v13.9" opacity=".88" />
+      <path d="M4.25 13.2 27.75 10.1M6.7 22.2 27.75 19.45" opacity=".42" />
+      <path d="M4.25 9.1 6.7 11.3M4.25 22.7 6.7 25.5M25.3 6.35l2.45 2.2" strokeWidth="1.9" />
+    </svg>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Card                                                               */
@@ -382,7 +399,7 @@ export function DataTable<T>({
                   {col.header}
                   {sortCol === col.id && (
                     <span className="ml-1">
-                      {sortDir === 'asc' ? '↑' : '↓'}
+                      {sortDir === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />}
                     </span>
                   )}
                 </th>
@@ -461,6 +478,8 @@ export function FilterChip({
 }) {
   return (
     <button
+      type="button"
+      aria-pressed={Boolean(active)}
       className={`text-[11.5px] font-mono px-3 py-1.5 rounded-lg cursor-pointer border transition-colors ${active ? 'bg-cds-orange/15 text-cds-orange border-cds-orange/20' : 'text-text-2 border-[rgba(255,255,255,0.12)] bg-ink-2 hover:bg-ink-3'}`}
       onClick={onClick}
     >

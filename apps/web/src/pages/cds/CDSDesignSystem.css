@@ -2,7 +2,7 @@
  * SONALIT CDS / COSMIC OPERATIONS SYSTEM
  * Scoped visual language for the authenticated Container Management workspace.
  * Surfaces: layered obsidian glass. Signals: azure/cyan with violet depth.
- * Typography: Archivo for reading, Space Grotesk for display, IBM Plex Mono for telemetry.
+ * Typography: Inter for reading, Syne for display, IBM Plex Mono for telemetry.
  */
 
 .cds-shell {
@@ -32,12 +32,13 @@
     radial-gradient(ellipse at 8% 84%, rgba(80, 70, 164, .1), transparent 42%),
     linear-gradient(145deg, #070d19 0%, #050914 48%, #080e1d 100%);
   color-scheme: dark;
-  font-family: 'Archivo', 'Sora', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 550;
   line-height: 1.5;
   overflow: hidden;
-  -webkit-font-smoothing: antialiased;
+  font-synthesis: weight;
+  -webkit-font-smoothing: auto;
   text-rendering: optimizeLegibility;
 }
 
@@ -98,10 +99,17 @@
 .cds-shell h2,
 .cds-shell h3,
 .cds-shell h4 {
-  font-family: 'Space Grotesk', 'Archivo', system-ui, sans-serif;
-  font-synthesis: none;
+  font-family: 'Syne', 'Space Grotesk', system-ui, sans-serif;
+  font-synthesis: weight;
   letter-spacing: -.025em;
 }
+.cds-shell .font-light { font-weight: 500 !important; }
+.cds-shell .font-normal { font-weight: 550 !important; }
+.cds-shell .font-medium { font-weight: 600 !important; }
+.cds-shell .font-semibold { font-weight: 650 !important; }
+.cds-shell .font-bold { font-weight: 700 !important; }
+.cds-shell .font-extrabold { font-weight: 800 !important; }
+.cds-shell .font-black { font-weight: 850 !important; }
 
 .cds-shell .font-mono,
 .cds-shell code,
@@ -192,11 +200,11 @@
   border-color: rgba(84, 228, 242, .58);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 0 30px rgba(82, 175, 255, .16);
 }
-.cds-brand-mark span { color: #d9f4ff; font-family: 'Space Grotesk', 'Archivo', sans-serif; font-size: 12px; font-weight: 800; letter-spacing: .09em; }
+.cds-brand-mark span { color: #d9f4ff; font-family: 'Syne', 'Space Grotesk', sans-serif; font-size: 12px; font-weight: 800; letter-spacing: .09em; }
 .cds-brand-copy { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
 .cds-brand-copy strong {
   color: #f0f6ff;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
   font-size: 14px;
   font-weight: 750;
   line-height: 1.2;
@@ -362,7 +370,7 @@
 .cds-topbar-heading strong {
   overflow: hidden;
   color: #f1f7ff;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
   font-size: 18px;
   font-weight: 700;
   line-height: 1.15;
@@ -765,7 +773,7 @@
 }
 .cds-loading-title {
   color: #dcecff;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -.01em;
@@ -806,12 +814,12 @@
 
 /* Container Register — stronger hierarchy, readable equipment labels and clear lifecycle bars. */
 .cds-container-register {
-  font-family: 'Archivo', 'Sora', system-ui, sans-serif;
+  font-family: 'Inter', 'Space Grotesk', system-ui, sans-serif;
   color: #edf4ff;
 }
 .cds-container-register h1 {
   color: #f5f8ff;
-  font-family: 'Space Grotesk', 'Archivo', sans-serif;
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
   font-size: clamp(23px, 2vw, 27px);
   font-weight: 700;
   letter-spacing: -.04em;
@@ -931,7 +939,7 @@
 .cds-overview-heading h1 {
   margin: 8px 0 4px;
   color: #f5f8ff;
-  font-family: 'Space Grotesk', 'Archivo', sans-serif;
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
   font-size: clamp(27px, 2.7vw, 36px);
   font-weight: 700;
   letter-spacing: -.045em;
@@ -1141,7 +1149,7 @@
   display: block;
   margin-top: 11px;
   color: #f6f9ff;
-  font-family: 'Space Grotesk', 'Archivo', sans-serif;
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
   font-size: clamp(31px, 3vw, 40px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -1253,7 +1261,7 @@
 }
 .cds-overview-secondary__value {
   color: var(--secondary-accent);
-  font-family: 'Space Grotesk', 'Archivo', sans-serif;
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
   font-size: 24px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -1305,7 +1313,7 @@
 .cds-overview-panel__heading h2 {
   margin: 0;
   color: #f1f6ff;
-  font-family: 'Space Grotesk', 'Archivo', sans-serif;
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -.025em;
@@ -1441,7 +1449,7 @@
 }
 .cds-overview-map-state__title {
   color: #e7f2ff;
-  font-family: 'Space Grotesk', 'Archivo', sans-serif;
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
   font-size: 16px;
   font-weight: 700;
 }
@@ -1610,7 +1618,7 @@
 }
 .cds-overview-activity__foot span:last-child {
   color: #829ab8;
-  font-family: 'Archivo', sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
   font-size: 11px;
   letter-spacing: 0;
   text-align: right;

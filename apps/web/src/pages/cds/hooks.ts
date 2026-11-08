@@ -257,9 +257,24 @@ export function useLocks(filters?: SearchFilters) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'locks', filters],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/locks', { params: filters });
+      const { data } = await cdsApi.get('/locks', { params: { limit: 200, ...filters } });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
+  });
+}
+
+export function useLockEvents(lockId: string, limit = 16) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'lock-events', lockId, limit],
+    enabled: Boolean(lockId),
+    queryFn: async () => {
+      const { data } = await cdsApi.get(`/locks/${encodeURIComponent(lockId)}/events`, {
+        params: { limit },
+      });
+      return data;
+    },
+    staleTime: 10_000,
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }

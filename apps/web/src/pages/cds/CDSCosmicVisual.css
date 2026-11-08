@@ -39,7 +39,8 @@
     linear-gradient(rgba(125, 178, 255, .044) 1px, transparent 1px),
     linear-gradient(90deg, rgba(125, 178, 255, .044) 1px, transparent 1px);
   background-size: auto, auto, auto, auto, auto, auto, auto, 64px 64px, 64px 64px;
-  animation: cds-cosmic-star-drift 72s linear infinite;
+  animation: cds-cosmic-starfield-float 132s cubic-bezier(.37, 0, .63, 1) infinite alternate;
+  transform-origin: center;
   mask-image: linear-gradient(to bottom, black 0%, rgba(0,0,0,.86) 55%, transparent 100%);
 }
 
@@ -56,19 +57,20 @@
     linear-gradient(128deg, transparent 14%, rgba(111, 213, 255, .045) 14.2%, transparent 14.7% 39%, rgba(180, 161, 255, .04) 39.2%, transparent 39.8%),
     linear-gradient(32deg, transparent 29%, rgba(119, 219, 255, .035) 29.2%, transparent 29.6% 68%, rgba(173, 158, 255, .04) 68.2%, transparent 68.7%);
   background-size: 100% 100%;
-  filter: blur(1px);
   transform: translate3d(-1.2%, 0, 0) rotate(-2deg);
-  animation: cds-crystal-veil 32s ease-in-out infinite alternate;
+  transform-origin: center;
+  animation: cds-crystal-veil 86s cubic-bezier(.37, 0, .63, 1) infinite alternate;
 }
 
-@keyframes cds-cosmic-star-drift {
-  from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0; }
-  to { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 64px 64px, -64px 64px; }
+@keyframes cds-cosmic-starfield-float {
+  0% { transform: translate3d(-.75%, -.2%, 0) scale(1); }
+  50% { transform: translate3d(.05%, .35%, 0) scale(1.008); }
+  100% { transform: translate3d(.75%, .7%, 0) scale(1.016); }
 }
 @keyframes cds-crystal-veil {
-  0% { opacity: .14; transform: translate3d(-1.5%, -.8%, 0) rotate(-2.5deg) scale(1); }
-  50% { opacity: .29; }
-  100% { opacity: .2; transform: translate3d(1.5%, .8%, 0) rotate(1.5deg) scale(1.035); }
+  0% { opacity: .12; transform: translate3d(-1.7%, -.6%, 0) rotate(-2.1deg) scale(1); }
+  50% { opacity: .22; transform: translate3d(.35%, .15%, 0) rotate(.2deg) scale(1.02); }
+  100% { opacity: .14; transform: translate3d(1.7%, .8%, 0) rotate(2deg) scale(1.04); }
 }
 @keyframes cds-metallic-glint {
   0%, 66%, 100% { transform: translateX(-145%) skewX(-16deg); opacity: 0; }
@@ -176,9 +178,31 @@
   .cds-shell .cds-panel {
     animation: none !important;
   }
+  .cds-shell::before,
+  .cds-shell::after {
+    transform: none !important;
+  }
 }
 @media (max-width: 767px) {
-  .cds-shell::after { opacity: .13; }
+  /* Mobile keeps the living nebula, but drops the decorative grid texture. */
+  .cds-shell::before {
+    opacity: .19;
+    background-image:
+      radial-gradient(1.1px 1.1px at 8% 14%, rgba(228, 245, 255, .9) 0, transparent 100%),
+      radial-gradient(1.3px 1.3px at 18% 73%, rgba(126, 223, 255, .78) 0, transparent 100%),
+      radial-gradient(1px 1px at 33% 39%, rgba(186, 178, 255, .88) 0, transparent 100%),
+      radial-gradient(1.4px 1.4px at 57% 16%, rgba(198, 231, 255, .76) 0, transparent 100%),
+      radial-gradient(1px 1px at 71% 82%, rgba(115, 223, 255, .74) 0, transparent 100%),
+      radial-gradient(1.2px 1.2px at 91% 34%, rgba(196, 170, 255, .8) 0, transparent 100%),
+      radial-gradient(ellipse 28% 34% at 72% 24%, rgba(91, 111, 255, .1), transparent 75%);
+    background-size: auto, auto, auto, auto, auto, auto, auto;
+    animation-duration: 168s;
+  }
+  .cds-shell::after {
+    inset: -8%;
+    opacity: .11;
+    animation-duration: 116s;
+  }
   .cds-shell .cds-topbar { background: rgba(5,10,23,.97); }
 }
 

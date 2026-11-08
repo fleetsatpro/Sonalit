@@ -1,135 +1,436 @@
 import { useState } from 'react';
-import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, type LucideIcon } from 'lucide-react';
+import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, ArrowUpRight, Battery, BatteryCharging, BatteryWarning, Activity, Zap, ChevronRight, type LucideIcon } from 'lucide-react';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useDashboardKPIs, useCDSAnalytics, useLocks, useTrips, useBookings, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useAcknowledgeAlert } from './hooks.js';
+import { useDashboardKPIs, useCDSAnalytics, useLocks, useLockEvents, useTrips, useBookings, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useAcknowledgeAlert } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
 type Row = Record<string, unknown>;
 const s = (v: unknown) => String(v ?? '—');
 
+
+const LOCK_HEARTBEAT_STALE_MS = 15 * 60 * 1000;
+
+function lockText(value: unknown, fallback = '—') {
+  return value === null || value === undefined || value === '' ? fallback : String(value);
+}
+function lockFlag(value: unknown) {
+  return value === true || value === 'true' || value === 1;
+}
+function numericTelemetry(value: unknown, min: number, max: number): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
+}
+function lockTelemetryAge(row: Row, timestampKey: string): number | null {
+  const raw = row[timestampKey];
+  if (!raw) return null;
+  const timestamp = new Date(String(raw)).getTime();
+  const now = Date.now();
+  if (!Number.isFinite(timestamp) || timestamp > now + 60_000) return null;
+  return now - timestamp;
+}
+function lockTelemetryFresh(row: Row, timestampKey: string): boolean {
+  const age = lockTelemetryAge(row, timestampKey);
+  return age !== null && age <= LOCK_HEARTBEAT_STALE_MS;
+}
+function lockBattery(row: Row): number | null {
+  return lockTelemetryFresh(row, 'reported_battery_at')
+    ? numericTelemetry(row['reported_battery_level'], 0, 100) : null;
+}
+function lockLastReportedBattery(row: Row): number | null {
+  return numericTelemetry(row['reported_battery_level'], 0, 100);
+}
+function lockInventoryBattery(row: Row): number | null {
+  return numericTelemetry(row['battery_level'], 0, 100);
+}
+function lockHeartbeatAge(row: Row): number | null {
+  return lockTelemetryAge(row, 'last_heartbeat_event_at');
+}
+function lockSignal(row: Row): string {
+  if (!lockTelemetryFresh(row, 'reported_signal_at')) return 'unverified';
+  const raw = row['reported_signal_strength'];
+  if (raw === null || raw === undefined || raw === '') return 'unverified';
+  const text = String(raw).trim().toLowerCase();
+  if (['strong', 'medium', 'weak', 'offline'].includes(text)) return text;
+  const value = Number(raw);
+  if (Number.isFinite(value) && value >= 0 && value <= 100) {
+    return value >= 70 ? 'strong' : value >= 40 ? 'medium' : value > 0 ? 'weak' : 'offline';
+  }
+  return text;
+}
+function lockSolarState(row: Row): 'charging' | 'idle' | 'unverified' {
+  if (!lockTelemetryFresh(row, 'reported_solar_at')) return 'unverified';
+  const raw = row['reported_solar_charging'];
+  if (raw === true || raw === 'true') return 'charging';
+  if (raw === false || raw === 'false') return 'idle';
+  return 'unverified';
+}
+function lockTamperState(row: Row): 'active' | 'clear' | 'unverified' {
+  if (lockFlag(row['tamper_detected'])) return 'active';
+  const raw = row['reported_tamper_detected'];
+  if (raw === true || raw === 'true') return 'active';
+  if ((raw === false || raw === 'false') && lockTelemetryFresh(row, 'reported_tamper_at')) return 'clear';
+  return 'unverified';
+}
+function lockAgeLabel(value: unknown) {
+  if (!value) return 'NOT RECORDED';
+  const timestamp = new Date(String(value)).getTime();
+  if (!Number.isFinite(timestamp)) return 'TIME UNKNOWN';
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+  if (minutes < 1) return 'JUST NOW';
+  if (minutes < 60) return minutes + 'M AGO';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + 'H AGO';
+  return Math.floor(hours / 24) + 'D AGO';
+}
+function lockHealth(row: Row) {
+  const status = lockText(row['status'], '').toLowerCase();
+  const signal = lockSignal(row);
+  const age = lockHeartbeatAge(row);
+  const battery = lockBattery(row);
+  const tamper = lockTamperState(row);
+  if (tamper === 'active') {
+    return { key: 'tamper', label: 'TAMPER DETECTED', note: lockText(row['tamper_status'], 'Device integrity alert') };
+  }
+  if (status === 'removed') return { key: 'removed', label: 'REMOVED', note: 'Not in active service' };
+  if (status === 'maintenance') return { key: 'maintenance', label: 'MAINTENANCE', note: 'Device placed in maintenance' };
+  if (status === 'offline' || signal === 'offline') return { key: 'offline', label: 'OFFLINE', note: 'Device reports no link' };
+  if (age === null) return { key: 'unverified', label: 'UNVERIFIED', note: 'No persisted heartbeat event' };
+  if (age > LOCK_HEARTBEAT_STALE_MS) {
+    return { key: 'stale', label: 'STALE TELEMETRY', note: 'Last persisted heartbeat ' + lockAgeLabel(row['last_heartbeat_event_at']) };
+  }
+  if (battery !== null && battery < 25) return { key: 'low-battery', label: 'LOW BATTERY', note: 'Reported charge below the 25% attention threshold' };
+  if (signal === 'weak') return { key: 'degraded', label: 'WEAK SIGNAL', note: 'Reported device link needs attention' };
+  return { key: 'secure', label: 'REPORTING', note: 'Persisted heartbeat within 15 minutes' };
+}
+function LockHealthBadge({ row }: { row: Row }) {
+  const health = lockHealth(row);
+  return <span className={'cds-lock-health cds-lock-health--' + health.key}><i aria-hidden="true" />{health.label}</span>;
+}
+function LockBatteryReadout({ row, large = false }: { row: Row; large?: boolean }) {
+  const level = lockBattery(row);
+  const inventoryLevel = lockInventoryBattery(row);
+  const lastReportedLevel = lockLastReportedBattery(row);
+  const solar = lockSolarState(row);
+  const charging = solar === 'charging';
+  const low = level !== null && level < 25;
+  const Icon = charging ? BatteryCharging : low ? BatteryWarning : Battery;
+  const displayLevel = level !== null ? level + '%' : lastReportedLevel !== null ? lastReportedLevel + '%†' : inventoryLevel !== null ? inventoryLevel + '%*' : '—';
+  return (
+    <div className={'cds-lock-battery' + (large ? ' cds-lock-battery--large' : '') + (charging ? ' cds-lock-battery--charging' : '') + (low ? ' cds-lock-battery--low' : '') + (level === null ? ' cds-lock-battery--unverified' : '')}>
+      <span className="cds-lock-battery__icon" aria-hidden="true"><Icon size={large ? 29 : 21} strokeWidth={1.8} /></span>
+      <span className="cds-lock-battery__reading">{displayLevel}</span>
+      {charging && <span className="cds-lock-battery__charge"><Zap size={10} aria-hidden="true" /> SOLAR INPUT</span>}
+      {level === null && <span className="cds-lock-battery__charge cds-lock-battery__charge--unverified">{lastReportedLevel !== null ? 'LAST REPORT ' + lockAgeLabel(row['reported_battery_at']) : inventoryLevel !== null ? 'REGISTERED · UNVERIFIED' : 'NO BATTERY TELEMETRY'}</span>}
+    </div>
+  );
+}
+function LockSignalReadout({ value }: { value: unknown }) {
+  const signal = lockText(value, 'unverified').toLowerCase();
+  const numeric = Number(signal);
+  const isRssi = signal !== 'unverified' && Number.isFinite(numeric) && numeric < 0;
+  const bars = signal === 'strong' ? 4 : signal === 'medium' ? 3 : signal === 'weak' ? 1 : 0;
+  return (
+    <span className={'cds-lock-signal cds-lock-signal--' + (isRssi ? 'rssi' : signal)}>
+      <span className="cds-lock-signal__bars" aria-hidden="true">
+        {[1, 2, 3, 4].map(level => <i key={level} className={level <= bars ? 'active' : ''} />)}
+      </span>
+      <span>{signal === 'unverified' ? 'NOT REPORTED' : isRssi ? signal + ' dBm' : signal.toUpperCase()}</span>
+    </span>
+  );
+}
+
+
+function LockBatteryTrend({ events }: { events: Row[] }) {
+  const samples = events.map(event => {
+    const data = event['data'] && typeof event['data'] === 'object' ? event['data'] as Record<string, unknown> : {};
+    const raw = data['battery_level'] ?? data['battery'] ?? data['level'];
+    const level = numericTelemetry(raw, 0, 100);
+    const at = event['created_at'] ? new Date(String(event['created_at'])).getTime() : NaN;
+    return level === null || !Number.isFinite(at) ? null : { level, at };
+  }).filter((sample): sample is { level: number; at: number } => sample !== null)
+    .sort((a, b) => a.at - b.at)
+    .slice(-12);
+  const latest = samples[samples.length - 1];
+  const first = samples[0];
+  const delta = latest && first ? latest.level - first.level : 0;
+  const coordinates = samples.map((sample, index) => ({
+    x: samples.length < 2 ? 100 : 5 + index * (190 / (samples.length - 1)),
+    y: 47 - sample.level * 0.39,
+  }));
+  const trace = coordinates.map((point, index) => (index === 0 ? 'M' : 'L') + point.x.toFixed(1) + ' ' + point.y.toFixed(1)).join(' ');
+  return (
+    <section className="cds-lock-battery-trend" aria-label="Battery telemetry history">
+      <header>
+        <div><span>POWER INTELLIGENCE / EVENT-BACKED</span><b>Battery history trace</b></div>
+        <div className="cds-lock-battery-trend__reading">
+          <strong>{latest ? latest.level + '%' : '—'}</strong>
+          <small>{samples.length >= 2 ? (delta > 0 ? '+' : '') + delta.toFixed(0) + ' PTS IN WINDOW' : samples.length === 1 ? 'ONE READING' : 'NO READINGS'}</small>
+        </div>
+      </header>
+      {samples.length >= 2 ? (
+        <>
+          <svg className="cds-lock-battery-trend__chart" viewBox="0 0 200 54" role="img" aria-label={'Recent battery readings from ' + samples.length + ' persisted device events'}>
+            <path d="M5 47H195 M5 27H195 M5 7H195" className="cds-lock-battery-trend__grid" />
+            <path d={trace} className="cds-lock-battery-trend__line" />
+            {coordinates.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={index === coordinates.length - 1 ? 3 : 1.8} className="cds-lock-battery-trend__point" />)}
+          </svg>
+          <div className="cds-lock-battery-trend__range"><span>MIN {Math.min(...samples.map(sample => sample.level))}%</span><span>MAX {Math.max(...samples.map(sample => sample.level))}%</span><span>{samples.length} SAMPLES</span></div>
+        </>
+      ) : (
+        <div className="cds-lock-battery-trend__empty">
+          {samples.length === 1 ? 'One battery reading is persisted. A trend needs another device report.' : 'No numeric battery readings are present in the returned device-event window.'}
+        </div>
+      )}
+      <small className="cds-lock-battery-trend__footnote">Observed values only · no remaining-life projection or discharge forecast</small>
+    </section>
+  );
+}
+
+function LockEventHistory({ lockId }: { lockId: string }) {
+  const { data, isLoading, isError, isFetching } = useLockEvents(lockId, 16);
+  const events = data?.data ?? [];
+  return (
+    <section className="cds-lock-dossier__history">
+      <header>
+        <div><span>DEVICE EVIDENCE / EVENT STREAM</span><b>Recent lock events</b></div>
+        <small>{isFetching ? 'UPDATING' : (data?.total ?? events.length) + ' RECORDED'}</small>
+      </header>
+      {!isLoading && !isError && <LockBatteryTrend events={events} />}
+      {isLoading ? <div className="cds-lock-dossier__empty">Loading persisted device events…</div>
+        : isError ? <div className="cds-lock-dossier__empty is-error">Event history could not be retrieved. Device state has not been inferred from a failed read.</div>
+          : events.length ? (
+            <div className="cds-lock-event-list">
+              {events.map((event, index) => {
+                const type = lockText(event['type'], 'event').toLowerCase();
+                const eventData = event['data'] && typeof event['data'] === 'object' ? event['data'] as Record<string, unknown> : {};
+                const detail = Object.entries(eventData)
+                  .filter(([, value]) => value === null || ['string', 'number', 'boolean'].includes(typeof value))
+                  .slice(0, 3)
+                  .map(([key, value]) => key.replaceAll('_', ' ') + ': ' + lockText(value, '—'))
+                  .join(' · ');
+                const timestamp = event['created_at'] ? new Date(String(event['created_at'])) : null;
+                return (
+                  <article className={'cds-lock-event cds-lock-event--' + type} key={lockText(event['id'], type + '-' + index)}>
+                    <span className="cds-lock-event__marker" aria-hidden="true"><Activity size={12} /></span>
+                    <div className="cds-lock-event__body">
+                      <div><b>{type.replaceAll('_', ' ').toUpperCase()}</b><small>{timestamp && Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString() : 'TIME NOT RECORDED'}</small></div>
+                      {detail && <p>{detail}</p>}
+                      {(event['lat'] != null && event['lng'] != null) && <small className="cds-lock-event__coordinates">{Number(event['lat']).toFixed(5)}, {Number(event['lng']).toFixed(5)}</small>}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : <div className="cds-lock-dossier__empty">No device event records returned for this lock.</div>}
+    </section>
+  );
+}
+
+function LockDossier({ lock }: { lock: Row }) {
+  const temperatureValue = numericTelemetry(lock['reported_temperature'], -80, 150);
+  const temperatureFresh = lockTelemetryFresh(lock, 'reported_temperature_at');
+  const temperature = temperatureValue === null ? 'NOT REPORTED' : temperatureValue.toFixed(1) + ' °C' + (temperatureFresh ? '' : ' · STALE');
+  const coordinates = lock['lat'] != null && lock['lng'] != null
+    ? Number(lock['lat']).toFixed(5) + ', ' + Number(lock['lng']).toFixed(5) : 'NOT REPORTED';
+  return (
+    <div className="cds-lock-dossier">
+      <section className={'cds-lock-dossier__hero cds-lock-dossier__hero--' + lockHealth(lock).key}>
+        <div className="cds-lock-dossier__identity">
+          <span>SECURITY DEVICE / {lockText(lock['provider'], 'PROVIDER NOT RECORDED').toUpperCase()}</span>
+          <h3>{lockText(lock['serial'] ?? lock['serial_number'] ?? lock['lock_id'])}</h3>
+          <LockHealthBadge row={lock} />
+        </div>
+        <LockBatteryReadout row={lock} large />
+      </section>
+      <div className="cds-lock-dossier__metrics">
+        <div><small>CONNECTION</small><LockSignalReadout value={lockSignal(lock)} /></div>
+        <div><small>LAST HEARTBEAT</small><b>{lockAgeLabel(lock['last_heartbeat_event_at'])}</b><span>{lock['last_heartbeat_event_at'] ? new Date(String(lock['last_heartbeat_event_at'])).toLocaleString() : 'No heartbeat event'}</span></div>
+        <div><small>THERMAL TELEMETRY</small><b>{temperature}</b><span>{lockAgeLabel(lock['reported_temperature_at'])} · EVENT-BACKED</span></div>
+        <div><small>SOLAR INPUT</small><b>{lockSolarState(lock) === 'charging' ? 'CHARGING' : lockSolarState(lock) === 'idle' ? 'NOT CHARGING' : 'NOT REPORTED'}</b><span>Latest persisted heartbeat payload</span></div>
+      </div>
+      <section className="cds-lock-dossier__section">
+        <header><b>Assignment & device identity</b><span>Persisted inventory fields</span></header>
+        <div className="cds-lock-dossier__fields">
+          <div><small>CONTAINER</small><b>{lockText(lock['container_number'])}</b></div>
+          <div><small>VEHICLE</small><b>{lockText(lock['truck'] ?? lock['vehicle_reg'])}</b></div>
+          <div><small>DEVICE STATUS</small><b>{lockText(lock['status']).toUpperCase()}</b></div>
+          <div><small>FIRMWARE</small><b>{lockText(lock['firmware_version'], 'NOT RECORDED')}</b></div>
+          <div><small>LOCATION</small><b>{lockText(lock['location'], coordinates)}</b></div>
+          <div><small>COORDINATES</small><b>{coordinates}</b></div>
+          <div><small>LAST DEVICE EVENT</small><b>{lockAgeLabel(lock['last_persisted_event_at'])}</b></div>
+          <div><small>TAMPER CHANNEL</small><b>{lockTamperState(lock) === 'active' ? lockText(lock['tamper_status'], 'ALERT ACTIVE').toUpperCase() : lockTamperState(lock) === 'clear' ? 'CLEAR · DEVICE REPORTED' : 'NOT REPORTED'}</b></div>
+          <div><small>REGISTERED BATTERY</small><b>{lockInventoryBattery(lock) === null ? 'NOT RECORDED' : lockInventoryBattery(lock) + '% · UNVERIFIED BASELINE'}</b></div>
+        </div>
+      </section>
+      <div className="cds-lock-dossier__notice"><ShieldCheck size={14} aria-hidden="true" /><span>This console presents persisted inventory and device telemetry. Remote lock / unlock actuation is not exposed by the current CDS API, so no hardware command is simulated here.</span></div>
+      <LockEventHistory lockId={lockText(lock['id'], '')} />
+    </div>
+  );
+}
+
 export function LocksView() {
   const [filter, setFilter] = useState('all');
-  const [view, setView] = useState<'table' | 'grid'>('table');
-  const { data, isLoading } = useLocks();
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState('priority');
+  const { data, isLoading, isError, isFetching, refetch } = useLocks();
   const { openDrawer } = useCDSStore();
   if (isLoading) return <LoadingState />;
 
   const all = (data?.data ?? []) as Row[];
-  const healthState = (l: Row) => l['tamper'] ? 'tamper' : s(l['signal']) === 'offline' ? 'offline' : Number(l['battery'] ?? 100) < 25 ? 'low' : 'online';
-  const online = all.filter(l => healthState(l) === 'online').length;
-  const low = all.filter(l => healthState(l) === 'low').length;
-  const tamper = all.filter(l => healthState(l) === 'tamper').length;
-  const offline = all.filter(l => healthState(l) === 'offline').length;
-  const rows = filter === 'all' ? all : all.filter(l => healthState(l) === filter);
-  const battColor = (b: number) => b >= 60 ? '#33d6a8' : b >= 25 ? '#ffb020' : '#ff5c5c';
-
-  const kpis = [
-    { label: 'TOTAL LOCKS', value: String(all.length), delta: 'onboarded', trend: 'up' as const },
-    { label: 'ONLINE', value: String(online), delta: 'reporting', trend: 'up' as const },
-    { label: 'LOW BATTERY', value: String(low), delta: 'below 25%', trend: 'down' as const },
-    { label: 'TAMPER ALERTS', value: String(tamper), delta: 'active', trend: 'down' as const },
-    { label: 'OFFLINE', value: String(offline), delta: 'no signal', trend: 'down' as const },
+  const total = Number(data?.total ?? all.length);
+  const count = (predicate: (row: Row) => boolean) => all.filter(predicate).length;
+  const tamper = count(row => lockHealth(row).key === 'tamper');
+  const offline = count(row => lockHealth(row).key === 'offline');
+  const stale = count(row => lockHealth(row).key === 'stale');
+  const fresh = count(row => {
+    const age = lockHeartbeatAge(row);
+    return age !== null && age <= LOCK_HEARTBEAT_STALE_MS;
+  });
+  const low = count(row => {
+    const battery = lockBattery(row);
+    return battery !== null && battery < 25;
+  });
+  const charging = count(row => lockSolarState(row) === 'charging');
+  const attention = count(row => ['tamper', 'offline', 'stale', 'low-battery', 'degraded', 'unverified'].includes(lockHealth(row).key));
+  const thermal = count(row => numericTelemetry(row['reported_temperature'], -80, 150) !== null && lockTelemetryFresh(row, 'reported_temperature_at'));
+  const filters = [
+    { id: 'all', label: 'All devices', total: all.length },
+    { id: 'attention', label: 'Needs attention', total: attention },
+    { id: 'tamper', label: 'Tamper', total: tamper },
+    { id: 'offline', label: 'Offline', total: offline },
+    { id: 'stale', label: 'Stale heartbeat', total: stale },
+    { id: 'low', label: 'Low battery', total: low },
+    { id: 'charging', label: 'Solar charging', total: charging },
+    { id: 'maintenance', label: 'Maintenance', total: count(row => lockHealth(row).key === 'maintenance') },
   ];
+  const searchTerm = query.trim().toLowerCase();
+  const matches = all.filter(row => {
+    const health = lockHealth(row).key;
+    const battery = lockBattery(row);
+    const filterMatch = filter === 'all'
+      || (filter === 'attention' && ['tamper', 'offline', 'stale', 'low-battery', 'degraded', 'unverified'].includes(health))
+      || (filter === 'low' && battery !== null && battery < 25)
+      || (filter === 'charging' && lockSolarState(row) === 'charging')
+      || (filter === health);
+    if (!filterMatch) return false;
+    if (!searchTerm) return true;
+    return [
+      row['serial'], row['serial_number'], row['provider'], row['container_number'],
+      row['truck'], row['vehicle_reg'], row['location'], row['status'],
+      row['firmware_version'], row['tamper_status'],
+    ].some(value => String(value ?? '').toLowerCase().includes(searchTerm));
+  });
+  const healthPriority: Record<string, number> = {
+    tamper: 0, offline: 1, 'low-battery': 2, stale: 3, degraded: 4,
+    unverified: 5, maintenance: 6, removed: 7, secure: 8,
+  };
+  const rows = [...matches].sort((a, b) => {
+    if (sort === 'battery') return (lockBattery(a) ?? 101) - (lockBattery(b) ?? 101);
+    if (sort === 'heartbeat') return (lockHeartbeatAge(b) ?? -1) - (lockHeartbeatAge(a) ?? -1);
+    if (sort === 'serial') return lockText(a['serial']).localeCompare(lockText(b['serial']));
+    return (healthPriority[lockHealth(a).key] ?? 9) - (healthPriority[lockHealth(b).key] ?? 9);
+  });
+  const powerWatch = [...all]
+    .filter(row => lockBattery(row) !== null)
+    .sort((a, b) => (lockBattery(a) ?? 101) - (lockBattery(b) ?? 101))
+    .slice(0, 4);
 
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
-        {kpis.map(k => <KPICard key={k.label} {...k} />)}
-      </div>
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {[
-          { id: 'all', label: `All (${all.length})` },
-          { id: 'online', label: `Online (${online})` },
-          { id: 'low', label: `Low battery (${low})` },
-          { id: 'tamper', label: `Tamper (${tamper})` },
-          { id: 'offline', label: `Offline (${offline})` },
-        ].map(f => <FilterChip key={f.id} label={f.label} active={filter === f.id} onClick={() => setFilter(f.id)} />)}
-        <div className="ml-auto flex gap-0 border border-[rgba(255,255,255,.1)] rounded-lg overflow-hidden">
-          <button className={`px-3 py-1.5 text-[11px] font-mono border-none cursor-pointer ${view === 'table' ? 'bg-ink-3 text-text-0' : 'bg-transparent text-text-2'}`} onClick={() => setView('table')}>Table</button>
-          <button className={`px-3 py-1.5 text-[11px] font-mono border-none cursor-pointer ${view === 'grid' ? 'bg-ink-3 text-text-0' : 'bg-transparent text-text-2'}`} onClick={() => setView('grid')}>Cards</button>
+    <div className="cds-lock-console">
+      <header className="cds-lock-console__head">
+        <div>
+          <div className="cds-lock-console__eyebrow"><ShieldCheck size={13} aria-hidden="true" /> HARDWARE SECURITY / DEVICE TELEMETRY</div>
+          <h2>E-Lock Control</h2>
+          <p>Device posture, power state, signal quality and integrity evidence in one control surface.</p>
         </div>
+        <div className="cds-lock-console__head-side">
+          <div><small>REGISTERED DEVICES</small><b>{total.toLocaleString()}</b><span>{all.length.toLocaleString()} loaded in this view</span></div>
+          <button type="button" onClick={() => { void refetch(); }} disabled={isFetching} aria-label="Refresh e-lock inventory">
+            <RefreshCw size={14} className={isFetching ? 'cds-lock-refreshing' : ''} /> {isFetching ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+      </header>
+
+      {isError && <div role="alert" className="cds-lock-console__error">The latest lock inventory request failed. Any already loaded records remain visible; unavailable telemetry is not replaced with assumed values.</div>}
+
+      <section className="cds-lock-metrics" aria-label="E-lock fleet metrics">
+        <div><small>FRESH HEARTBEATS</small><b>{fresh}</b><span>{all.length ? Math.round(fresh / all.length * 100) + '% of loaded devices' : 'No device records'}</span></div>
+        <div><small>NEEDS ATTENTION</small><b className={attention ? 'alert' : ''}>{attention}</b><span>Derived from persisted device state</span></div>
+        <div><small>TAMPER FLAGS</small><b className={tamper ? 'critical' : ''}>{tamper}</b><span>Device-reported integrity state</span></div>
+        <div><small>LOW BATTERY</small><b className={low ? 'warning' : ''}>{low}</b><span>Below 25% reported charge</span></div>
+        <div><small>OFFLINE / STALE</small><b className={offline + stale ? 'warning' : ''}>{offline + stale}</b><span>No link or heartbeat older than 15m</span></div>
+        <div><small>SOLAR CHARGING</small><b>{charging}</b><span>{thermal} devices report temperature</span></div>
+      </section>
+
+      <div className="cds-lock-controlbar">
+        <label className="cds-lock-search"><Search size={15} aria-hidden="true" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search serial, container, vehicle, provider, firmware…" aria-label="Search e-lock inventory" /></label>
+        <label className="cds-lock-sort"><span>SORT</span><select value={sort} onChange={event => setSort(event.target.value)} aria-label="Sort lock devices"><option value="priority">Risk priority</option><option value="battery">Lowest battery</option><option value="heartbeat">Oldest heartbeat</option><option value="serial">Serial number</option></select></label>
       </div>
 
-      {view === 'table' ? (
-        <DataTable
-          columns={[
-            { id: 'id', header: 'Lock ID', accessor: (r: Row) => <span className="font-mono font-bold text-xs">{s(r['serial_number'] ?? r['lock_id'])}</span> },
-            { id: 'battery', header: 'Battery', accessor: (r: Row) => {
-              const b = Number(r['battery'] ?? 0);
-              return (
-                <div className="flex items-center gap-1.5">
-                  <div className="w-[50px] h-1.5 rounded bg-ink-3 overflow-hidden">
-                    <div className="h-full rounded" style={{ width: `${b}%`, background: battColor(b) }} />
-                  </div>
-                  <span className="font-mono text-[10px]" style={{ color: battColor(b) }}>{b}%</span>
-                </div>
-              );
-            }},
-            { id: 'signal', header: 'Signal', accessor: (r: Row) => <span className="font-mono text-xs" style={{ color: s(r['signal']) === 'strong' ? '#33d6a8' : s(r['signal']) === 'weak' ? '#ffb020' : '#ff5c5c' }}>{s(r['signal'])}</span> },
-            { id: 'container', header: 'Container', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['container_number'] ?? r['container_id'])}</span> },
-            { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
-          ]}
-          data={rows}
-          keyExtractor={(r: Row) => s(r['id'])}
-          searchable
-          searchPlaceholder="Search locks…"
-          onRowClick={(r: Row) => openDrawer(`Lock ${s(r['serial_number'] ?? r['lock_id'])}`, (
-            <>
-              <DrawerField label="Serial" value={s(r['serial_number'] ?? r['lock_id'])} />
-              <DrawerField label="Battery" value={`${r['battery'] ?? 0}%`} />
-              <DrawerField label="Signal" value={s(r['signal'])} />
-              <DrawerField label="Container" value={s(r['container_number'] ?? r['container_id'])} />
-              <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
-              <DrawerField label="Provider" value={s(r['provider'])} />
-              <DrawerField label="Last Heartbeat" value={r['last_heartbeat'] ? new Date(s(r['last_heartbeat'])).toLocaleString() : '—'} />
-            </>
-          ))}
-        />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {rows.map(l => {
-            const b = Number(l['battery'] ?? 0);
-            const hs = healthState(l);
-            const dotColor = hs === 'tamper' || hs === 'offline' ? '#ff5c5c' : hs === 'low' ? '#ffb020' : '#33d6a8';
+      <nav className="cds-lock-filters" aria-label="Filter e-lock inventory">
+        {filters.map(item => <button type="button" key={item.id} aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}>{item.label}<b>{item.total}</b></button>)}
+      </nav>
+
+      {powerWatch.length > 0 && (
+        <section className="cds-lock-power-watch" aria-label="Lowest reported battery devices">
+          <header><div><span>POWER INTELLIGENCE / PRIORITY WATCH</span><b>Lowest reported charge</b></div><small>NO BATTERY-LIFE ESTIMATE INFERRED</small></header>
+          <div className="cds-lock-power-watch__items">
+            {powerWatch.map(row => (
+              <button type="button" key={lockText(row['id'])} onClick={() => openDrawer('E-Lock ' + lockText(row['serial']), <LockDossier lock={row} />)}>
+                <LockBatteryReadout row={row} />
+                <span><b>{lockText(row['serial'])}</b><small>{lockText(row['container_number'], 'UNASSIGNED')}</small></span>
+                <ChevronRight size={14} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="cds-lock-results-head"><div><span>DEVICE REGISTER</span><b>{rows.length} MATCHING / {all.length} LOADED</b></div><small>HEARTBEAT FRESHNESS THRESHOLD · 15 MINUTES</small></div>
+      {rows.length ? (
+        <div className="cds-lock-grid">
+          {rows.map((row, index) => {
+            const serial = lockText(row['serial'] ?? row['serial_number'] ?? row['lock_id'], 'LOCK ' + (index + 1));
+            const battery = lockBattery(row);
+            const signal = lockSignal(row);
+            const heartbeatAge = lockHeartbeatAge(row);
+            const location = lockText(row['location'], row['lat'] != null && row['lng'] != null
+              ? Number(row['lat']).toFixed(4) + ', ' + Number(row['lng']).toFixed(4) : 'LOCATION NOT REPORTED');
             return (
-              <Card key={s(l['id'])} className="p-4 cursor-pointer hover:border-[rgba(255,255,255,.15)]" onClick={() => openDrawer(`Lock ${s(l['serial_number'] ?? l['lock_id'])}`, (
-                <>
-                  <DrawerField label="Battery" value={`${b}%`} />
-                  <DrawerField label="Signal" value={s(l['signal'])} />
-                  <DrawerField label="Container" value={s(l['container_number'] ?? l['container_id'])} />
-                  <DrawerField label="Status" value={<StatusBadge status={s(l['status'])} />} />
-                </>
-              ))}>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-mono font-bold text-xs text-text-0">{s(l['serial_number'] ?? l['lock_id'])}</span>
-                  <span className="w-2 h-2 rounded-full" style={{ background: dotColor, boxShadow: `0 0 8px ${dotColor}` }} />
+              <button type="button" className={'cds-lock-device cds-lock-device--' + lockHealth(row).key} key={lockText(row['id'], serial)} onClick={() => openDrawer('E-Lock ' + serial, <LockDossier lock={row} />)}>
+                <div className="cds-lock-device__top">
+                  <div><small>DEVICE / {lockText(row['provider'], 'UNKNOWN PROVIDER').toUpperCase()}</small><b>{serial}</b></div>
+                  <LockHealthBadge row={row} />
                 </div>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="relative w-10 h-10 flex-none">
-                    <svg width="40" height="40" viewBox="0 0 40 40" style={{ transform: 'rotate(-90deg)' }}>
-                      <circle cx="20" cy="20" r="15" fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="4" />
-                      <circle cx="20" cy="20" r="15" fill="none" stroke={battColor(b)} strokeWidth="4" strokeLinecap="round"
-                        strokeDasharray={`${(b / 100) * 94.2} ${94.2 - (b / 100) * 94.2}`} />
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center font-mono text-[9px] font-bold" style={{ color: battColor(b) }}>{b}</div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] text-text-2 font-mono truncate">{s(l['provider'])}</div>
-                  </div>
+                <div className="cds-lock-device__power">
+                  <LockBatteryReadout row={row} />
+                  <div className="cds-lock-device__power-track"><i style={{ width: (battery ?? 0) + '%' }} data-missing={battery === null ? 'true' : 'false'} /></div>
+                  <small>{lockSolarState(row) === 'charging' ? 'SOLAR INPUT · RECENT HEARTBEAT' : lockSolarState(row) === 'idle' ? 'NOT CHARGING · RECENT HEARTBEAT' : battery === null ? 'POWER STATE UNKNOWN' : battery < 25 ? 'LOW POWER · REVIEW' : 'CHARGE STATE UNVERIFIED'}</small>
                 </div>
-                <div className="text-[11px] text-text-2">{s(l['container_number'] ?? l['container_id'])}</div>
-                {hs === 'tamper' && <div className="mt-2"><Badge variant="bad">TAMPER ALERT</Badge></div>}
-              </Card>
+                <div className="cds-lock-device__telemetry">
+                  <div><small>LINK</small><LockSignalReadout value={signal} /></div>
+                  <div><small>HEARTBEAT</small><b>{heartbeatAge === null ? 'UNVERIFIED' : lockAgeLabel(row['last_heartbeat_event_at'])}</b></div>
+                  <div><small>TEMPERATURE</small><b>{numericTelemetry(row['reported_temperature'], -80, 150) === null ? '—' : numericTelemetry(row['reported_temperature'], -80, 150)!.toFixed(1) + '°C' + (lockTelemetryFresh(row, 'reported_temperature_at') ? '' : ' · STALE')}</b></div>
+                </div>
+                <div className="cds-lock-device__assignment">
+                  <span><MapPin size={12} aria-hidden="true" /> {location}</span>
+                  <span><Lock size={12} aria-hidden="true" /> {lockText(row['container_number'], 'UNASSIGNED')}</span>
+                </div>
+                <footer><span>FW {lockText(row['firmware_version'], '—')}</span><span>LAST EVENT {lockAgeLabel(row['last_persisted_event_at'])}</span><ChevronRight size={14} aria-hidden="true" /></footer>
+              </button>
             );
           })}
-          {rows.length === 0 && <div className="col-span-full text-center text-text-2 text-xs py-8 font-mono">No locks match</div>}
         </div>
+      ) : (
+        <div className="cds-lock-empty"><Activity size={21} aria-hidden="true" /><b>{isError && all.length === 0 ? 'LOCK INVENTORY UNAVAILABLE' : 'NO DEVICES MATCH THIS VIEW'}</b><span>{all.length ? 'Adjust the selected health filter or search phrase. The underlying device records are unchanged.' : 'No e-lock records were returned for this organisation. This is not evidence of a healthy or empty device fleet.'}</span></div>
       )}
+      {total > all.length && <div className="cds-lock-pagination-note">Showing {all.length} of {total} registered records. The current API read is capped at 200 devices.</div>}
     </div>
   );
 }
@@ -800,7 +1101,7 @@ export function AnalyticsView() {
                 <div className="mt-2 h-8 opacity-70 group-hover:opacity-100">
                   {k.series.length > 1 ? <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={'h-full w-full ' + t.text} role="img" aria-label={k.label + ' observed daily trend'}><polygon points={'0,32 ' + points + ' 100,32'} fill="currentColor" opacity=".09" /><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /><circle cx="100" cy={29 - k.series[k.series.length - 1] / sparkMax * 25} r="2" fill="currentColor" /></svg> : <div className={'h-[2px] mt-4 rounded-full ' + t.fill} />}
                 </div>
-                <div className="mt-2 border-t border-white/[.055] pt-2 text-[9px] uppercase tracking-wider text-text-2 group-hover:text-text-1">Explore signal <span className="float-right">↗</span></div>
+                <div className="mt-2 border-t border-white/[.055] pt-2 text-[9px] uppercase tracking-wider text-text-2 group-hover:text-text-1">Explore signal <ArrowUpRight size={12} aria-hidden="true" className="float-right" /></div>
               </a>
             );
           })}
