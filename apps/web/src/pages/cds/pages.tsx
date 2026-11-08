@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, ArrowUpRight, Battery, BatteryCharging, BatteryWarning, Activity, Zap, ChevronRight, type LucideIcon } from 'lucide-react';
+import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, Battery, BatteryCharging, BatteryWarning, Activity, Zap, ChevronRight, type LucideIcon } from 'lucide-react';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
