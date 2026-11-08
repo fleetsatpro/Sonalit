@@ -1,0 +1,382 @@
+/*
+ * SONALIT — SYSTEM TYPOGRAPHY & MOTION
+ *
+ * One bundled, readable type family across the application:
+ * Archivo for operational reading, Space Grotesk for headings,
+ * IBM Plex Mono for measured identifiers and telemetry.
+ * Minimum weights protect readability without flattening hierarchy.
+ */
+:root {
+  --sonalit-font-reading: 'Archivo', system-ui, -apple-system, sans-serif;
+  --sonalit-font-display: 'Space Grotesk', 'Archivo', system-ui, sans-serif;
+  --sonalit-font-data: 'IBM Plex Mono', ui-monospace, monospace;
+  --sonalit-weight-reading: 500;
+  --sonalit-weight-emphasis: 600;
+  --sonalit-weight-strong: 700;
+}
+
+body {
+  font-family: var(--sonalit-font-reading);
+  font-weight: var(--sonalit-weight-reading);
+  font-synthesis: weight;
+  text-rendering: optimizeLegibility;
+}
+
+#root :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--sonalit-font-display);
+  font-weight: 700;
+  font-synthesis: weight;
+}
+
+#root :is(p, li, dt, dd, label, td, th, small, caption, figcaption, summary) {
+  font-family: var(--sonalit-font-reading);
+  font-weight: 500;
+  font-synthesis: weight;
+}
+
+#root :is(button, a[href], input, select, textarea, [role="button"]) {
+  font-family: var(--sonalit-font-reading);
+  font-weight: 600;
+  font-synthesis: weight;
+}
+
+#root :is(strong, b) {
+  font-weight: 700;
+}
+
+/* Prevent accidental ultra-light Tailwind utility weights throughout Sonalit. */
+#root :is(.font-thin, .font-extralight, .font-light, .font-normal) {
+  font-weight: 500 !important;
+}
+#root .font-medium { font-weight: 600 !important; }
+#root .font-semibold { font-weight: 650 !important; }
+#root .font-bold { font-weight: 700 !important; }
+#root :is(.font-extrabold, .font-black) { font-weight: 800 !important; }
+
+#root :is(code, time, .font-mono) {
+  font-family: var(--sonalit-font-data);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Tiny utility labels are raised to a legible floor without changing layout tokens. */
+#root :is(
+  [class~="text-[7px]"],
+  [class~="text-[8px]"],
+  [class~="text-[9px]"],
+  [class~="text-[9.5px]"],
+  [class~="text-[10px]"]
+) {
+  font-size: 11px !important;
+  line-height: 1.35;
+}
+
+#root small {
+  font-size: max(11px, .88em);
+  font-weight: 600;
+}
+
+#root :is(input, select, textarea) {
+  font-size: max(13px, 1em);
+}
+
+/* Shared interaction response: tactile feedback, not gratuitous movement. */
+@media (prefers-reduced-motion: no-preference) {
+  #root :is(button:not(:disabled), a[href], [role="button"]) {
+    transition:
+      color 160ms ease,
+      border-color 160ms ease,
+      background-color 160ms ease,
+      box-shadow 180ms ease;
+  }
+  #root :is(button:not(:disabled), a[href], [role="button"]):active {
+    filter: brightness(1.06);
+  }
+}
+
+/* E-Lock typography: the previous 7–9px telemetry was too small to scan. */
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-console {
+  font-family: var(--sonalit-font-reading);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-console__eyebrow {
+  font: 700 10.5px/1.4 var(--sonalit-font-data);
+  letter-spacing: .09em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-console__head h2 {
+  font-family: var(--sonalit-font-display);
+  font-size: clamp(24px, 2vw, 31px);
+  font-weight: 700;
+  letter-spacing: -.025em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-console__head p {
+  color: #bfd0e4;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-console__head-side small {
+  color: #b1c4dc;
+  font: 700 10px/1.35 var(--sonalit-font-data);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-console__head-side b {
+  font-family: var(--sonalit-font-display);
+  font-size: 25px;
+  font-weight: 700;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-console__head-side span {
+  color: #b0c1d6;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-metrics small {
+  color: #b5c8df;
+  font: 700 10.5px/1.3 var(--sonalit-font-data);
+  letter-spacing: .055em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-metrics b {
+  font-family: var(--sonalit-font-display);
+  font-size: 23px;
+  font-weight: 700;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-metrics span {
+  color: #adbed4;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-search input {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-sort span {
+  color: #a8bdd6;
+  font: 700 10px/1.3 var(--sonalit-font-data);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-sort select {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-filters button {
+  min-height: 31px;
+  color: #c0d0e2;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-filters button b {
+  font: 700 11px/1.25 var(--sonalit-font-data);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-power-watch > header span,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-results-head > div > span {
+  color: #e2bd83;
+  font: 700 10px/1.3 var(--sonalit-font-data);
+  letter-spacing: .09em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-power-watch > header b,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-results-head > div > b {
+  font-family: var(--sonalit-font-reading);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-power-watch > header > small,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-results-head > small {
+  color: #afc0d5;
+  font: 600 10px/1.35 var(--sonalit-font-data);
+  letter-spacing: .04em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-power-watch__items > button > span:nth-child(2) b {
+  font: 700 11.5px/1.3 var(--sonalit-font-data);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-power-watch__items > button > span:nth-child(2) small {
+  color: #aec0d5;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device {
+  font-family: var(--sonalit-font-reading);
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    transform 180ms cubic-bezier(.2, .75, .25, 1),
+    border-color 180ms ease,
+    box-shadow 200ms ease,
+    background-color 180ms ease;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device__top small {
+  color: #b1c7df;
+  font: 700 10px/1.3 var(--sonalit-font-data);
+  letter-spacing: .06em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device__top > div > b {
+  color: #f7faff;
+  font: 700 15px/1.25 var(--sonalit-font-display);
+  letter-spacing: .005em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-health {
+  min-height: 23px;
+  padding: 2px 7px;
+  font: 700 10px/1.2 var(--sonalit-font-reading);
+  letter-spacing: .015em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device__power > small {
+  color: #b4c5d9;
+  font: 600 10px/1.35 var(--sonalit-font-data);
+  letter-spacing: .025em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-battery__reading {
+  color: #f2f8ff;
+  font: 700 13px/1.2 var(--sonalit-font-data);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-battery__charge {
+  font: 700 10px/1.25 var(--sonalit-font-data);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device__telemetry > div > small {
+  color: #adbed4;
+  font: 700 10px/1.3 var(--sonalit-font-data);
+  letter-spacing: .045em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device__telemetry > div > b {
+  color: #f0f6ff;
+  font: 700 11px/1.3 var(--sonalit-font-data);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-signal {
+  color: #e0eaf5;
+  font: 700 11px/1.3 var(--sonalit-font-data);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device__assignment span {
+  color: #c1d1e3;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device > footer {
+  color: #a9bdd4;
+  font: 600 10px/1.3 var(--sonalit-font-data);
+  letter-spacing: .015em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__identity > span,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__metrics small,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__fields small {
+  color: #b0c5dd;
+  font: 700 10px/1.3 var(--sonalit-font-data);
+  letter-spacing: .05em;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__metrics > div > b,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__fields b {
+  color: #edf5ff;
+  font: 650 12px/1.4 var(--sonalit-font-reading);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__metrics > div > span,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__notice,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__empty,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-event__body small,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-event__body p {
+  color: #b3c3d7;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__section > header b,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__history > header b {
+  color: #edf5ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__section > header span,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__history > header small,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-dossier__history > header > div > span,
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-event__body b {
+  color: #b4c7dd;
+  font: 650 10.5px/1.35 var(--sonalit-font-data);
+}
+
+#root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-event__body b {
+  color: #e4eef9;
+}
+
+/* Card arrival is brief and staggered; it never implies a telemetry update. */
+@keyframes sonalit-lock-card-arrive {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sonalit-lock-chart-settle {
+  from { opacity: .45; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device {
+    animation: sonalit-lock-card-arrive 420ms cubic-bezier(.18, .75, .25, 1) both;
+  }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device:nth-child(2) { animation-delay: 30ms; }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device:nth-child(3) { animation-delay: 60ms; }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device:nth-child(4) { animation-delay: 90ms; }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device:nth-child(5) { animation-delay: 120ms; }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device:nth-child(6) { animation-delay: 150ms; }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device:nth-child(7) { animation-delay: 180ms; }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device:nth-child(8) { animation-delay: 210ms; }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device:hover {
+    transform: translateY(-1px);
+    border-color: rgba(245, 213, 151, .78);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 246, 218, .22),
+      0 0 0 1px rgba(220, 177, 92, .16),
+      0 0 20px rgba(206, 160, 76, .11),
+      0 12px 24px rgba(0, 0, 0, .22);
+  }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-battery-trend__line {
+    animation: sonalit-lock-chart-settle 620ms ease-out both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #root :is(button, a[href], [role="button"]) {
+    transition: none !important;
+  }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device,
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-battery-trend__line {
+    animation: none !important;
+  }
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device,
+  #root .cds-shell .cds-view-stage[data-view="locks"] .cds-lock-device:hover {
+    transform: none !important;
+    transition: none !important;
+  }
+}
