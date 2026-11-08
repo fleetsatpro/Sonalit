@@ -552,7 +552,7 @@ function OverdueClamps({ data }: { data: CDSAnalyticsPayload }) {
 
 export function AnalyticsView() {
   const [days, setDays] = useState<7 | 30 | 90 | 365>(30);
-  const { data, isLoading, isError, error, isFetching, refetch, dataUpdatedAt } = useCDSAnalytics(days);
+  const { data, isLoading, isError, error, isFetching, refetch } = useCDSAnalytics(days);
 
   if (isLoading) return <LoadingState />;
   if (!data || !data.summary) {
