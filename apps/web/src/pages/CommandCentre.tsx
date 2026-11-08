@@ -7,6 +7,7 @@ import { useDashboardStore } from '../stores/dashboardStore.js';
 import type { DashboardOverview } from '../stores/dashboardStore.js';
 import PriorityQueue, { type QueueItem } from '../components/dashboard/PriorityQueue.js';
 import EventsTicker from '../components/dashboard/EventsTicker.js';
+import '../styles/command-centre-gold.css';
 
 const TacticalMap = lazy(() => import('../components/dashboard/TacticalMap.js'));
 
