@@ -100,7 +100,7 @@ describe('GET /cds/analytics', () => {
     expect(captured[0].sql).toContain('overdue_clamps');
     expect(captured[0].sql).toContain('bc.clamped_at <= NOW() - INTERVAL \'24 hours\'');
     expect(captured[0].sql).toContain("'archived'");
-    expect(captured[0].sql).toContain("b.status IN ('delivered', 'completed', 'billed')");
+    expect(captured[0].sql).toContain("b.status IN ('delivered', 'completed', 'billed') OR EXISTS");
   });
 
   it('passes the requested supported window through without changing tenant scope', async () => {
