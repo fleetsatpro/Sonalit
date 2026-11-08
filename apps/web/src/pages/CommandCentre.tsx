@@ -4,9 +4,11 @@ import { useNavigate } from '@tanstack/react-router';
 import {
   Activity,
   AlertTriangle,
+  ArrowUpRight,
   Clock3,
   Command,
   Crosshair,
+  MapPinned,
   MessageSquare,
   Radio,
   Route,
@@ -50,28 +52,28 @@ function formatDateTime(iso?: string | null) {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
 }
 
-function Metric({
+function Instrument({
   icon: Icon,
   label,
   value,
-  detail,
-  tone = 'normal',
+  note,
+  tone = 'neutral',
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
-  detail: string;
-  tone?: 'normal' | 'warn' | 'critical';
+  note: string;
+  tone?: 'neutral' | 'amber' | 'red';
 }) {
   return (
-    <article className={'cc-metric cc-metric--' + tone}>
-      <span className='cc-metric__icon'><Icon size={17} strokeWidth={1.8} /></span>
-      <div className='cc-metric__copy'>
-        <span className='cc-metric__label'>{label}</span>
+    <div className={'cc-instrument cc-instrument--' + tone}>
+      <span className='cc-instrument__icon'><Icon size={16} strokeWidth={1.8} /></span>
+      <span className='cc-instrument__readout'>
+        <small>{label}</small>
         <strong>{value}</strong>
-        <small>{detail}</small>
-      </div>
-    </article>
+        <em>{note}</em>
+      </span>
+    </div>
   );
 }
 
@@ -154,8 +156,8 @@ export default function CommandCentre() {
     refetchInterval: 60000,
   });
 
-  // Share the queue's existing cache key so the header count and queue are
-  // driven by the same bounded alert response, not two competing sources.
+  // Share the queue's cache key: the count and the response lane use one
+  // bounded alert window, with no second interpretation of the source.
   const alertsQuery = useQuery({
     queryKey: ['dashboard-alerts-ops'],
     queryFn: async () => {
@@ -189,7 +191,9 @@ export default function CommandCentre() {
     ? 'UNASSESSED'
     : freshness === 'STALE'
       ? 'STALE SNAPSHOT'
-      : (threatLevel ?? 'unassessed').toUpperCase();
+      : freshness === 'REFRESH FAILED' || freshness === 'AGING'
+        ? 'DATA AGING'
+        : (threatLevel ?? 'unassessed').toUpperCase();
 
   const postureTone = !overview || freshness === 'STALE' || freshness === 'UNAVAILABLE'
     ? 'unknown'
@@ -205,56 +209,47 @@ export default function CommandCentre() {
     ? alertsQuery.data.filter((alert) => alert.severity === 'critical' || alert.severity === 'high').length
     : null;
 
-  const snapshotDetail = freshness === 'STALE'
-    ? 'last successful snapshot · stale'
-    : freshness === 'REFRESH FAILED'
-      ? 'last successful snapshot · refresh failed'
-      : overview
-        ? 'last successful overview snapshot'
-        : 'awaiting a verified overview response';
-
   const updatedLabel = overviewQuery.dataUpdatedAt > 0
-    ? 'UPDATED ' + formatAge(new Date(overviewQuery.dataUpdatedAt).toISOString()) + ' AGO'
-    : 'NO SUCCESSFUL SNAPSHOT';
+    ? formatAge(new Date(overviewQuery.dataUpdatedAt).toISOString()) + ' AGO'
+    : 'NO VERIFIED SNAPSHOT';
 
   const nextDelivery = overview?.next_delivery ?? null;
   const shiftStarted = overview?.shift_started_at ?? null;
 
   return (
     <main className='cc-command'>
-      <section className='cc-topline'>
+      <header className='cc-topline'>
         <div className='cc-brand'>
-          <div className='cc-brand__sig'><Command size={19} strokeWidth={1.8} /></div>
+          <div className='cc-brand__sig'><Command size={21} strokeWidth={1.7} /></div>
           <div className='cc-brand__copy'>
-            <span className='cc-kicker'>SONALIT / OPERATIONS</span>
+            <span className='cc-kicker'>SONALIT <i /> OPERATIONS GRID / 01</span>
             <h1>Command Centre</h1>
-            <p>One operational picture. Clear signals. Accountable response.</p>
           </div>
         </div>
 
         <div className={'cc-posture cc-posture--' + postureTone}>
-          <div className='cc-posture__top'><span className='cc-state-dot' /><span>THREAT POSTURE</span></div>
-          <strong>{posture}</strong>
-          <small>{overview ? snapshotDetail : 'No verified overview available'}</small>
+          <span className='cc-posture__beam' />
+          <div className='cc-posture__copy'>
+            <small>GLOBAL POSTURE</small>
+            <strong>{posture}</strong>
+            <em>{overview ? freshness + ' · UPDATED ' + updatedLabel : freshness + ' · NO VERIFIED OVERVIEW'}</em>
+          </div>
         </div>
 
         <div className='cc-topline__right'>
-          <div className={'cc-source cc-source--' + freshness.toLowerCase().replaceAll(' ', '-')}>
-            <span className='cc-source__dot' />
-            <span className='cc-source__copy'><b>OVERVIEW API</b><strong>{freshness}</strong><small>{updatedLabel}</small></span>
-            <button
-              type='button'
-              onClick={() => { void overviewQuery.refetch(); void alertsQuery.refetch(); }}
-              aria-label='Refresh command overview'
-              title='Refresh overview and alert window'
-            >
-              <Activity size={15} />
-            </button>
-          </div>
           <div className='cc-shift'>
-            <span><Clock3 size={13} /> SHIFT START</span>
+            <span><Clock3 size={12} /> SHIFT OPENED</span>
             <strong>{overview ? formatTime(shiftStarted) : '—'}</strong>
           </div>
+          <button
+            type='button'
+            className='cc-refresh'
+            onClick={() => { void overviewQuery.refetch(); void alertsQuery.refetch(); }}
+            aria-label='Refresh command data'
+            title='Refresh overview and alert window'
+          >
+            <Activity size={15} /><span>REFRESH</span>
+          </button>
           <button
             type='button'
             onClick={() => nav({ to: '/panic-center' as any })}
@@ -263,104 +258,106 @@ export default function CommandCentre() {
             <Siren size={14} /> {panic ? 'PANIC ACTIVE' : 'PANIC CENTRE'}
           </button>
         </div>
-      </section>
+      </header>
 
-      <section className='cc-toolbar' aria-label='Operational overview metrics'>
-        <Metric
+      <section className='cc-instrument-rail' aria-label='Operational snapshot'>
+        <div className='cc-rail-lead'><span className='cc-kicker'>THEATRE READOUT</span><b>EA / 01</b></div>
+        <Instrument
           icon={Truck}
-          label='LIVE VEHICLES'
+          label='VEHICLES REPORTING'
           value={overview ? overview.kpi.vehicles_live : '—'}
-          detail={snapshotDetail}
+          note={overview ? 'overview snapshot' : 'not available'}
         />
-        <Metric
+        <Instrument
           icon={Route}
           label='ACTIVE CONVOYS'
           value={overview ? overview.kpi.convoys_active : '—'}
-          detail={snapshotDetail}
+          note={overview ? 'overview snapshot' : 'not available'}
         />
-        <Metric
+        <Instrument
           icon={AlertTriangle}
           label='PRIORITY ALERTS'
           value={priorityCount == null ? '—' : priorityCount}
-          detail={alertsQuery.isError && !alertsQuery.data ? 'alert feed unavailable' : 'critical + high · latest 10'}
-          tone={priorityCount != null && priorityCount > 0 ? 'warn' : 'normal'}
+          note={alertsQuery.isError && !alertsQuery.data ? 'source unavailable' : 'high + critical / 10 loaded'}
+          tone={priorityCount != null && priorityCount > 0 ? 'amber' : 'neutral'}
         />
-        <Metric
+        <Instrument
           icon={ShieldCheck}
           label='OPEN INCIDENTS'
           value={overview ? overview.kpi.incidents_open : '—'}
-          detail={snapshotDetail}
+          note={overview ? 'overview snapshot' : 'not available'}
+          tone={overview?.kpi.incidents_open ? 'red' : 'neutral'}
         />
-
-        <div className='cc-toolbar__actions'>
-          <button type='button' onClick={() => nav({ to: '/alerts' as any })}>
-            <AlertTriangle size={14} /><span>ALERTS</span><b>{priorityCount == null ? '—' : priorityCount}</b>
-          </button>
-          <button type='button' onClick={() => nav({ to: '/messages' as any })}>
-            <MessageSquare size={14} /><span>MESSAGES</span><ChevronMark />
-          </button>
-          <button type='button' onClick={() => nav({ to: '/intelligence' as any })}>
-            <Crosshair size={14} /><span>INTELLIGENCE</span><ChevronMark />
-          </button>
+        <div className='cc-rail-actions'>
+          <button type='button' onClick={() => nav({ to: '/alerts' as any })}><AlertTriangle size={13} /><span>ALERTS</span><ArrowUpRight size={12} /></button>
+          <button type='button' onClick={() => nav({ to: '/messages' as any })}><MessageSquare size={13} /><span>COMMS</span><ArrowUpRight size={12} /></button>
+          <button type='button' onClick={() => nav({ to: '/intelligence' as any })}><Crosshair size={13} /><span>INTEL</span><ArrowUpRight size={12} /></button>
         </div>
       </section>
 
       <section className='cc-main'>
-        <div className='cc-map'>
-          <header className='cc-map__header'>
-            <div>
-              <span className='cc-kicker'><Crosshair size={12} /> OPERATIONS THEATRE</span>
-              <h2>East Africa / Movement picture</h2>
-              <p>Map layers reflect the available source records; unreported positions remain absent.</p>
-            </div>
-            <div className='cc-map__legend'>
-              <span><i className='legend-dot legend-dot--green' /> MOVING</span>
-              <span><i className='legend-dot legend-dot--amber' /> EXCEPTION</span>
-              <span><i className='legend-dot legend-dot--red' /> CRITICAL</span>
-            </div>
-          </header>
-          <div className='cc-map__body'>
+        <section className='cc-map' aria-label='Operational theatre map'>
+          <div className='cc-map__frame'>
             <div className='cc-map__canvas'>
-              <Suspense fallback={<div className='cc-map__loading'><Activity size={18} /><span>LOADING MAP VIEW…</span></div>}>
+              <Suspense fallback={<div className='cc-map__loading'><Activity size={19} /><span>INITIALISING THEATRE</span></div>}>
                 <TacticalMap fill />
               </Suspense>
             </div>
-            <div className='cc-map__hud cc-map__hud--tl'><b>OPS / EA</b><span>THEATRE VIEW</span></div>
-            <div className='cc-map__hud cc-map__hud--tr'><Radio size={11} /><span>MAP LAYERS</span></div>
-            <div className='cc-map__hud cc-map__hud--bl'><span>POSITION DATA IS SOURCE-DEPENDENT</span></div>
+            <div className='cc-map__overlay cc-map__overlay--tl'>
+              <span className='cc-orbit-mark'><MapPinned size={13} /></span>
+              <span><b>THEATRE / EAST AFRICA</b><small>COMMON OPERATIONAL PICTURE</small></span>
+            </div>
+            <div className='cc-map__overlay cc-map__overlay--tr'>
+              <span className={'cc-freshness-dot cc-freshness-dot--' + freshness.toLowerCase().replaceAll(' ', '-')} />
+              <span><b>{freshness}</b><small>OVERVIEW SOURCE</small></span>
+            </div>
+            <div className='cc-map__overlay cc-map__overlay--bl'>
+              <span>POSITION RECORDS ONLY</span><i />
+              <span>UNREPORTED ASSETS REMAIN ABSENT</span>
+            </div>
+            <div className='cc-map__index'>01 <span>/</span> THEATRE</div>
             <div className='cc-map__crosshair'><span /><i /></div>
           </div>
-        </div>
+        </section>
 
         <aside className='cc-queue'>
-          <div className='cc-queue__head'>
-            <div><span className='cc-kicker'>OPERATOR RESPONSE</span><h2>Priority queue</h2></div>
-            <span className='cc-count'>
-              {priorityCount == null ? 'FEED PENDING' : priorityCount > 0 ? priorityCount + ' HIGH / CRITICAL' : 'NO HIGH / CRITICAL'}
-            </span>
+          <div className='cc-queue__mast'>
+            <div className='cc-queue__heading'>
+              <span className='cc-kicker'><Activity size={11} /> RESPONSE / LIVE WORKLIST</span>
+              <h2>Priority lane</h2>
+            </div>
+            <div className='cc-queue__total'>
+              <strong>{priorityCount == null ? '—' : String(priorityCount).padStart(2, '0')}</strong>
+              <small>HIGH / CRITICAL<br />LATEST 10</small>
+            </div>
           </div>
           <div className='cc-queue__body'><PriorityQueue onSelect={setSelected} /></div>
+          <div className='cc-queue__foot'>
+            <span>QUEUE WINDOW</span><b>{alertsQuery.data ? alertsQuery.data.length + ' ALERT RECORDS' : 'SOURCE NOT CONFIRMED'}</b>
+            <button type='button' onClick={() => nav({ to: '/alerts' as any })}>OPEN REGISTER <ArrowUpRight size={12} /></button>
+          </div>
         </aside>
       </section>
 
       <section className='cc-bottom'>
-        <div className='cc-bottom__mission'>
-          <div className='cc-bottom__mission-name'>
+        <div className='cc-milestone'>
+          <div className='cc-milestone__mark'><Route size={16} /></div>
+          <div className='cc-milestone__main'>
             <span className='cc-kicker'>NEXT OPERATIONAL MILESTONE</span>
-            <strong>{nextDelivery?.convoy_name ?? 'No next milestone returned'}</strong>
+            <strong>{nextDelivery?.convoy_name ?? 'No milestone supplied by overview'}</strong>
+            <small>{nextDelivery ? 'Returned by the command overview' : 'No next delivery is currently reported'}</small>
           </div>
-          <div><span>ETA</span><b>{nextDelivery ? formatTime(nextDelivery.eta) : '—'}</b></div>
-          <div><span>STATUS</span><b>{nextDelivery ? 'API REPORTED' : 'NOT REPORTED'}</b></div>
-          <div><span>POSTURE</span><b>{overview ? (freshness === 'STALE' ? 'STALE' : (threatLevel ?? 'UNASSESSED').toUpperCase()) : 'UNASSESSED'}</b></div>
+          <div className='cc-milestone__datum'><small>ETA</small><b>{nextDelivery ? formatTime(nextDelivery.eta) : '—'}</b></div>
+          <div className='cc-milestone__datum'><small>SHIFT</small><b>{overview ? formatTime(shiftStarted) : '—'}</b></div>
+          <button type='button' onClick={() => nav({ to: '/convoys' as any })}>CONVOYS <ArrowUpRight size={12} /></button>
         </div>
-        <div className='cc-events'><EventsTicker /></div>
+        <div className='cc-events'>
+          <div className='cc-events__label'><Radio size={12} /><span>EVENT STREAM</span></div>
+          <EventsTicker />
+        </div>
       </section>
 
       {selected && <ObjectDrawer item={selected} onClose={closeSelected} />}
     </main>
   );
-}
-
-function ChevronMark() {
-  return <span className='cc-action-chevron' aria-hidden='true'>›</span>;
 }
