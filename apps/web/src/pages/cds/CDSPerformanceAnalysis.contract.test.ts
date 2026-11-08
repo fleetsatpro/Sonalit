@@ -78,6 +78,13 @@ describe('CDS Performance Analysis v2 contract', () => {
     ]) expect(component).toContain(marker);
   });
 
+  it('does not manufacture service-grade thresholds without an agreed target', () => {
+    expect(component).not.toContain('adherence >= 90');
+    expect(component).not.toContain('adherence >= 75');
+    expect(component).not.toContain('BELOW THRESHOLD');
+    expect(component).toContain("adherence == null ? 'NO SAMPLE' : 'OBSERVED'");
+  });
+
   it('labels inventory ratios, operator actions and ETA evidence without inventing productivity or SLA claims', () => {
     for (const marker of [
       'Registered-fleet share in use',
