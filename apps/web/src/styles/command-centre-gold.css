@@ -1,0 +1,311 @@
+/* Sonalit Command Centre — original layout, restrained gold glass finish. */
+.cc-v3.cc-v3 {
+  --cc-border: rgba(213, 175, 99, .18);
+  --cc-muted: #b6a47e;
+  --cc-text: #f4efe3;
+  --cc-well: rgba(18, 16, 12, .88);
+  --cc-panel: rgba(21, 19, 14, .78);
+  --cc-gold: #d8b46a;
+  --cc-gold-bright: #f0d08b;
+  --cc-gold-dim: #967744;
+  background:
+    radial-gradient(ellipse at 14% 0%, rgba(196, 151, 66, .12), transparent 34%),
+    radial-gradient(ellipse at 86% 18%, rgba(146, 105, 44, .10), transparent 32%),
+    linear-gradient(145deg, #090908 0%, #0c0b09 54%, #080807 100%) !important;
+  color: var(--cc-text) !important;
+}
+
+.cc-v3.cc-v3::before {
+  background-image:
+    linear-gradient(rgba(214, 177, 103, .026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 177, 103, .026) 1px, transparent 1px) !important;
+  opacity: .62;
+}
+
+.cc-v3.cc-v3::after {
+  content: '';
+  position: absolute;
+  inset: -25% -15%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 18% 14%, rgba(226, 187, 111, .08), transparent 30%),
+    radial-gradient(ellipse at 76% 72%, rgba(178, 132, 58, .07), transparent 32%);
+  opacity: .75;
+  animation: cc-gold-atmosphere 18s ease-in-out infinite alternate;
+}
+
+.cc-v3 .cc-kicker {
+  color: #c4a76c !important;
+  font-size: 9px !important;
+  letter-spacing: .13em !important;
+}
+
+.cc-v3 .cc-topline {
+  border-bottom-color: rgba(216, 180, 106, .25) !important;
+}
+
+.cc-v3 .cc-brand__sig {
+  color: var(--cc-gold-bright) !important;
+  border-color: rgba(216, 180, 106, .46) !important;
+  background: linear-gradient(145deg, rgba(216,180,106,.14), rgba(25,21,14,.88)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 0 22px rgba(216,180,106,.08);
+}
+
+.cc-v3 .cc-brand__sig span {
+  background: linear-gradient(90deg, #9e773b, #f1d18c, #b58b4a) !important;
+  box-shadow: 0 0 10px rgba(229,190,116,.45);
+}
+
+.cc-v3 .cc-posture {
+  border-left-color: rgba(216,180,106,.2) !important;
+  border-right-color: rgba(216,180,106,.2) !important;
+}
+
+.cc-v3 .cc-live {
+  color: #c1ad83 !important;
+}
+
+.cc-v3 .cc-clock {
+  color: #b4a27d !important;
+}
+
+.cc-v3 .cc-toolbar {
+  border-color: rgba(216,180,106,.23) !important;
+  background: linear-gradient(115deg, rgba(40,32,19,.82), rgba(16,15,12,.88) 48%, rgba(35,27,16,.72)) !important;
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 8px 26px rgba(0,0,0,.2);
+  animation: cc-gold-surface 11s ease-in-out infinite alternate;
+}
+
+.cc-v3 .cc-metric {
+  border-right-color: rgba(216,180,106,.17) !important;
+  transition: background .22s ease, box-shadow .22s ease, transform .22s ease;
+}
+
+.cc-v3 .cc-metric > svg {
+  color: var(--cc-gold) !important;
+  filter: drop-shadow(0 0 5px rgba(216,180,106,.18));
+}
+
+.cc-v3 .cc-metric--warn > svg,
+.cc-v3 .cc-metric--critical > svg {
+  /* Preserve semantic warning and critical hues. */
+  filter: none;
+}
+
+.cc-v3 .cc-metric span,
+.cc-v3 .cc-metric small {
+  color: #b8a783 !important;
+  font-size: 9px !important;
+  letter-spacing: .075em !important;
+}
+
+.cc-v3 .cc-metric strong {
+  color: #f5edda !important;
+  font-size: 16px !important;
+}
+
+.cc-v3 .cc-metric:hover {
+  background: linear-gradient(135deg, rgba(216,180,106,.09), rgba(216,180,106,.018));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 18px rgba(216,180,106,.055);
+  transform: translateY(-1px);
+}
+
+.cc-v3 .cc-toolbar__actions button {
+  border-color: rgba(216,180,106,.24) !important;
+  background: rgba(18,16,12,.78) !important;
+  color: #e2d5b6 !important;
+  backdrop-filter: blur(10px);
+  transition: border-color .2s ease, background .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+
+.cc-v3 .cc-toolbar__actions button:hover {
+  border-color: rgba(240,208,139,.62) !important;
+  background: rgba(73,54,26,.5) !important;
+  box-shadow: 0 0 16px rgba(216,180,106,.11), inset 0 1px 0 rgba(255,255,255,.12);
+  transform: translateY(-1px);
+}
+
+.cc-v3 .cc-toolbar__actions b {
+  color: var(--cc-gold-bright) !important;
+}
+
+.cc-v3 .cc-map,
+.cc-v3 .cc-queue,
+.cc-v3 .cc-bottom__mission,
+.cc-v3 .cc-events {
+  position: relative;
+  border-color: rgba(216,180,106,.24) !important;
+  background: linear-gradient(145deg, rgba(29,25,17,.82), rgba(12,12,10,.88)) !important;
+  backdrop-filter: blur(17px) saturate(125%);
+  -webkit-backdrop-filter: blur(17px) saturate(125%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.075),
+    inset 0 0 0 1px rgba(216,180,106,.035),
+    0 12px 32px rgba(0,0,0,.24);
+  animation: cc-gold-edge 12s ease-in-out infinite alternate;
+}
+
+.cc-v3 .cc-map__header,
+.cc-v3 .cc-queue__head {
+  background: linear-gradient(100deg, rgba(50,39,21,.74), rgba(19,17,13,.82)) !important;
+  border-bottom-color: rgba(216,180,106,.2) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.055);
+}
+
+.cc-v3 .cc-map__header h2,
+.cc-v3 .cc-queue__head h2 {
+  color: #f0e7d4 !important;
+  font-size: 14px !important;
+}
+
+.cc-v3 .cc-map__legend {
+  color: #c2b28f !important;
+  font-size: 8px !important;
+}
+
+/* The map itself and its telemetry/severity colours remain untouched. */
+.cc-v3 .cc-map__hud {
+  font-size: 8px !important;
+  border-color: rgba(216,180,106,.3) !important;
+  background: rgba(12,11,8,.82) !important;
+  color: #d6c49e !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 4px 14px rgba(0,0,0,.22);
+}
+
+.cc-v3 .cc-map__hud b {
+  color: #f0d79e !important;
+}
+
+.cc-v3 .cc-queue__body .d-console-queue {
+  background: rgba(13,12,9,.76) !important;
+}
+
+.cc-v3 .cc-queue__body .d-console-queue div[style*="margin-bottom: 8px"] {
+  border-top: 1px solid rgba(216,180,106,.24) !important;
+  border-right: 1px solid rgba(216,180,106,.2) !important;
+  border-bottom: 1px solid rgba(216,180,106,.2) !important;
+  /* Keep the left border as the original severity indicator. */
+  background: linear-gradient(145deg, rgba(53,43,26,.42), rgba(18,16,12,.76)) !important;
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 5px 18px rgba(0,0,0,.17);
+  transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease;
+}
+
+.cc-v3 .cc-queue__body .d-console-queue div[style*="margin-bottom: 8px"]:hover {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 0 18px rgba(216,180,106,.11);
+  transform: translateY(-1px);
+}
+
+.cc-v3 .cc-count {
+  color: #f0d08b !important;
+}
+
+.cc-v3 .cc-bottom__mission > div {
+  border-right-color: rgba(216,180,106,.17) !important;
+}
+
+.cc-v3 .cc-bottom__mission strong,
+.cc-v3 .cc-bottom__mission b {
+  color: #f0e7d4 !important;
+}
+
+.cc-v3 .cc-bottom__mission span {
+  color: #b7a47d !important;
+  font-size: 8px !important;
+}
+
+.cc-v3 .cc-events {
+  overflow: hidden;
+}
+
+.cc-v3 .cc-drawer {
+  border-left-color: rgba(216,180,106,.34) !important;
+  background: linear-gradient(155deg, rgba(31,26,17,.97), rgba(10,10,8,.98)) !important;
+  backdrop-filter: blur(22px) saturate(135%);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+  box-shadow: -20px 0 65px rgba(0,0,0,.5), inset 1px 0 0 rgba(240,208,139,.08);
+}
+
+.cc-v3 .cc-drawer header,
+.cc-v3 .cc-drawer p {
+  border-color: rgba(216,180,106,.2) !important;
+}
+
+.cc-v3 .cc-drawer header button,
+.cc-v3 .cc-drawer__actions button {
+  border-color: rgba(216,180,106,.22) !important;
+  background: rgba(21,18,12,.72) !important;
+  color: #eadfc5 !important;
+}
+
+.cc-v3 .cc-drawer__actions button:first-child {
+  border-color: rgba(240,208,139,.55) !important;
+  color: #f0d08b !important;
+}
+
+/* Gold treatment for the existing TacticalMap controls only. */
+.cc-v3 .cc-map__body > div:first-child > div:first-child button {
+  border-color: rgba(216,180,106,.3) !important;
+  background: rgba(16,14,10,.82) !important;
+  color: #e6d7b6 !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+
+.cc-v3 .cc-map__body > div:first-child > div:first-child button:hover {
+  border-color: rgba(240,208,139,.68) !important;
+  box-shadow: 0 0 14px rgba(216,180,106,.13);
+  transform: translateY(-1px);
+}
+
+.cc-v3 .cc-map__body > div:first-child > div:first-child button[title*="satellite"] {
+  color: #f0d08b !important;
+}
+
+.cc-v3 button:focus-visible {
+  outline: 2px solid #f0d08b !important;
+  outline-offset: 2px;
+}
+
+@keyframes cc-gold-edge {
+  0% { box-shadow: inset 0 1px 0 rgba(255,255,255,.06), inset 0 0 0 1px rgba(216,180,106,.025), 0 10px 28px rgba(0,0,0,.22); }
+  100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.1), inset 0 0 0 1px rgba(240,208,139,.09), 0 12px 32px rgba(0,0,0,.27), 0 0 22px rgba(216,180,106,.045); }
+}
+
+@keyframes cc-gold-surface {
+  0% { border-color: rgba(216,180,106,.18); }
+  100% { border-color: rgba(240,208,139,.32); }
+}
+
+@keyframes cc-gold-atmosphere {
+  0% { transform: translate3d(-.5%, -.3%, 0) scale(1); opacity: .55; }
+  100% { transform: translate3d(.6%, .5%, 0) scale(1.025); opacity: .9; }
+}
+
+@media (max-width: 820px) {
+  .cc-v3.cc-v3::after { animation-duration: 24s; }
+  .cc-v3 .cc-map,
+  .cc-v3 .cc-queue,
+  .cc-v3 .cc-toolbar,
+  .cc-v3 .cc-bottom__mission,
+  .cc-v3 .cc-events { backdrop-filter: blur(11px); -webkit-backdrop-filter: blur(11px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-v3.cc-v3::after,
+  .cc-v3 .cc-toolbar,
+  .cc-v3 .cc-map,
+  .cc-v3 .cc-queue,
+  .cc-v3 .cc-bottom__mission,
+  .cc-v3 .cc-events {
+    animation: none !important;
+    transition: none !important;
+  }
+}
