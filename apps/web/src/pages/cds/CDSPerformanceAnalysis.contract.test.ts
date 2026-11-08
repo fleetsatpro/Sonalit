@@ -12,7 +12,7 @@ describe('CDS Performance Analysis experience contract', () => {
     expect(constants).toContain("label: 'Performance Analysis'");
     expect(constants).not.toContain("label: 'Performance Intelligence'");
     expect(dashboard).toContain('PERFORMANCE ANALYSIS / OPERATIONAL EVIDENCE');
-    expect(page).toContain('Performance, <span className="text-cds-orange">made intelligible.</span>');
+    expect(page).toContain('<h2 className="text-2xl sm:text-3xl xl:text-[36px] leading-tight font-semibold tracking-[-.035em] text-text-0">Performance Analysis</h2>');
   });
 
   it('derives analytical signals from persisted daily, ETA, partner and operator records', () => {
@@ -28,6 +28,20 @@ describe('CDS Performance Analysis experience contract', () => {
     expect(page).toContain('aria-label="Choose activity series"');
     expect(page).toContain('visibleSeries.map');
     expect(page).toContain('selectedTrendValues');
+  });
+
+  it('limits Booking Mix to five mutually-exclusive operational booking stages', () => {
+    for (const marker of [
+      "status: 'clamped', label: 'Clamped'",
+      "status: 'cancelled', label: 'Cancelled'",
+      "status: 'completed', label: 'Completed'",
+      "status: 'yard', label: 'Yard · not yet clamped'",
+      "status: 'in_progress', label: 'In-progress'",
+      'bookingMixTotal',
+      'data.booking_pipeline.find(row => row.status === item.status)',
+    ]) expect(page).toContain(marker);
+    expect(page).toContain('Booking Mix');
+    expect(page).not.toContain('Demand pipeline');
   });
 
   it('adds spatial card, signal, chart and section motion with reduced-motion support', () => {
