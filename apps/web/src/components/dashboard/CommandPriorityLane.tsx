@@ -73,6 +73,7 @@ export default function CommandPriorityLane({
     },
     onSuccess: (_result, id) => {
       removeAlert(id);
+      queryClient.invalidateQueries({ queryKey: ['dashboard-alerts-ops'] });
       queryClient.invalidateQueries({ queryKey: ['alerts-unread-count'] });
     },
   });
@@ -181,6 +182,9 @@ export default function CommandPriorityLane({
                   <Check size={13} />
                   {acknowledge.isPending ? 'Saving…' : 'Acknowledge'}
                 </button>
+              )}
+              {acknowledge.isError && record.ackId && (
+                <p className='cc2-record__error' role='alert'>Acknowledgement failed. The alert remains open.</p>
               )}
             </article>
           ))

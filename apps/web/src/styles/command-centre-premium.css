@@ -251,6 +251,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.cc2-metric__copy small {
+  color: var(--cc2-faint);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
 .cc2-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
@@ -537,6 +544,13 @@
 .cc2-record__ack:disabled {
   opacity: .55;
   cursor: wait;
+}
+
+.cc2-record__error {
+  margin: 6px 0 0;
+  color: var(--d-fire);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .cc2-lane__empty,

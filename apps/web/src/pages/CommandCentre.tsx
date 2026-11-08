@@ -49,11 +49,13 @@ function Metric({
   label,
   value,
   tone = 'neutral',
+  note,
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   tone?: 'neutral' | 'amber' | 'red';
+  note?: string;
 }) {
   return (
     <div className={'cc2-metric cc2-metric--' + tone}>
@@ -61,6 +63,7 @@ function Metric({
       <span className='cc2-metric__copy'>
         <span>{label}</span>
         <strong>{value}</strong>
+        {note && <small>{note}</small>}
       </span>
     </div>
   );
@@ -228,7 +231,7 @@ export default function CommandCentre() {
       <section className='cc2-metrics' aria-label='Operational overview'>
         <Metric icon={Truck} label='Vehicles reporting' value={overview ? overview.kpi.vehicles_live : '—'} />
         <Metric icon={Route} label='Active convoys' value={overview ? overview.kpi.convoys_active : '—'} />
-        <Metric icon={AlertTriangle} label='Priority alerts' value={priorityCount} tone={priorityCount !== '—' && priorityCount > 0 ? 'amber' : 'neutral'} />
+        <Metric icon={AlertTriangle} label='Priority alerts' value={priorityCount} note='High + critical · latest 10' tone={priorityCount !== '—' && priorityCount > 0 ? 'amber' : 'neutral'} />
         <Metric icon={Siren} label='Open incidents' value={overview ? overview.kpi.incidents_open : '—'} tone={overview?.kpi.incidents_open ? 'red' : 'neutral'} />
       </section>
 
