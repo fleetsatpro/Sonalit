@@ -7,7 +7,6 @@ import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip,
 import FieldAccessPanel from './FieldAccessPanel.js';
 import { useDashboardKPIs, useLocks, useLockEvents, useTrips, useBookings, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip } from './hooks.js';
 import { useCDSStore } from './store.js';
-import './CDSPerformanceAnalysis.css';
 
 
 type Row = Record<string, unknown>;
