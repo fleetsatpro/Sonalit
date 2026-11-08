@@ -1027,45 +1027,6 @@ export function AnalyticsView() {
     </div>
   );
   const sectionLink = (id: string, text: string) => <a href={'#' + id} className="shrink-0 px-3 py-2 rounded-md text-[11px] text-text-2 hover:text-text-0 hover:bg-white/[.05] transition-colors">{text}</a>;
-  const donutPanel = (title: string, segments: Array<{ label: string; value: number; color: string }>) => {
-    const total = segments.reduce((sum, segment) => sum + segment.value, 0);
-    const circumference = 2 * Math.PI * 38;
-    let offset = 0;
-    const arcs = segments.map(segment => {
-      const length = total > 0 ? segment.value / total * circumference : 0;
-      const arc = { ...segment, length, offset };
-      offset += length;
-      return arc;
-    });
-    return (
-      <Card key={title} className="min-w-0 overflow-hidden">
-        <div className="p-4 pb-2"><h3 className="text-sm font-semibold">{title}</h3></div>
-        <div className="p-4 pt-1 flex items-center gap-4">
-          <div className="relative w-[118px] h-[118px] shrink-0">
-            <svg viewBox="0 0 104 104" className="w-full h-full -rotate-90" role="img" aria-label={title + ' distribution'}>
-              <circle cx="52" cy="52" r="38" fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="13" />
-              {arcs.map(arc => <circle key={arc.label} cx="52" cy="52" r="38" fill="none" stroke={arc.color} strokeWidth="13" strokeDasharray={arc.length + ' ' + (circumference - arc.length)} strokeDashoffset={-arc.offset} style={{ transition: 'stroke-dasharray 750ms cubic-bezier(.2,.7,.2,1), stroke-dashoffset 750ms ease' }} />)}
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-2xl font-semibold tracking-tight tabular-nums">{fmt(total)}</span>
-              <span className="text-[8px] uppercase tracking-[.14em] text-text-2">records</span>
-            </div>
-          </div>
-          <div className="flex-1 min-w-0 space-y-2">
-            {segments.map(segment => <div key={segment.label} className="flex items-center gap-2 min-w-0">
-              <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: segment.color }} />
-              <span className="text-[10px] text-text-2 capitalize truncate flex-1">{segment.label}</span>
-              <span className="text-[11px] font-mono tabular-nums text-text-0">{fmt(segment.value)}</span>
-              <span className="text-[9px] text-text-2 w-8 text-right">{total ? Math.round(segment.value / total * 100) : 0}%</span>
-            </div>)}
-            {total === 0 ? <p className="text-[10px] text-text-2">No records</p> : null}
-          </div>
-        </div>
-      </Card>
-    );
-  };
-  const donutColors = ['#f59a3c', '#42cbb5', '#82b6eb', '#b69cff', '#f0c16c', '#ed8b8b', '#71b3a3', '#7e8c9d', '#5f6d7b'];
-
   return (
     <div className="cds-performance-analysis mx-auto max-w-[1840px] p-3 sm:p-5 xl:p-6 space-y-5 text-text-0">
       <section className="cpa-hero relative overflow-hidden rounded-2xl border border-white/[.075] bg-[#101419]">
