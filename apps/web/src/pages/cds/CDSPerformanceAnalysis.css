@@ -294,9 +294,7 @@
 .cpa-v2__service-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .cpa-v2__service-card {min-width:0}
 .cpa-v2__status-tag {padding:5px 7px;border:1px solid rgba(159,190,220,.16);border-radius:6px;color:rgba(172,196,218,.66);font:700 7px 'IBM Plex Mono',monospace;letter-spacing:.1em}
-.cpa-v2__status-tag.is-good {color:#7fe1c3;border-color:rgba(92,224,195,.27);background:rgba(92,224,195,.06)}
-.cpa-v2__status-tag.is-watch {color:#edc783;border-color:rgba(229,193,124,.25);background:rgba(229,193,124,.06)}
-.cpa-v2__status-tag.is-risk {color:#f09098;border-color:rgba(240,125,136,.27);background:rgba(240,125,136,.06)}
+.cpa-v2__status-tag.is-observed {color:#9bd7eb;border-color:rgba(105,213,228,.25);background:rgba(105,213,228,.06)}
 .cpa-v2__reliability {padding:17px 18px 12px}
 .cpa-v2__reliability-value {color:#f4f9ff;font:800 clamp(31px,3vw,40px)/1 'Space Grotesk',sans-serif;letter-spacing:-.06em}
 .cpa-v2__reliability-gauge {position:relative;height:8px;margin-top:13px;overflow:hidden;border:1px solid rgba(170,207,235,.13);border-radius:99px;background:rgba(190,215,238,.075)}
