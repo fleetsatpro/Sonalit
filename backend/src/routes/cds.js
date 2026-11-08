@@ -880,7 +880,6 @@ router.get('/analytics', asyncHandler(async (req, res) => {
              COUNT(*)::int AS trips_started,
              COUNT(*) FILTER (WHERE t.delivered_at IS NOT NULL)::int AS deliveries_completed,
              COUNT(*) FILTER (WHERE t.status = 'delayed')::int AS currently_delayed,
-             COUNT(*) FILTER (WHERE t.delivered_at IS NOT NULL)::int AS deliveries_completed,
              ROUND((AVG(EXTRACT(EPOCH FROM (t.delivered_at - t.departed_at)) / 3600.0)
                FILTER (WHERE t.delivered_at IS NOT NULL AND t.departed_at IS NOT NULL))::numeric, 1) AS avg_transit_hours,
              ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (
