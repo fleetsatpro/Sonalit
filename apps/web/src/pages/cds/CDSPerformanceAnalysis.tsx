@@ -552,6 +552,7 @@ function OverdueClamps({ data }: { data: CDSAnalyticsPayload }) {
 
 export function AnalyticsView() {
   const [days, setDays] = useState<7 | 30 | 90 | 365>(30);
+  const [section, setSection] = useState<'overview' | 'network' | 'fleet' | 'exceptions'>('overview');
   const { data, isLoading, isError, error, isFetching, refetch } = useCDSAnalytics(days);
 
   if (isLoading) return <LoadingState />;
@@ -609,8 +610,17 @@ export function AnalyticsView() {
         </div>
       </header>
 
-      <nav className="cpa-v2__section-nav" aria-label="Analysis sections">
-        <a href="#cds-throughput">Throughput</a><a href="#cds-cohort">Cohort progression</a><a href="#cds-service">Service quality</a><a href="#cds-lanes">Corridors</a><a href="#cds-partners">Partners</a><a href="#cds-assets">Assets</a><a href="#cds-exceptions">Exceptions</a>
+      <nav className="cpa-v2__section-nav" role="tablist" aria-label="Performance analysis workspaces">
+        {([
+          { id: 'overview', label: 'Overview' },
+          { id: 'network', label: 'Network' },
+          { id: 'fleet', label: 'Fleet & equipment' },
+          { id: 'exceptions', label: 'Exceptions' },
+        ] as const).map(tab => (
+          <button key={tab.id} id={'cpa-tab-' + tab.id} type="button" role="tab"
+            aria-selected={section === tab.id} aria-controls={'cpa-panel-' + tab.id}
+            onClick={() => setSection(tab.id)}>{tab.label}</button>
+        ))}
       </nav>
 
       {isError ? <div className="cpa-v2__stale-banner"><AlertTriangle size={14} /> Latest refresh failed. The previously loaded database snapshot is retained; it has not been replaced with sample figures.</div> : null}
@@ -620,26 +630,41 @@ export function AnalyticsView() {
       </section>
       <div className="cpa-v2__comparison-note"><span>PERIOD COMPARISON</span><strong>Current {days} days vs immediately preceding {days} days</strong><small>Volume changes are descriptive; a higher count is not automatically a better outcome.</small></div>
 
-      <div className="cpa-v2__flow-grid" id="cds-cohort">
-        <BookingCohort data={data} />
-        <BookingMix data={data} />
-      </div>
-
-      <div className="cpa-v2__analysis-grid">
-        <TrendChart daily={data.daily} days={days} />
-        <ServiceQuality data={data} />
-      </div>
-
-      <LaneAnalysis data={data} />
-      <PartnerAnalysis data={data} />
-      <SectionHeading index="08–11" kicker="FLEET / EQUIPMENT / ASSURANCE" title="Asset integrity & readiness" />
-      <AssetIntegrity data={data} />
-      <SectionHeading index="12–13" kicker="EXECUTION / RECORD QUALITY" title="People & operational discipline" />
-      <OperationsAnalysis data={data} />
-      <div className="cpa-v2__ops-grid">
-        <OverdueClamps data={data} />
-        <ExceptionQueue data={data} />
-      </div>
+      {section === 'overview' ? (
+        <div id="cpa-panel-overview" className="cpa-v2__workspace" role="tabpanel" aria-labelledby="cpa-tab-overview" tabIndex={0}>
+          <div className="cpa-v2__flow-grid" id="cds-cohort">
+            <BookingCohort data={data} />
+            <BookingMix data={data} />
+          </div>
+          <div className="cpa-v2__analysis-grid">
+            <TrendChart daily={data.daily} days={days} />
+            <ServiceQuality data={data} />
+          </div>
+        </div>
+      ) : null}
+      {section === 'network' ? (
+        <div id="cpa-panel-network" className="cpa-v2__workspace" role="tabpanel" aria-labelledby="cpa-tab-network" tabIndex={0}>
+          <SectionHeading index="01–02" kicker="CARRIER / CORRIDOR PERFORMANCE" title="Network execution" />
+          <LaneAnalysis data={data} />
+          <PartnerAnalysis data={data} />
+        </div>
+      ) : null}
+      {section === 'fleet' ? (
+        <div id="cpa-panel-fleet" className="cpa-v2__workspace" role="tabpanel" aria-labelledby="cpa-tab-fleet" tabIndex={0}>
+          <SectionHeading index="01–02" kicker="FLEET / EQUIPMENT / ASSURANCE" title="Asset integrity & readiness" />
+          <AssetIntegrity data={data} />
+          <OperationsAnalysis data={data} />
+        </div>
+      ) : null}
+      {section === 'exceptions' ? (
+        <div id="cpa-panel-exceptions" className="cpa-v2__workspace" role="tabpanel" aria-labelledby="cpa-tab-exceptions" tabIndex={0}>
+          <SectionHeading index="01–02" kicker="EXPOSURE / ACTION REQUIRED" title="Operational exceptions" />
+          <div className="cpa-v2__ops-grid">
+            <OverdueClamps data={data} />
+            <ExceptionQueue data={data} />
+          </div>
+        </div>
+      ) : null}
 
       <footer className="cpa-v2__method">
         <div><strong>Method & interpretation</strong><p>Period activity uses event timestamps. Booking Mix follows the selected-period booking cohort and its latest recorded stage. Conversion steps count distinct bookings with linked evidence. ETA adherence uses completed deliveries with a recorded ETA; a contractual SLA cannot be inferred from ETA alone. Inventory and unresolved exposure panels are current-state snapshots. Missing records are excluded where a metric requires them — they are never imputed.</p></div>
