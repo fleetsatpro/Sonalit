@@ -30,6 +30,22 @@ describe('CDS Performance Analysis v2 contract', () => {
     expect(visual).not.toMatch(/(^|\n)\s*color:\s*#fff\s*;\s*background:\s*#fff/);
   });
 
+  it('separates current-state operational posture from selected-period activity', () => {
+    expect(component).toContain('function SnapshotSignals');
+    expect(component).toContain('Snapshot measures · independent of reporting window');
+    for (const marker of ['s.delayed_trips', 's.locks_needing_attention', 's.overdue_inspections', 's.trips_with_data_gaps']) {
+      expect(component).toContain(marker);
+    }
+    expect(component).toContain('className="cpa-v2__signals"');
+    expect(visual).toContain('.cpa-v2__signals-grid');
+  });
+
+  it('reports snapshot age as an observation and avoids an undocumented stale threshold', () => {
+    expect(component).toContain("snapshotAge == null ? 'Age unknown'");
+    expect(component).not.toContain('snapshotAge > 5');
+    expect(component).not.toContain('is-stale');
+  });
+
   it('compares equivalent consecutive periods from explicit prior-period API metrics', () => {
     expect(component).toContain('data.period_comparison');
     expect(component).toContain('Current {days} days vs immediately preceding {days} days');
