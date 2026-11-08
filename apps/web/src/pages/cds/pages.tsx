@@ -986,7 +986,7 @@ export function AnalyticsView() {
   const totalDataGaps = s.trips_missing_vehicle + s.trips_missing_driver + s.trips_missing_container + s.trips_missing_lock + s.trips_missing_eta;
   const exceptionCount = s.delayed_trips + s.locks_needing_attention + s.containers_clamped_over_24h + totalDataGaps + s.unacknowledged_alerts;
   const kpis = [
-    { id: 'bookings', label: 'Bookings received', value: fmt(s.bookings_received), detail: days + ' day intake', color: 'orange', target: '#cds-bookings', series: data.daily.map(row => row.bookings_received) },
+    { id: 'bookings', label: 'Bookings received', value: fmt(s.bookings_received), detail: days + ' day intake', color: 'orange', target: '#cds-assets', series: data.daily.map(row => row.bookings_received) },
     { id: 'clamped', label: 'Containers clamped', value: fmt(s.containers_clamped), detail: 'Distinct containers · selected period', color: 'teal', target: '#cds-operators', series: data.daily.map(row => row.containers_clamped) },
     { id: 'locks', label: 'Locks in use', value: fmt(s.locks_in_use), detail: 'Assigned or installed now', color: 'blue', target: '#cds-bookings', series: [] as number[] },
     { id: 'unclamped', label: 'Containers unclamped', value: fmt(s.containers_unclamped), detail: 'Distinct containers · selected period', color: 'violet', target: '#cds-operators', series: data.daily.map(row => row.containers_unclamped) },
