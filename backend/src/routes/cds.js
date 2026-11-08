@@ -743,11 +743,27 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       SELECT b.id,
              CASE
                WHEN b.status = 'cancelled' THEN 'cancelled'
-               WHEN b.status IN ('delivered', 'completed', 'billed') OR EXISTS (
-                 SELECT 1
-                   FROM cds_trips t
-                  WHERE t.booking_id = b.id AND t.org_id = $2 AND t.deleted_at IS NULL
-                    AND (t.delivered_at IS NOT NULL OR t.status IN ('delivered', 'completed'))
+               WHEN b.status IN ('delivered', 'completed', 'billed') OR (
+                 EXISTS (
+                   SELECT 1
+                     FROM cds_trips t
+                    WHERE t.booking_id = b.id AND t.org_id = $2 AND t.deleted_at IS NULL
+                 )
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM cds_trips t
+                    WHERE t.booking_id = b.id AND t.org_id = $2 AND t.deleted_at IS NULL
+                      AND t.delivered_at IS NULL AND t.status NOT IN ('delivered', 'completed')
+                 )
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM cds_booking_containers bc
+                     LEFT JOIN cds_trips t
+                       ON t.id = bc.trip_id AND t.org_id = $2 AND t.deleted_at IS NULL
+                    WHERE bc.booking_id = b.id AND bc.org_id = $2 AND bc.deleted_at IS NULL
+                      AND bc.status NOT IN ('delivered', 'completed')
+                      AND (t.id IS NULL OR (t.delivered_at IS NULL AND t.status NOT IN ('delivered', 'completed')))
+                 )
                ) THEN 'completed'
                WHEN b.status = 'in_progress' OR EXISTS (
                  SELECT 1
