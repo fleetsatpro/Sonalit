@@ -160,7 +160,7 @@
   white-space:nowrap;transition:color 160ms ease,background 160ms ease,border-color 160ms ease,box-shadow 160ms ease;
 }
 .cpa-v2__section-nav button:hover {color:#f2f8ff;background:rgba(255,255,255,.055)}
-.cpa-v2__section-nav button[aria-selected="true"] {
+.cpa-v2__section-nav button[aria-pressed="true"] {
   color:#f5dfb1;border-color:rgba(229,193,124,.24);
   background:linear-gradient(145deg,rgba(229,193,124,.13),rgba(99,162,197,.08));
   box-shadow:inset 0 1px rgba(255,255,255,.075),0 3px 13px rgba(0,0,0,.13);
