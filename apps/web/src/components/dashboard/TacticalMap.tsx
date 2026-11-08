@@ -292,7 +292,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: boolean }) {
+const TacticalMap = React.memo(function TacticalMap({ fill = false, presentation = 'standard' }: { fill?: boolean; presentation?: 'standard' | 'command' }) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mapReadyRef = useRef(false);
@@ -553,17 +553,23 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
   }, [expanded]);
 
   return (
-    <div style={expanded
-      ? { position: 'fixed', inset: 0, zIndex: 500, background: 'var(--d-void)', display: 'flex', flexDirection: 'column', padding: 0 }
-      : fill
-        // Console hero mode: fill the pane, the map itself takes all slack.
-        ? { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: '10px 14px 8px' }
-        : { padding: '16px 16px 0' }}>
-      {/* Header */}
+    <div
+      className={presentation === 'command' ? 'tactical-map tactical-map--command' : 'tactical-map'}
+      style={expanded
+        ? { position: 'fixed', inset: 0, zIndex: 500, background: 'var(--d-void)', display: 'flex', flexDirection: 'column', padding: 0 }
+        : fill
+          ? { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: presentation === 'command' ? 0 : '10px 14px 8px' }
+          : { padding: '16px 16px 0' }}
+    >
+      {/* Map controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap', rowGap: 6, ...(expanded && { padding: '12px 16px 0' }) }}>
-        <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2, flexShrink: 0 }} />
-        <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>TACTICAL MAP</span>
-        <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · operational view</span>
+        {presentation !== 'command' && (
+          <>
+            <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2, flexShrink: 0 }} />
+            <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>TACTICAL MAP</span>
+            <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · operational view</span>
+          </>
+        )}
         <div style={{ flex: 1 }} />
         <LegendDot color='#29ffb0' label='OK' />
         <LegendDot color='#ffc93f' label='WARN' />
@@ -622,7 +628,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
         <div ref={mapContainer} style={{ width: '100%', height: expanded || fill ? '100%' : 420, background: 'var(--d-deep)', ...(expanded && { position: 'absolute', inset: 0 }) }} />
 
         {/* Radar — own 160×160 square SVG so rings stay circular on all widths */}
-        <div style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none', width: 160, height: 160 }}>
+        <div style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none', width: 160, height: 160, display: presentation === 'command' ? 'none' : undefined }}>
           {/* Glass backdrop — keeps radar legible on bright satellite tiles */}
           <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,0,0,.55) 60%, rgba(0,0,0,.15) 85%, transparent 100%)', backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)' }} />
           <svg width={160} height={160} viewBox='0 0 160 160' style={{ position: 'relative' }}>
@@ -683,11 +689,17 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
         </div>
 
         {/* HUD grid overlay */}
-        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', backgroundImage: `linear-gradient(rgba(${rc},.02) 1px, transparent 1px), linear-gradient(90deg, rgba(${rc},.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }} />
+        {presentation !== 'command' && (
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', backgroundImage: `linear-gradient(rgba(${rc},.02) 1px, transparent 1px), linear-gradient(90deg, rgba(${rc},.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }} />
+        )}
         {/* Scanline */}
-        <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, rgba(${rc},.18), transparent)`, animation: `d-scanv ${panicActive ? '1.5s' : '4s'} linear infinite`, pointerEvents: 'none' }} />
+        {presentation !== 'command' && (
+          <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, rgba(${rc},.18), transparent)`, animation: `d-scanv ${panicActive ? '1.5s' : '4s'} linear infinite`, pointerEvents: 'none' }} />
+        )}
         {/* Edge vignette */}
-        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse at 50% 50%, transparent 65%, rgba(0,0,0,.28))' }} />
+        {presentation !== 'command' && (
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse at 50% 50%, transparent 65%, rgba(0,0,0,.28))' }} />
+        )}
       </div>
 
       {/* Vehicle chips */}

@@ -6,80 +6,75 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Clock3,
-  Command,
-  Crosshair,
-  MapPinned,
-  MessageSquare,
-  Radio,
+  RefreshCw,
   Route,
-  ShieldCheck,
   Siren,
   Truck,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
 import type { DashboardAlert, DashboardOverview } from '../stores/dashboardStore.js';
-import PriorityQueue, { type QueueItem } from '../components/dashboard/PriorityQueue.js';
-import EventsTicker from '../components/dashboard/EventsTicker.js';
+import CommandPriorityLane, { type CommandRecord } from '../components/dashboard/CommandPriorityLane.js';
 import '../styles/command-centre-premium.css';
 
 const TacticalMap = lazy(() => import('../components/dashboard/TacticalMap.js'));
 
-type ResponseState = 'RECEIVED' | 'REFRESHING' | 'RESPONSE AGING' | 'REFRESH FAILED' | 'OLD RESPONSE' | 'CONNECTING' | 'UNAVAILABLE';
-
-function formatTime(iso?: string | null) {
-  if (!iso) return '—';
-  const date = new Date(iso);
+function formatTime(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? '—'
     : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatAge(iso?: string | null) {
-  if (!iso) return '—';
-  const stamp = new Date(iso).getTime();
+function formatDateTime(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+}
+
+function formatAge(value?: string | null) {
+  if (!value) return '—';
+  const stamp = new Date(value).getTime();
   if (!Number.isFinite(stamp)) return '—';
   const seconds = Math.max(0, Math.floor((Date.now() - stamp) / 1000));
-  if (seconds < 60) return seconds + 's';
+  if (seconds < 45) return 'just now';
   if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
   if (seconds < 86400) return Math.floor(seconds / 3600) + 'h';
   return Math.floor(seconds / 86400) + 'd';
 }
 
-function formatDateTime(iso?: string | null) {
-  if (!iso) return '—';
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
-}
-
-function Instrument({
+function Metric({
   icon: Icon,
   label,
   value,
-  note,
   tone = 'neutral',
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
-  note: string;
   tone?: 'neutral' | 'amber' | 'red';
 }) {
   return (
-    <div className={'cc-instrument cc-instrument--' + tone}>
-      <span className='cc-instrument__icon'><Icon size={16} strokeWidth={1.8} /></span>
-      <span className='cc-instrument__readout'>
-        <small>{label}</small>
+    <div className={'cc2-metric cc2-metric--' + tone}>
+      <span className='cc2-metric__icon'><Icon size={18} strokeWidth={2} /></span>
+      <span className='cc2-metric__copy'>
+        <span>{label}</span>
         <strong>{value}</strong>
-        <em>{note}</em>
       </span>
     </div>
   );
 }
 
-function ObjectDrawer({ item, onClose }: { item: QueueItem; onClose: () => void }) {
-  const nav = useNavigate();
-  const isAlert = item.source === 'ALERT REGISTER';
+function RecordDetail({
+  record,
+  onClose,
+}: {
+  record: CommandRecord;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const isAlert = Boolean(record.ackId) || record.source === 'Alert register';
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -96,53 +91,55 @@ function ObjectDrawer({ item, onClose }: { item: QueueItem; onClose: () => void 
 
   return (
     <div
-      className='cc-drawer-backdrop'
+      className='cc2-detail-backdrop'
       role='presentation'
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
-      <aside className='cc-drawer' role='dialog' aria-modal='true' aria-labelledby='cc-drawer-title'>
-        <header className='cc-drawer__header'>
+      <aside className='cc2-detail' role='dialog' aria-modal='true' aria-labelledby='cc2-detail-title'>
+        <header className='cc2-detail__header'>
           <div>
-            <span className='cc-kicker'>OPERATIONAL RECORD / {item.chip.label}</span>
-            <h2 id='cc-drawer-title'>{item.title}</h2>
+            <span className='cc2-section-label'>{record.source}</span>
+            <h2 id='cc2-detail-title'>{record.title}</h2>
           </div>
           <button type='button' onClick={onClose} aria-label='Close event detail'>×</button>
         </header>
-
-        <div className='cc-drawer__signal'>
-          <span className='cc-drawer__signal-mark' style={{ background: 'rgb(' + item.chip.hue + ')' }} />
-          <div><small>OBSERVED</small><strong>{formatAge(item.at)} ago</strong></div>
-          <div><small>SEVERITY</small><strong>{(item.severity || 'unclassified').toUpperCase()}</strong></div>
+        <div className='cc2-detail__facts'>
+          <div>
+            <span>Severity</span>
+            <strong>{record.severity.toUpperCase()}</strong>
+          </div>
+          <div>
+            <span>Event time</span>
+            <strong>{formatDateTime(record.at)}</strong>
+          </div>
         </div>
-
-        <p className='cc-drawer__body'>
-          {item.body || 'No additional operator note is attached to this record.'}
+        <p className='cc2-detail__summary'>
+          {record.summary || 'No additional operator note is attached to this record.'}
         </p>
-
-        <div className='cc-drawer__facts'>
-          <div><span>SOURCE</span><b>{item.source || 'OPERATIONAL FEED'}</b></div>
-          <div><span>RECORD STATE</span><b>{item.ackId ? 'ACKNOWLEDGEMENT PENDING' : 'RECORDED'}</b></div>
-          <div><span>EVENT TIME</span><b>{formatDateTime(item.at)}</b></div>
-        </div>
-
-        <div className='cc-drawer__actions'>
-          <button type='button' className='cc-drawer__primary' onClick={() => nav({ to: (isAlert ? '/alerts' : '/fleet') as any })}>
-            {isAlert ? 'OPEN ALERT REGISTER' : 'OPEN FLEET VIEW'}
+        <footer className='cc2-detail__actions'>
+          <button type='button' onClick={onClose}>Close details</button>
+          <button
+            type='button'
+            className='cc2-button cc2-button--primary'
+            onClick={() => navigate({ to: (isAlert ? '/alerts' : '/intelligence') as any })}
+          >
+            {isAlert ? 'Open alert register' : 'Open intelligence'} <ArrowUpRight size={14} />
           </button>
-          <button type='button' onClick={() => nav({ to: '/intelligence' as any })}>OPEN INTELLIGENCE</button>
-          <button type='button' onClick={onClose}>RETURN TO COMMAND</button>
-        </div>
+        </footer>
       </aside>
     </div>
   );
 }
 
 export default function CommandCentre() {
-  const nav = useNavigate();
+  const navigate = useNavigate();
   const setOverview = useDashboardStore.getState().setOverview;
   const setAlerts = useDashboardStore.getState().setAlerts;
+  const recentEvents = useDashboardStore((state) => state.tickerEvents);
   const panic = useDashboardStore((state) => state.panicState);
-  const [selected, setSelected] = React.useState<QueueItem | null>(null);
+  const [selected, setSelected] = React.useState<CommandRecord | null>(null);
   const closeSelected = React.useCallback(() => setSelected(null), []);
 
   const overviewQuery = useQuery({
@@ -156,8 +153,6 @@ export default function CommandCentre() {
     refetchInterval: 60000,
   });
 
-  // Share the queue's cache key: the count and the response lane use one
-  // bounded alert window, with no second interpretation of the source.
   const alertsQuery = useQuery({
     queryKey: ['dashboard-alerts-ops'],
     queryFn: async () => {
@@ -171,197 +166,135 @@ export default function CommandCentre() {
   });
 
   const overview = overviewQuery.data ?? null;
-  const ageMs = overviewQuery.dataUpdatedAt > 0
-    ? Math.max(0, Date.now() - overviewQuery.dataUpdatedAt)
+  const responseAge = overviewQuery.dataUpdatedAt > 0
+    ? formatAge(new Date(overviewQuery.dataUpdatedAt).toISOString())
     : null;
-
-  // The overview API does not expose a source-generated timestamp. These states
-  // describe only when this browser received the last successful HTTP response;
-  // they must not be presented as proof that upstream telemetry is current.
-  let responseState: ResponseState = 'UNAVAILABLE';
-  if (overview) {
-    if (ageMs != null && ageMs > 180000) responseState = 'OLD RESPONSE';
-    else if (overviewQuery.isRefetchError) responseState = 'REFRESH FAILED';
-    else if (overviewQuery.isFetching) responseState = 'REFRESHING';
-    else if (ageMs != null && ageMs > 90000) responseState = 'RESPONSE AGING';
-    else responseState = 'RECEIVED';
-  } else if (overviewQuery.isPending) {
-    responseState = 'CONNECTING';
-  }
-
-  const threatLevel = overview?.threat?.level ?? null;
-  const posture = !overview
-    ? 'UNASSESSED'
-    : responseState === 'OLD RESPONSE'
-      ? 'OLD RESPONSE'
-      : responseState === 'REFRESH FAILED' || responseState === 'RESPONSE AGING'
-        ? 'RESPONSE AGING'
-        : (threatLevel ?? 'unassessed').toUpperCase();
-
-  const postureTone = !overview || responseState === 'OLD RESPONSE' || responseState === 'UNAVAILABLE'
-    ? 'unknown'
-    : threatLevel === 'critical'
-      ? 'critical'
-      : threatLevel === 'elevated'
-        ? 'warn'
-        : responseState === 'REFRESH FAILED' || responseState === 'RESPONSE AGING'
-          ? 'degraded'
-          : 'normal';
+  const responseCaption = overview
+    ? (overviewQuery.isRefetchError
+      ? 'Refresh failed · last response received ' + responseAge + ' ago'
+      : 'Overview response received ' + responseAge + ' ago')
+    : overviewQuery.isPending
+      ? 'Waiting for the first overview response'
+      : 'Overview unavailable';
 
   const priorityCount = alertsQuery.data
     ? alertsQuery.data.filter((alert) => alert.severity === 'critical' || alert.severity === 'high').length
-    : null;
-
-  const responseAgeLabel = overviewQuery.dataUpdatedAt > 0
-    ? formatAge(new Date(overviewQuery.dataUpdatedAt).toISOString()) + ' AGO'
-    : 'NOT RECEIVED';
-  const overviewNote = overview ? 'response received ' + responseAgeLabel.toLowerCase() : 'not available';
+    : '—';
 
   const nextDelivery = overview?.next_delivery ?? null;
-  const shiftStarted = overview?.shift_started_at ?? null;
+  const latestEvents = recentEvents.slice(-3).reverse();
 
   return (
-    <main className='cc-command'>
-      <header className='cc-topline'>
-        <div className='cc-brand'>
-          <div className='cc-brand__sig'><Command size={21} strokeWidth={1.7} /></div>
-          <div className='cc-brand__copy'>
-            <span className='cc-kicker'>SONALIT <i /> OPERATIONS GRID / 01</span>
+    <main className='cc2-command'>
+      <header className='cc2-header'>
+        <div className='cc2-header__identity'>
+          <span className='cc2-brand-mark'><Activity size={20} strokeWidth={2} /></span>
+          <div>
+            <span className='cc2-section-label'>SONALIT / OPERATIONS</span>
             <h1>Command Centre</h1>
           </div>
         </div>
 
-        <div className={'cc-posture cc-posture--' + postureTone}>
-          <span className='cc-posture__beam' />
-          <div className='cc-posture__copy'>
-            <small>GLOBAL POSTURE</small>
-            <strong>{posture}</strong>
-            <em>{overview ? responseState + ' · RECEIVED ' + responseAgeLabel : responseState + ' · NO VERIFIED OVERVIEW'}</em>
+        <div className='cc2-header__actions'>
+          <div className='cc2-response-age'>
+            <span className={'cc2-response-age__dot ' + (overview ? 'is-received' : 'is-unknown')} />
+            <span>{responseCaption}</span>
           </div>
-        </div>
-
-        <div className='cc-topline__right'>
-          <div className='cc-shift'>
-            <span><Clock3 size={12} /> SHIFT OPENED</span>
-            <strong>{overview ? formatTime(shiftStarted) : '—'}</strong>
-          </div>
+          {overview?.shift_started_at && (
+            <span className='cc2-shift'>
+              <Clock3 size={14} /> Shift opened {formatTime(overview.shift_started_at)}
+            </span>
+          )}
           <button
             type='button'
-            className='cc-refresh'
+            className='cc2-button'
             onClick={() => { void overviewQuery.refetch(); void alertsQuery.refetch(); }}
-            aria-label='Refresh command data'
-            title='Refresh overview and alert window'
+            disabled={overviewQuery.isFetching || alertsQuery.isFetching}
           >
-            <Activity size={15} /><span>REFRESH</span>
+            <RefreshCw size={15} className={overviewQuery.isFetching || alertsQuery.isFetching ? 'cc2-spin' : ''} />
+            Refresh
           </button>
           <button
             type='button'
-            onClick={() => nav({ to: '/panic-center' as any })}
-            className={panic ? 'cc-panic cc-panic--live' : 'cc-panic'}
+            className='cc2-button cc2-button--panic'
+            onClick={() => navigate({ to: '/panic-center' as any })}
           >
-            <Siren size={14} /> {panic ? 'PANIC ACTIVE' : 'PANIC CENTRE'}
+            <Siren size={15} /> Panic Centre
+            {panic && <span className='cc2-button__active'>Active</span>}
           </button>
         </div>
       </header>
 
-      <section className='cc-instrument-rail' aria-label='Operational snapshot'>
-        <div className='cc-rail-lead'><span className='cc-kicker'>THEATRE READOUT</span><b>EA / 01</b></div>
-        <Instrument
-          icon={Truck}
-          label='VEHICLES REPORTING'
-          value={overview ? overview.kpi.vehicles_live : '—'}
-          note={overviewNote}
-        />
-        <Instrument
-          icon={Route}
-          label='ACTIVE CONVOYS'
-          value={overview ? overview.kpi.convoys_active : '—'}
-          note={overviewNote}
-        />
-        <Instrument
-          icon={AlertTriangle}
-          label='PRIORITY ALERTS'
-          value={priorityCount == null ? '—' : priorityCount}
-          note={alertsQuery.isError && !alertsQuery.data ? 'source unavailable' : 'high + critical / 10 loaded'}
-          tone={priorityCount != null && priorityCount > 0 ? 'amber' : 'neutral'}
-        />
-        <Instrument
-          icon={ShieldCheck}
-          label='OPEN INCIDENTS'
-          value={overview ? overview.kpi.incidents_open : '—'}
-          note={overviewNote}
-          tone={overview?.kpi.incidents_open ? 'red' : 'neutral'}
-        />
-        <div className='cc-rail-actions'>
-          <button type='button' onClick={() => nav({ to: '/alerts' as any })}><AlertTriangle size={13} /><span>ALERTS</span><ArrowUpRight size={12} /></button>
-          <button type='button' onClick={() => nav({ to: '/messages' as any })}><MessageSquare size={13} /><span>COMMS</span><ArrowUpRight size={12} /></button>
-          <button type='button' onClick={() => nav({ to: '/intelligence' as any })}><Crosshair size={13} /><span>INTEL</span><ArrowUpRight size={12} /></button>
-        </div>
+      <section className='cc2-metrics' aria-label='Operational overview'>
+        <Metric icon={Truck} label='Vehicles reporting' value={overview ? overview.kpi.vehicles_live : '—'} />
+        <Metric icon={Route} label='Active convoys' value={overview ? overview.kpi.convoys_active : '—'} />
+        <Metric icon={AlertTriangle} label='Priority alerts' value={priorityCount} tone={priorityCount !== '—' && priorityCount > 0 ? 'amber' : 'neutral'} />
+        <Metric icon={Siren} label='Open incidents' value={overview ? overview.kpi.incidents_open : '—'} tone={overview?.kpi.incidents_open ? 'red' : 'neutral'} />
       </section>
 
-      <section className='cc-main'>
-        <section className='cc-map' aria-label='Operational theatre map'>
-          <div className='cc-map__frame'>
-            <div className='cc-map__canvas'>
-              <Suspense fallback={<div className='cc-map__loading'><Activity size={19} /><span>INITIALISING THEATRE</span></div>}>
-                <TacticalMap fill />
-              </Suspense>
+      <section className='cc2-workspace'>
+        <section className='cc2-map-panel' aria-label='Operational map'>
+          <header className='cc2-panel-header'>
+            <div>
+              <span className='cc2-section-label'>OPERATIONAL MAP</span>
+              <h2>East Africa</h2>
+              <p>Reported vehicle and convoy positions</p>
             </div>
-            <div className='cc-map__overlay cc-map__overlay--tl'>
-              <span className='cc-orbit-mark'><MapPinned size={13} /></span>
-              <span><b>THEATRE / EAST AFRICA</b><small>COMMON OPERATIONAL PICTURE</small></span>
-            </div>
-            <div className='cc-map__overlay cc-map__overlay--tr'>
-              <span className={'cc-freshness-dot cc-freshness-dot--' + responseState.toLowerCase().replaceAll(' ', '-')} />
-              <span><b>{responseState}</b><small>OVERVIEW RESPONSE</small></span>
-            </div>
-            <div className='cc-map__overlay cc-map__overlay--bl'>
-              <span>POSITION RECORDS ONLY</span><i />
-              <span>UNREPORTED ASSETS REMAIN ABSENT</span>
-            </div>
-            <div className='cc-map__index'>01 <span>/</span> THEATRE</div>
-            <div className='cc-map__crosshair'><span /><i /></div>
+          </header>
+          <div className='cc2-map-stage'>
+            <Suspense fallback={<div className='cc2-map-loading'><Activity size={18} /> Loading map…</div>}>
+              <TacticalMap fill presentation='command' />
+            </Suspense>
           </div>
         </section>
 
-        <aside className='cc-queue'>
-          <div className='cc-queue__mast'>
-            <div className='cc-queue__heading'>
-              <span className='cc-kicker'><Activity size={11} /> RESPONSE / LIVE WORKLIST</span>
-              <h2>Priority lane</h2>
-            </div>
-            <div className='cc-queue__total'>
-              <strong>{priorityCount == null ? '—' : String(priorityCount).padStart(2, '0')}</strong>
-              <small>HIGH / CRITICAL<br />LATEST 10</small>
-            </div>
-          </div>
-          <div className='cc-queue__body'><PriorityQueue onSelect={setSelected} /></div>
-          <div className='cc-queue__foot'>
-            <span>QUEUE WINDOW</span><b>{alertsQuery.data ? alertsQuery.data.length + ' ALERT RECORDS' : 'SOURCE NOT CONFIRMED'}</b>
-            <button type='button' onClick={() => nav({ to: '/alerts' as any })}>OPEN REGISTER <ArrowUpRight size={12} /></button>
-          </div>
-        </aside>
+        <CommandPriorityLane
+          alerts={alertsQuery.data}
+          loading={alertsQuery.isPending}
+          unavailable={alertsQuery.isError && !alertsQuery.data}
+          onSelect={setSelected}
+        />
       </section>
 
-      <section className='cc-bottom'>
-        <div className='cc-milestone'>
-          <div className='cc-milestone__mark'><Route size={16} /></div>
-          <div className='cc-milestone__main'>
-            <span className='cc-kicker'>NEXT OPERATIONAL MILESTONE</span>
-            <strong>{nextDelivery?.convoy_name ?? 'No milestone supplied by overview'}</strong>
-            <small>{nextDelivery ? 'Returned by the command overview' : 'No next delivery is currently reported'}</small>
-          </div>
-          <div className='cc-milestone__datum'><small>ETA</small><b>{nextDelivery ? formatTime(nextDelivery.eta) : '—'}</b></div>
-          <div className='cc-milestone__datum'><small>SHIFT</small><b>{overview ? formatTime(shiftStarted) : '—'}</b></div>
-          <button type='button' onClick={() => nav({ to: '/convoys' as any })}>CONVOYS <ArrowUpRight size={12} /></button>
-        </div>
-        <div className='cc-events'>
-          <div className='cc-events__label'><Radio size={12} /><span>EVENT STREAM</span></div>
-          <EventsTicker />
-        </div>
-      </section>
+      {(nextDelivery || latestEvents.length > 0) && (
+        <section className='cc2-lower'>
+          {nextDelivery && (
+            <article className='cc2-next-delivery'>
+              <span className='cc2-lower__icon'><Route size={17} /></span>
+              <div className='cc2-lower__copy'>
+                <span className='cc2-section-label'>NEXT DELIVERY</span>
+                <strong>{nextDelivery.convoy_name}</strong>
+              </div>
+              <div className='cc2-lower__eta'>
+                <span>ETA</span>
+                <strong>{formatTime(nextDelivery.eta)}</strong>
+              </div>
+              <button type='button' onClick={() => navigate({ to: '/convoys' as any })}>
+                View convoy <ArrowUpRight size={14} />
+              </button>
+            </article>
+          )}
 
-      {selected && <ObjectDrawer item={selected} onClose={closeSelected} />}
+          {latestEvents.length > 0 && (
+            <article className='cc2-recent-activity'>
+              <div className='cc2-recent-activity__heading'>
+                <span className='cc2-section-label'>RECENT ACTIVITY</span>
+                <span>{latestEvents.length} updates</span>
+              </div>
+              <div className='cc2-recent-activity__items'>
+                {latestEvents.map((event) => (
+                  <div className='cc2-activity-item' key={event.id}>
+                    <span className={'cc2-activity-item__dot cc2-activity-item__dot--' + event.severity} />
+                    <span>{event.message}</span>
+                  </div>
+                ))}
+              </div>
+            </article>
+          )}
+        </section>
+      )}
+
+      {selected && <RecordDetail record={selected} onClose={closeSelected} />}
     </main>
   );
 }
