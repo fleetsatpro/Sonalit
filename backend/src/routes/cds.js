@@ -743,12 +743,17 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       SELECT b.id,
              CASE
                WHEN b.status = 'cancelled' THEN 'cancelled'
-               WHEN b.status IN ('delivered', 'completed', 'billed') THEN 'completed'
+               WHEN b.status IN ('delivered', 'completed', 'billed') OR EXISTS (
+                 SELECT 1
+                   FROM cds_trips t
+                  WHERE t.booking_id = b.id AND t.org_id = $2 AND t.deleted_at IS NULL
+                    AND (t.delivered_at IS NOT NULL OR t.status IN ('delivered', 'completed'))
+               ) THEN 'completed'
                WHEN b.status = 'in_progress' OR EXISTS (
                  SELECT 1
                    FROM cds_trips t
                   WHERE t.booking_id = b.id AND t.org_id = $2 AND t.deleted_at IS NULL
-                    AND t.status IN ('dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed', 'completed')
+                    AND t.status IN ('dispatched', 'checkpoint', 'delayed', 'at_port', 'lock_removed')
                ) THEN 'in_progress'
                WHEN EXISTS (
                  SELECT 1
