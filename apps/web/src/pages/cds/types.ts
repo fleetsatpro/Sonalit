@@ -521,12 +521,12 @@ export interface CDSAnalyticsSummary {
 export interface CDSAnalyticsPayload {
   meta: { window_days: CDSAnalyticsWindow; period_start: string; period_end: string; generated_at: string };
   summary: CDSAnalyticsSummary;
-  period_comparison?: {
+  period_comparison: {
     bookings_received: number; containers_clamped: number; containers_unclamped: number;
     trips_started: number; deliveries_completed: number;
     eta_met: number; eta_observed: number; eta_attainment_pct: number | null;
   };
-  booking_cohort?: {
+  booking_cohort: {
     bookings_received: number; bookings_with_clamp: number; bookings_with_trip: number; bookings_delivered: number;
   };
   daily: Array<{
@@ -556,7 +556,7 @@ export interface CDSAnalyticsPayload {
   lanes: Array<{
     origin: string; destination: string; trips_started: number; deliveries_completed: number;
     currently_delayed: number; avg_transit_hours: number | null;
-    p50_transit_hours?: number | null; delivery_completion_pct?: number | null;
+    p50_transit_hours: number | null; delivery_completion_pct: number | null;
   }>;
   alerts: Array<{
     id: string; type: string; severity: string; title: string; message: string;
