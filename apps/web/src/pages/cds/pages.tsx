@@ -976,6 +976,13 @@ export function AnalyticsView() {
   const topOperator = data.operator_leaderboard[0] ?? null;
   const topOperatorActions = topOperator ? topOperator.clamp_actions + topOperator.unclamp_actions : 0;
   const topPartner = transporterLeaderboard[0] ?? null;
+  const partnerTotals = transporterLeaderboard.reduce((totals, partner) => ({
+    handled: totals.handled + partner.containers_handled,
+    delivered: totals.delivered + partner.deliveries_completed,
+    etaObserved: totals.etaObserved + partner.delivery_eta_observed,
+    onTime: totals.onTime + partner.on_time_deliveries,
+  }), { handled: 0, delivered: 0, etaObserved: 0, onTime: 0 });
+  const networkEtaRate = partnerTotals.etaObserved > 0 ? partnerTotals.onTime / partnerTotals.etaObserved * 100 : null;
   const totalDataGaps = s.trips_missing_vehicle + s.trips_missing_driver + s.trips_missing_container + s.trips_missing_lock + s.trips_missing_eta;
   const exceptionCount = s.delayed_trips + s.locks_needing_attention + s.containers_clamped_over_24h + totalDataGaps + s.unacknowledged_alerts;
   const kpis = [
@@ -1073,14 +1080,11 @@ export function AnalyticsView() {
                 <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-[.24em] text-cds-orange">SONALIT / PERFORMANCE ANALYSIS</span>
                 <span className="rounded-full border border-cds-teal/20 bg-cds-teal/[.07] px-2 py-1 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-cds-teal"><span className={'w-1.5 h-1.5 rounded-full ' + (isFetching ? 'bg-amber-300 animate-pulse' : 'bg-cds-teal')} />{isFetching ? 'Syncing snapshot' : 'Persisted snapshot'}</span>
               </div>
-              <h2 className="text-2xl sm:text-3xl xl:text-[36px] leading-tight font-semibold tracking-[-.035em] text-text-0">Performance, <span className="text-cds-orange">made intelligible.</span></h2>
-              <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-2">A high-resolution operating picture of throughput, execution quality, carrier performance and asset readiness—grounded in recorded CDS activity.</p>
+              <h2 className="text-2xl sm:text-3xl xl:text-[36px] leading-tight font-semibold tracking-[-.035em] text-text-0">Performance Analysis</h2>
               <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] sm:text-[11px] text-text-2">
                 <span className="inline-flex items-center gap-2"><span className="text-text-1">PERIOD</span><span className="font-mono text-text-0">{dateLabel(data.meta.period_start)} — {dateLabel(data.meta.period_end)}</span></span>
                 <span className="hidden sm:block h-3 w-px bg-white/10" />
-                <span className="inline-flex items-center gap-2"><span className="text-text-1">GENERATED</span><span className="font-mono text-text-0">{generatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></span>
-                <span className="hidden sm:block h-3 w-px bg-white/10" />
-                <span className="inline-flex items-center gap-2"><span className="text-text-1">AGE</span><span className={ageMinutes != null && ageMinutes > 5 ? 'font-mono text-amber-300' : 'font-mono text-cds-teal'}>{snapshotAge}</span></span>
+                <span className="inline-flex items-center gap-2"><span className="text-text-1">UPDATED</span><span className={ageMinutes != null && ageMinutes > 5 ? 'font-mono text-amber-300' : 'font-mono text-cds-teal'}>{snapshotAge}</span></span>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row xl:flex-col gap-3 xl:items-end shrink-0 w-full sm:w-auto">
@@ -1108,7 +1112,7 @@ export function AnalyticsView() {
 
       <section aria-label="Key operational indicators">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
-          <div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">01 / Executive signal field</div><h3 className="mt-1 text-base sm:text-lg font-semibold tracking-tight">Performance at a glance</h3><p className="mt-1 text-[11px] leading-relaxed text-text-2">Window-scoped activity and current operational exposure, kept deliberately distinct.</p></div>
+          <div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">01 / OPERATING PULSE</div><h3 className="mt-1 text-base sm:text-lg font-semibold tracking-tight">Key measures</h3></div>
 
         </div>
         <div className="cpa-kpi-grid grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-2 sm:gap-3">
@@ -1120,44 +1124,21 @@ export function AnalyticsView() {
               <a key={k.id} href={k.target} style={{ animationDelay: `${index * 55}ms` }} className={'cpa-kpi group relative min-w-0 overflow-hidden rounded-xl border bg-[#11161b] p-3 sm:p-4 transition-all hover:-translate-y-0.5 hover:bg-[#151b21] ' + t.border}>
                 <div className="flex items-start justify-between gap-2"><span className="text-[9px] sm:text-[10px] uppercase leading-relaxed tracking-[.11em] text-text-2">{k.label}</span><span className={'mt-1 w-1.5 h-1.5 rounded-full shrink-0 ' + t.dot} /></div>
                 <div className={'mt-3 text-2xl sm:text-[28px] font-semibold leading-none tracking-[-.035em] tabular-nums ' + (k.color === 'red' && s.delayed_trips > 0 ? 'text-red-300' : 'text-text-0')}>{k.value}</div>
-                <p className="mt-2 min-h-[29px] text-[10px] leading-relaxed text-text-2">{k.detail}</p>
-                <div className="mt-2 h-8 opacity-70 group-hover:opacity-100">
-                  {k.series.length > 1 ? <svg viewBox="0 0 100 32" preserveAspectRatio="none" className={'h-full w-full ' + t.text} role="img" aria-label={k.label + ' observed daily trend'}><polygon points={'0,32 ' + points + ' 100,32'} fill="currentColor" opacity=".09" /><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /><circle cx="100" cy={29 - k.series[k.series.length - 1] / sparkMax * 25} r="2" fill="currentColor" /></svg> : <div className={'h-[2px] mt-4 rounded-full ' + t.fill} />}
+                <p className="mt-2 text-[10px] leading-relaxed text-text-2">{k.detail}</p>
+                <div className="mt-3 h-5 opacity-80">
+                  {k.series.length > 1 ? <svg viewBox="0 0 100 20" preserveAspectRatio="none" className={'h-full w-full ' + t.text} role="img" aria-label={k.label + ' observed daily trend'}><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" /><circle cx="100" cy={19 - k.series[k.series.length - 1] / sparkMax * 17} r="1.8" fill="currentColor" /></svg> : <div className={'h-[2px] mt-2 rounded-full ' + t.fill} />}
                 </div>
-                <div className="mt-2 border-t border-white/[.055] pt-2 text-[9px] uppercase tracking-wider text-text-2 group-hover:text-text-1">Explore signal <ArrowUpRight size={12} aria-hidden="true" className="float-right" /></div>
               </a>
             );
           })}
         </div>
       </section>
 
-      <section className="cpa-insight-grid grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-2.5 sm:gap-3" aria-label="Derived operational insights">
-        <article className="cpa-insight" style={{ animationDelay: '80ms' }}>
-          <div className="cpa-insight__top"><span>01 / PEAK INTAKE</span><span className="cpa-insight__marker" /></div>
-          <div className="cpa-insight__value">{peakBookingDay && peakBookingDay.bookings_received > 0 ? fmt(peakBookingDay.bookings_received) : '—'}</div>
-          <p>{peakBookingDay && peakBookingDay.bookings_received > 0 ? 'Highest recorded booking day · ' + dateLabel(peakBookingDay.day) : 'No booking peak recorded in this period'}</p>
-        </article>
-        <article className="cpa-insight" style={{ animationDelay: '135ms' }}>
-          <div className="cpa-insight__top"><span>02 / ETA RELIABILITY</span><span className="cpa-insight__marker" /></div>
-          <div className="cpa-insight__value">{s.eta_observed > 0 && s.eta_attainment_pct != null ? pct(s.eta_attainment_pct) : '—'}</div>
-          <p>{s.eta_observed > 0 ? fmt(s.eta_met) + ' of ' + fmt(s.eta_observed) + ' completed trips with a recorded ETA' : 'No ETA baseline in the selected period'}</p>
-        </article>
-        <article className="cpa-insight" style={{ animationDelay: '190ms' }}>
-          <div className="cpa-insight__top"><span>03 / CARRIER LEADER</span><span className="cpa-insight__marker" /></div>
-          <div className="cpa-insight__value cpa-insight__value--name">{topPartner && topPartner.containers_handled > 0 ? topPartner.company_name : 'No volume baseline'}</div>
-          <p>{topPartner && topPartner.containers_handled > 0 ? fmt(topPartner.containers_handled) + ' distinct containers handled in the selected period' : 'No partner handling volume recorded'}</p>
-        </article>
-        <article className="cpa-insight" style={{ animationDelay: '245ms' }}>
-          <div className="cpa-insight__top"><span>04 / OPERATOR ACTIVITY</span><span className="cpa-insight__marker" /></div>
-          <div className="cpa-insight__value cpa-insight__value--name">{topOperator && topOperatorActions > 0 ? topOperator.operator_name : 'No audit events'}</div>
-          <p>{topOperator && topOperatorActions > 0 ? fmt(topOperatorActions) + ' recorded clamp / unclamp actions in the operator leaderboard' : 'No operator clamp / unclamp events recorded'}</p>
-        </article>
-      </section>
-
-      <section id="cds-bookings" aria-label="Visual operations mix" className="cpa-section grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
-        {donutPanel('Booking mix', data.booking_pipeline.map((row, index) => ({ label: label(row.status), value: row.count, color: donutColors[index % donutColors.length] })))}
-        {donutPanel('Lock inventory', data.lock_statuses.map(row => ({ label: label(row.status), value: row.count, color: ({ installed: '#42cbb5', assigned: '#82b6eb', available: '#f59a3c', removed: '#b69cff', maintenance: '#f0c16c', offline: '#ed8b8b' } as Record<string, string>)[row.status] || '#7e8c9d' })))}
-        {donutPanel('Container clamp cycle', data.clamp_state_mix.map(row => ({ label: label(row.state), value: row.count, color: ({ clamped: '#f59a3c', unclamped: '#42cbb5', awaiting_clamp: '#82b6eb', other: '#5f6d7b' } as Record<string, string>)[row.state] || '#7e8c9d' })))}
+      <section className="cpa-signals grid grid-cols-2 xl:grid-cols-4 gap-2" aria-label="Performance signals">
+        <div className="cpa-signal"><span>PEAK INTAKE</span><strong>{peakBookingDay && peakBookingDay.bookings_received > 0 ? fmt(peakBookingDay.bookings_received) : '—'}</strong><small>{peakBookingDay && peakBookingDay.bookings_received > 0 ? dateLabel(peakBookingDay.day) : 'No activity'}</small></div>
+        <div className="cpa-signal"><span>ETA ATTAINMENT</span><strong>{s.eta_observed > 0 && s.eta_attainment_pct != null ? pct(s.eta_attainment_pct) : '—'}</strong><small>{fmt(s.eta_met)} / {fmt(s.eta_observed)} observed</small></div>
+        <div className="cpa-signal"><span>TOP CARRIER</span><strong className="cpa-signal__name">{topPartner && topPartner.containers_handled > 0 ? topPartner.company_name : '—'}</strong><small>{topPartner && topPartner.containers_handled > 0 ? fmt(topPartner.containers_handled) + ' containers' : 'No volume'}</small></div>
+        <div className="cpa-signal"><span>TOP OPERATOR</span><strong className="cpa-signal__name">{topOperator && topOperatorActions > 0 ? topOperator.operator_name : '—'}</strong><small>{topOperator && topOperatorActions > 0 ? fmt(topOperatorActions) + ' clamp actions' : 'No audit events'}</small></div>
       </section>
 
       <section className="cpa-section grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-3 sm:gap-4">
@@ -1311,70 +1292,15 @@ export function AnalyticsView() {
           <span className="text-[9px] font-mono uppercase tracking-wider text-text-2">{transporterLeaderboard.length} ranked partners</span>
         </div>
         <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)] gap-3 sm:gap-4">
-          <Card className="min-w-0 overflow-hidden">
-            <div className="flex items-center justify-between gap-3 border-b border-white/[.055] p-4 sm:p-5">
-              <div>
-                <div className="text-[9px] uppercase tracking-[.17em] font-mono text-text-2">PARTNER LEADERBOARD</div>
-                <h3 className="mt-1 text-sm font-semibold">Container handling volume</h3>
-              </div>
-              <span className="rounded-md border border-[#8eb9ed]/15 bg-[#8eb9ed]/[.05] px-2 py-1 text-[9px] text-[#b9d6f5]">{days} day window</span>
+          <Card className="cpa-network-summary min-w-0 overflow-hidden">
+            <div className="border-b border-white/[.055] p-4 sm:p-5"><span className="cpa-panel-kicker">NETWORK SUMMARY</span><h3 className="mt-1 text-sm font-semibold">Partner delivery</h3></div>
+            <div className="grid grid-cols-2 gap-px bg-white/[.055]">
+              <div className="bg-[#111923] p-4"><span className="cpa-mini-label">PARTNERS</span><strong>{fmt(transporterLeaderboard.length)}</strong></div>
+              <div className="bg-[#111923] p-4"><span className="cpa-mini-label">CONTAINERS</span><strong>{fmt(partnerTotals.handled)}</strong></div>
+              <div className="bg-[#111923] p-4"><span className="cpa-mini-label">DELIVERIES</span><strong>{fmt(partnerTotals.delivered)}</strong></div>
+              <div className="bg-[#111923] p-4"><span className="cpa-mini-label">ETA ON-TIME</span><strong className={networkEtaRate == null ? '' : 'text-cds-teal'}>{networkEtaRate == null ? '—' : networkEtaRate.toFixed(1) + '%'}</strong></div>
             </div>
-            <div className="p-4 sm:p-5">
-              {transporterLeaderboard.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-white/10 p-7 text-center">
-                  <div className="text-sm font-medium text-text-0">No partner trips in this window</div>
-                  <p className="mt-1 text-[10px] text-text-2">The ranking appears when transporter-linked trips are recorded.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {transporterLeaderboard.map((partner, index) => {
-                    const max = Math.max(1, ...transporterLeaderboard.map(row => row.containers_handled));
-                    const width = Math.min(100, partner.containers_handled / max * 100);
-                    const etaKnown = partner.delivery_eta_observed > 0 && partner.on_time_rate != null;
-                    return (
-                      <div key={partner.transporter_id} className="cds-partner-rank" style={{ animationDelay: (index * 55) + 'ms' }}>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <span className="w-5 font-mono text-[10px] text-text-2">{String(partner.rank).padStart(2, '0')}</span>
-                          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-text-0">{partner.company_name}</span>
-                          <span className="font-mono text-xs font-semibold text-[#b9d8fb] tabular-nums">{fmt(partner.containers_handled)} <span className="text-[9px] font-sans font-normal text-text-2">containers</span></span>
-                        </div>
-                        <div className="ml-8 mt-2 h-2 overflow-hidden rounded-full bg-white/[.05]">
-                          <div className="cds-partner-bar h-full rounded-full" style={{ width: width + '%', animationDelay: (180 + index * 75) + 'ms' }} />
-                        </div>
-                        <div className="ml-8 mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[9px] text-text-2">
-                          <span>{fmt(partner.trips_started)} trips</span>
-                          <span>{fmt(partner.deliveries_completed)} delivered</span>
-                          <span>{fmt(partner.currently_delayed)} delayed now</span>
-                          <span className={etaKnown ? 'text-cds-teal' : ''}>{etaKnown ? Number(partner.on_time_rate).toFixed(1) + '% on time' : 'ETA baseline unavailable'}</span>
-                        </div>
-                        {partner.delivery_eta_observed > 0 && <div className="ml-8 mt-1 text-[9px] text-text-2">{fmt(partner.on_time_deliveries)} on-time from {fmt(partner.delivery_eta_observed)} completed deliveries with ETA</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </Card>
-          <Card className="min-w-0 overflow-hidden">
-            <div className="border-b border-white/[.055] p-4 sm:p-5">
-              <div className="text-[9px] uppercase tracking-[.17em] font-mono text-text-2">MEASUREMENT DISCIPLINE</div>
-              <h3 className="mt-1 text-sm font-semibold">How partner outcomes are measured</h3>
-            </div>
-            <div className="space-y-4 p-4 sm:p-5">
-              <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-[#8eb9ed]/15 bg-[#8eb9ed]/[.06] text-[#b9d8fb]"><Truck size={15} aria-hidden="true" /></div>
-                <div><div className="text-xs font-semibold text-text-0">Equipment handled</div><p className="mt-1 text-[10px] leading-relaxed text-text-2">Distinct container identities linked to trips created in the selected period. Repeated movements across separate partners remain attributable to each partner.</p></div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-cds-teal/15 bg-cds-teal/[.06] text-cds-teal"><ShieldCheck size={15} aria-hidden="true" /></div>
-                <div><div className="text-xs font-semibold text-text-0">ETA attainment</div><p className="mt-1 text-[10px] leading-relaxed text-text-2">Only completed trips with a recorded ETA are included. Unknown ETA is not treated as a failure or a success.</p></div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-amber-300/15 bg-amber-300/[.06] text-amber-200"><Clock3 size={15} aria-hidden="true" /></div>
-                <div><div className="text-xs font-semibold text-text-0">Current delay exposure</div><p className="mt-1 text-[10px] leading-relaxed text-text-2">Delayed trips are a current-state count, while equipment handled and completed deliveries are period measures.</p></div>
-              </div>
-              <div className="rounded-lg border border-white/[.06] bg-white/[.025] p-3 text-[10px] leading-relaxed text-text-2">The leaderboard ranks the ten highest-volume partners by persisted records. It does not create a composite score or infer service quality from missing observations.</div>
-            </div>
+            <div className="p-4 text-[10px] text-text-2">ETA rate uses completed deliveries with recorded ETAs only.</div>
           </Card>
         </div>
       </section>
