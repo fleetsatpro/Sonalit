@@ -62,7 +62,23 @@ describeIfDb('CDS analytics SQL integration', () => {
     expect(res.body.data.booking_pipeline.map(row => row.status).sort()).toEqual([
       'cancelled', 'clamped', 'completed', 'in_progress', 'yard',
     ]);
-    expect(res.body.data.booking_pipeline.reduce((sum, row) => sum + row.count, 0)).toBeGreaterThanOrEqual(0);
+    expect(res.body.data.booking_pipeline.reduce((sum, row) => sum + row.count, 0)).toBe(res.body.data.summary.bookings_received);
+    expect(res.body.data.booking_cohort).toEqual(expect.objectContaining({
+      bookings_received: expect.any(Number),
+      bookings_with_clamp: expect.any(Number),
+      bookings_with_trip: expect.any(Number),
+      bookings_delivered: expect.any(Number),
+    }));
+    expect(res.body.data.booking_cohort.bookings_received).toBe(res.body.data.summary.bookings_received);
+    expect(res.body.data.period_comparison).toEqual(expect.objectContaining({
+      bookings_received: expect.any(Number),
+      containers_clamped: expect.any(Number),
+      containers_unclamped: expect.any(Number),
+      trips_started: expect.any(Number),
+      deliveries_completed: expect.any(Number),
+      eta_met: expect.any(Number),
+      eta_observed: expect.any(Number),
+    }));
     expect(res.body.data.lanes).toEqual(expect.any(Array));
     expect(res.body.data.alerts).toEqual(expect.any(Array));
     expect(res.body.data.operator_leaderboard).toEqual(expect.any(Array));
@@ -92,6 +108,17 @@ describeIfDb('CDS analytics SQL integration', () => {
       active_drivers: expect.any(Number),
       open_incidents: expect.any(Number),
       unacknowledged_alerts: expect.any(Number),
+      trips_with_data_gaps: expect.any(Number),
     }));
+    for (const field of [
+      'avg_eta_variance_hours', 'p90_eta_late_hours', 'p50_transit_hours',
+      'p90_transit_hours', 'p50_clamp_duration_hours', 'p90_clamp_duration_hours',
+    ]) {
+      expect(res.body.data.summary[field] === null || typeof res.body.data.summary[field] === 'number').toBe(true);
+    }
+    for (const lane of res.body.data.lanes) {
+      expect(lane.delivery_completion_pct === null || typeof lane.delivery_completion_pct === 'number').toBe(true);
+      expect(lane.p50_transit_hours === null || typeof lane.p50_transit_hours === 'number').toBe(true);
+    }
   });
 });
