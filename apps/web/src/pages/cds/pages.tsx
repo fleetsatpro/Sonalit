@@ -7,6 +7,7 @@ import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip,
 import FieldAccessPanel from './FieldAccessPanel.js';
 import { useDashboardKPIs, useCDSAnalytics, useLocks, useLockEvents, useTrips, useBookings, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useAcknowledgeAlert } from './hooks.js';
 import { useCDSStore } from './store.js';
+import './CDSPerformanceAnalysis.css';
 
 
 type Row = Record<string, unknown>;
@@ -893,6 +894,7 @@ export function AnalyticsView() {
   const [alertSearch, setAlertSearch] = useState('');
   const [showAllAlerts, setShowAllAlerts] = useState(false);
   const [activeTrend, setActiveTrend] = useState<number | null>(null);
+  const [trendMetric, setTrendMetric] = useState<'all' | 'bookings' | 'clamped' | 'unclamped' | 'started' | 'delivered'>('all');
   const { data, isLoading, isError, error, isFetching, refetch, dataUpdatedAt } = useCDSAnalytics(days);
   const acknowledge = useAcknowledgeAlert();
   const { addToast } = useCDSStore();
@@ -954,7 +956,26 @@ export function AnalyticsView() {
   }, []);
   const activeTrendIndex = activeTrend == null ? trendBuckets.length - 1 : Math.max(0, Math.min(activeTrend, trendBuckets.length - 1));
   const activeTrendPoint = trendBuckets[activeTrendIndex];
-  const maxTrend = Math.max(1, ...trendBuckets.flatMap(row => [row.bookings, row.clamped, row.unclamped, row.started, row.delivered]));
+  const trendSeriesOptions = [
+    { id: 'all', label: 'All signals', color: '#d8b66f' },
+    { id: 'bookings', label: 'Bookings', color: '#f59a3c' },
+    { id: 'clamped', label: 'Clamped', color: '#42cbb5' },
+    { id: 'unclamped', label: 'Unclamped', color: '#82b6eb' },
+    { id: 'started', label: 'Trips', color: '#b69cff' },
+    { id: 'delivered', label: 'Delivered', color: '#f0c16c' },
+  ] as const;
+  const selectedTrendValues = (row: typeof trendBuckets[number]) =>
+    trendMetric === 'all'
+      ? [row.bookings, row.clamped, row.unclamped, row.started, row.delivered]
+      : [row[trendMetric]];
+  const maxTrend = Math.max(1, ...trendBuckets.flatMap(selectedTrendValues));
+  const peakBookingDay = data.daily.reduce<typeof data.daily[number] | null>(
+    (peak, row) => !peak || row.bookings_received > peak.bookings_received ? row : peak,
+    null,
+  );
+  const topOperator = data.operator_leaderboard[0] ?? null;
+  const topOperatorActions = topOperator ? topOperator.clamp_actions + topOperator.unclamp_actions : 0;
+  const topPartner = transporterLeaderboard[0] ?? null;
   const totalDataGaps = s.trips_missing_vehicle + s.trips_missing_driver + s.trips_missing_container + s.trips_missing_lock + s.trips_missing_eta;
   const exceptionCount = s.delayed_trips + s.locks_needing_attention + s.containers_clamped_over_24h + totalDataGaps + s.unacknowledged_alerts;
   const kpis = [
@@ -1039,19 +1060,21 @@ export function AnalyticsView() {
   const donutColors = ['#f59a3c', '#42cbb5', '#82b6eb', '#b69cff', '#f0c16c', '#ed8b8b', '#71b3a3', '#7e8c9d', '#5f6d7b'];
 
   return (
-    <div className="mx-auto max-w-[1840px] p-3 sm:p-5 xl:p-6 space-y-5 text-text-0">
-      <section className="relative overflow-hidden rounded-2xl border border-white/[.075] bg-[#101419]">
+    <div className="cds-performance-analysis mx-auto max-w-[1840px] p-3 sm:p-5 xl:p-6 space-y-5 text-text-0">
+      <section className="cpa-hero relative overflow-hidden rounded-2xl border border-white/[.075] bg-[#101419]">
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 93% 5%, rgba(255,144,48,.15), transparent 36%), radial-gradient(ellipse at 70% 110%, rgba(40,190,176,.08), transparent 42%)' }} />
+        <div className="cpa-hero__mesh" aria-hidden="true" />
+        <div className="cpa-hero__orbit" aria-hidden="true"><span /><span /></div>
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cds-orange via-cds-teal/75 to-transparent" />
         <div className="relative p-4 sm:p-6 xl:p-7">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div className="min-w-0 max-w-3xl">
               <div className="flex flex-wrap items-center gap-2 mb-3">
-                <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-[.24em] text-cds-orange">SONALIT / CDS INTELLIGENCE</span>
-                <span className="rounded-full border border-cds-teal/20 bg-cds-teal/[.07] px-2 py-1 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-cds-teal"><span className={'w-1.5 h-1.5 rounded-full ' + (isFetching ? 'bg-amber-300 animate-pulse' : 'bg-cds-teal')} />{isFetching ? 'Syncing snapshot' : 'Database snapshot'}</span>
+                <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-[.24em] text-cds-orange">SONALIT / PERFORMANCE ANALYSIS</span>
+                <span className="rounded-full border border-cds-teal/20 bg-cds-teal/[.07] px-2 py-1 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-cds-teal"><span className={'w-1.5 h-1.5 rounded-full ' + (isFetching ? 'bg-amber-300 animate-pulse' : 'bg-cds-teal')} />{isFetching ? 'Syncing snapshot' : 'Persisted snapshot'}</span>
               </div>
-              <h2 className="text-2xl sm:text-3xl xl:text-[36px] leading-tight font-semibold tracking-[-.035em] text-text-0">Container operations, <span className="text-cds-orange">in command.</span></h2>
-              <p className="mt-2 text-[11px] text-text-2">Live CDS operations · executive and coordinator view</p>
+              <h2 className="text-2xl sm:text-3xl xl:text-[36px] leading-tight font-semibold tracking-[-.035em] text-text-0">Performance, <span className="text-cds-orange">made intelligible.</span></h2>
+              <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-2">A high-resolution operating picture of throughput, execution quality, carrier performance and asset readiness—grounded in recorded CDS activity.</p>
               <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] sm:text-[11px] text-text-2">
                 <span className="inline-flex items-center gap-2"><span className="text-text-1">PERIOD</span><span className="font-mono text-text-0">{dateLabel(data.meta.period_start)} — {dateLabel(data.meta.period_end)}</span></span>
                 <span className="hidden sm:block h-3 w-px bg-white/10" />
@@ -1073,7 +1096,7 @@ export function AnalyticsView() {
         </div>
       </section>
 
-      <nav className="flex gap-1 overflow-x-auto rounded-xl border border-white/[.06] bg-[#101419] p-1" aria-label="Analytics sections">
+      <nav className="cpa-nav flex gap-1 overflow-x-auto rounded-xl border border-white/[.06] bg-[#101419] p-1" aria-label="Performance analysis sections">
         {sectionLink('cds-throughput', '01  Throughput')}
         {sectionLink('cds-trip-flow', '02  Flow & lanes')}
         {sectionLink('cds-partners', '03  Partner performance')}
@@ -1085,16 +1108,16 @@ export function AnalyticsView() {
 
       <section aria-label="Key operational indicators">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
-          <div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">01 / Performance indicators</div><h3 className="mt-1 text-base sm:text-lg font-semibold tracking-tight">The operating picture</h3></div>
+          <div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">01 / Executive signal field</div><h3 className="mt-1 text-base sm:text-lg font-semibold tracking-tight">Performance at a glance</h3><p className="mt-1 text-[11px] leading-relaxed text-text-2">Window-scoped activity and current operational exposure, kept deliberately distinct.</p></div>
 
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-2 sm:gap-3">
-          {kpis.map(k => {
+        <div className="cpa-kpi-grid grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-2 sm:gap-3">
+          {kpis.map((k, index) => {
             const t = tone[k.color];
             const sparkMax = Math.max(1, ...k.series);
             const points = k.series.slice(-28).map((value, index, rows) => (index / Math.max(1, rows.length - 1) * 100) + ',' + (29 - value / sparkMax * 25)).join(' ');
             return (
-              <a key={k.id} href={k.target} className={'group relative min-w-0 overflow-hidden rounded-xl border bg-[#11161b] p-3 sm:p-4 transition-all hover:-translate-y-0.5 hover:bg-[#151b21] ' + t.border}>
+              <a key={k.id} href={k.target} style={{ animationDelay: `${index * 55}ms` }} className={'cpa-kpi group relative min-w-0 overflow-hidden rounded-xl border bg-[#11161b] p-3 sm:p-4 transition-all hover:-translate-y-0.5 hover:bg-[#151b21] ' + t.border}>
                 <div className="flex items-start justify-between gap-2"><span className="text-[9px] sm:text-[10px] uppercase leading-relaxed tracking-[.11em] text-text-2">{k.label}</span><span className={'mt-1 w-1.5 h-1.5 rounded-full shrink-0 ' + t.dot} /></div>
                 <div className={'mt-3 text-2xl sm:text-[28px] font-semibold leading-none tracking-[-.035em] tabular-nums ' + (k.color === 'red' && s.delayed_trips > 0 ? 'text-red-300' : 'text-text-0')}>{k.value}</div>
                 <p className="mt-2 min-h-[29px] text-[10px] leading-relaxed text-text-2">{k.detail}</p>
@@ -1108,13 +1131,36 @@ export function AnalyticsView() {
         </div>
       </section>
 
-      <section id="cds-bookings" aria-label="Visual operations mix" className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
+      <section className="cpa-insight-grid grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-2.5 sm:gap-3" aria-label="Derived operational insights">
+        <article className="cpa-insight" style={{ animationDelay: '80ms' }}>
+          <div className="cpa-insight__top"><span>01 / PEAK INTAKE</span><span className="cpa-insight__marker" /></div>
+          <div className="cpa-insight__value">{peakBookingDay && peakBookingDay.bookings_received > 0 ? fmt(peakBookingDay.bookings_received) : '—'}</div>
+          <p>{peakBookingDay && peakBookingDay.bookings_received > 0 ? 'Highest recorded booking day · ' + dateLabel(peakBookingDay.day) : 'No booking peak recorded in this period'}</p>
+        </article>
+        <article className="cpa-insight" style={{ animationDelay: '135ms' }}>
+          <div className="cpa-insight__top"><span>02 / ETA RELIABILITY</span><span className="cpa-insight__marker" /></div>
+          <div className="cpa-insight__value">{s.eta_observed > 0 && s.eta_attainment_pct != null ? pct(s.eta_attainment_pct) : '—'}</div>
+          <p>{s.eta_observed > 0 ? fmt(s.eta_met) + ' of ' + fmt(s.eta_observed) + ' completed trips with a recorded ETA' : 'No ETA baseline in the selected period'}</p>
+        </article>
+        <article className="cpa-insight" style={{ animationDelay: '190ms' }}>
+          <div className="cpa-insight__top"><span>03 / CARRIER LEADER</span><span className="cpa-insight__marker" /></div>
+          <div className="cpa-insight__value cpa-insight__value--name">{topPartner && topPartner.containers_handled > 0 ? topPartner.company_name : 'No volume baseline'}</div>
+          <p>{topPartner && topPartner.containers_handled > 0 ? fmt(topPartner.containers_handled) + ' distinct containers handled in the selected period' : 'No partner handling volume recorded'}</p>
+        </article>
+        <article className="cpa-insight" style={{ animationDelay: '245ms' }}>
+          <div className="cpa-insight__top"><span>04 / OPERATOR ACTIVITY</span><span className="cpa-insight__marker" /></div>
+          <div className="cpa-insight__value cpa-insight__value--name">{topOperator && topOperatorActions > 0 ? topOperator.operator_name : 'No audit events'}</div>
+          <p>{topOperator && topOperatorActions > 0 ? fmt(topOperatorActions) + ' recorded clamp / unclamp actions in the operator leaderboard' : 'No operator clamp / unclamp events recorded'}</p>
+        </article>
+      </section>
+
+      <section id="cds-bookings" aria-label="Visual operations mix" className="cpa-section grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
         {donutPanel('Booking mix', data.booking_pipeline.map((row, index) => ({ label: label(row.status), value: row.count, color: donutColors[index % donutColors.length] })))}
         {donutPanel('Lock inventory', data.lock_statuses.map(row => ({ label: label(row.status), value: row.count, color: ({ installed: '#42cbb5', assigned: '#82b6eb', available: '#f59a3c', removed: '#b69cff', maintenance: '#f0c16c', offline: '#ed8b8b' } as Record<string, string>)[row.status] || '#7e8c9d' })))}
         {donutPanel('Container clamp cycle', data.clamp_state_mix.map(row => ({ label: label(row.state), value: row.count, color: ({ clamped: '#f59a3c', unclamped: '#42cbb5', awaiting_clamp: '#82b6eb', other: '#5f6d7b' } as Record<string, string>)[row.state] || '#7e8c9d' })))}
       </section>
 
-      <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-3 sm:gap-4">
+      <section className="cpa-section grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-3 sm:gap-4">
         <div id="cds-operators">
           <Card className="overflow-hidden min-w-0">
             <div className="p-4 sm:p-5 border-b border-white/[.055] flex justify-between gap-3 items-center"><h3 className="text-sm font-semibold">Clamp / unclamp by operator</h3><span className="text-[9px] uppercase tracking-wider text-text-2">{days}D</span></div>
@@ -1144,16 +1190,17 @@ export function AnalyticsView() {
       </section>
 
       <style>{'@keyframes cdsBarRise { from { transform: scaleY(.08); opacity: .3; } to { transform: scaleY(1); opacity: 1; } } @keyframes cdsPartnerEnter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } } @keyframes cdsPartnerFill { from { width: 0; filter: brightness(1.8); } to { filter: brightness(1); } } .cds-partner-rank { animation: cdsPartnerEnter 560ms cubic-bezier(.2,.7,.2,1) both; } .cds-partner-bar { background: linear-gradient(90deg,#66a6e7 0%,#55c8c2 66%,#9ac7f0 100%); box-shadow: 0 0 14px rgba(100,175,231,.18); animation: cdsPartnerFill 900ms cubic-bezier(.18,.75,.25,1) both; } @media (prefers-reduced-motion: reduce) { .cds-analytics-bar, .cds-partner-rank, .cds-partner-bar { animation: none !important; transition: none !important; } }'}</style>
-      <section id="cds-throughput" className="scroll-mt-4 grid grid-cols-1 2xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.8fr)] gap-3 sm:gap-4">
+      <section id="cds-throughput" className="cpa-section scroll-mt-4 grid grid-cols-1 2xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.8fr)] gap-3 sm:gap-4">
         <Card className="min-w-0 overflow-hidden">
           <div className="flex flex-wrap justify-between gap-3 items-start p-4 sm:p-5 border-b border-white/[.055]">
             <div><div className="text-[9px] uppercase tracking-[.18em] font-mono text-text-2">DAILY OPERATIONS / SELECTED PERIOD</div><h3 className="text-base font-semibold mt-1">Bookings → clamp → unclamp</h3></div>
-            <div className="flex flex-wrap gap-3 text-[10px] text-text-2">
-              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-cds-orange" />Bookings</span>
-              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-cds-teal" />Clamped</span>
-              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-sky-300" />Unclamped</span>
-              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-violet-300" />Trips</span>
-              <span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-sm bg-amber-300" />Delivered</span>
+            <div className="cpa-series-controls flex flex-wrap gap-1.5" role="group" aria-label="Choose activity series">
+              {trendSeriesOptions.map(option => (
+                <button key={option.id} type="button" aria-pressed={trendMetric === option.id} onClick={() => setTrendMetric(option.id)} className="cpa-series-toggle">
+                  <span className="cpa-series-toggle__dot" style={{ background: option.color }} />
+                  {option.label}
+                </button>
+              ))}
             </div>
           </div>
           <div className="p-3 sm:p-5">
@@ -1167,19 +1214,20 @@ export function AnalyticsView() {
                   {trendBuckets.map((row, index) => {
                     const step = 990 / Math.max(1, trendBuckets.length);
                     const groupAnchor = 7 + index * step;
-                    const barWidth = Math.max(4, Math.min(14, step * .13));
-                    const groupWidth = 5 * (barWidth + 1) - 1;
+                    const barWidth = Math.max(5, Math.min(16, step * (trendMetric === 'all' ? .13 : .3)));
+                    const series = [
+                      { id: 'bookings', label: 'bookings', value: row.bookings, color: '#f59a3c' },
+                      { id: 'clamped', label: 'clamped', value: row.clamped, color: '#42cbb5' },
+                      { id: 'unclamped', label: 'unclamped', value: row.unclamped, color: '#82b6eb' },
+                      { id: 'started', label: 'trips', value: row.started, color: '#b69cff' },
+                      { id: 'delivered', label: 'delivered', value: row.delivered, color: '#f0c16c' },
+                    ];
+                    const visibleSeries = trendMetric === 'all' ? series : series.filter(item => item.id === trendMetric);
+                    const groupWidth = visibleSeries.length * (barWidth + 1) - 1;
                     const x = groupAnchor + Math.max(0, (step - groupWidth) / 2);
                     const focusWidth = Math.max(groupWidth, step * .82);
                     const focusX = Math.max(0, x - (focusWidth - groupWidth) / 2);
-                    const series = [
-                      { label: 'bookings', value: row.bookings, color: '#f59a3c' },
-                      { label: 'clamped', value: row.clamped, color: '#42cbb5' },
-                      { label: 'unclamped', value: row.unclamped, color: '#82b6eb' },
-                      { label: 'trips', value: row.started, color: '#b69cff' },
-                      { label: 'delivered', value: row.delivered, color: '#f0c16c' },
-                    ];
-                    return <g key={row.start} tabIndex={0} role="group" aria-label={row.start + ' through ' + row.end} onMouseEnter={() => setActiveTrend(index)} onMouseLeave={() => setActiveTrend(null)} onFocus={() => setActiveTrend(index)} onBlur={() => setActiveTrend(null)}><rect x={focusX} y="18" width={focusWidth} height="193" rx="4" fill={activeTrendIndex === index ? 'rgba(255,255,255,.045)' : 'transparent'} stroke={activeTrendIndex === index ? 'rgba(255,255,255,.08)' : 'transparent'} /><title>{row.start} – {row.end}: {series.map(item => item.label + ' ' + item.value).join(' · ')}</title>{series.map((item, seriesIndex) => {
+                    return <g key={row.start} tabIndex={0} role="group" aria-label={row.start + ' through ' + row.end} onMouseEnter={() => setActiveTrend(index)} onMouseLeave={() => setActiveTrend(null)} onFocus={() => setActiveTrend(index)} onBlur={() => setActiveTrend(null)}><rect x={focusX} y="18" width={focusWidth} height="193" rx="4" fill={activeTrendIndex === index ? 'rgba(255,255,255,.045)' : 'transparent'} stroke={activeTrendIndex === index ? 'rgba(255,255,255,.08)' : 'transparent'} /><title>{row.start} – {row.end}: {series.map(item => item.label + ' ' + item.value).join(' · ')}</title>{visibleSeries.map((item, seriesIndex) => {
                       const height = item.value / maxTrend * 178;
                       return <rect className="cds-analytics-bar" key={item.label} x={x + seriesIndex * (barWidth + 1)} y={204 - height} width={barWidth} height={height} rx="1.5" fill={item.color} style={{ transformBox: 'fill-box', transformOrigin: 'center bottom', animation: 'cdsBarRise 650ms cubic-bezier(.2,.7,.2,1) both', animationDelay: (index * 8 + seriesIndex * 25) + 'ms', transition: 'height 600ms ease' }} />;
                     })}</g>;
@@ -1219,7 +1267,7 @@ export function AnalyticsView() {
         </Card>
       </section>
 
-      <section id="cds-trip-flow" className="scroll-mt-4 space-y-3">
+      <section id="cds-trip-flow" className="cpa-section scroll-mt-4 space-y-3">
         <div className="flex flex-wrap justify-between items-end gap-3">
           <div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">02 / Movement analysis</div><h3 className="text-base sm:text-lg font-semibold mt-1">Flow, lanes & operational pressure</h3></div>
           <div className="flex items-center gap-1 p-1 rounded-lg bg-[#101419] border border-white/[.06]" role="group" aria-label="Analytics lens">
@@ -1253,7 +1301,7 @@ export function AnalyticsView() {
       </section>
 
 
-      <section id="cds-partners" className="scroll-mt-4 space-y-3">
+      <section id="cds-partners" className="cpa-section scroll-mt-4 space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">03 / Carrier network intelligence</div>
@@ -1331,7 +1379,7 @@ export function AnalyticsView() {
         </div>
       </section>
 
-      <section id="cds-assets" className="scroll-mt-4 space-y-3">
+      <section id="cds-assets" className="cpa-section scroll-mt-4 space-y-3">
         <div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">04 / Fleet & container integrity</div><h3 className="text-base sm:text-lg font-semibold mt-1">Assets, utilisation & readiness</h3></div>
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4">
           <Card className="min-w-0 overflow-hidden">
@@ -1392,7 +1440,7 @@ export function AnalyticsView() {
         </div>
       </section>
 
-      <section id="cds-exceptions" className="scroll-mt-4 space-y-3">
+      <section id="cds-exceptions" className="cpa-section scroll-mt-4 space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-[9px] uppercase tracking-[.2em] font-mono text-text-2">05 / Action queue</div><h3 className="text-base sm:text-lg font-semibold mt-1">Exceptions requiring attention</h3><p className="text-[11px] text-text-2 mt-1">Acknowledgement writes through to the backend. Filtering changes this list only; it does not mutate alert state.</p></div><div className="rounded-lg border border-white/[.06] bg-[#101419] px-3 py-2"><span className="text-[9px] uppercase tracking-wider text-text-2">Open incidents</span><span className="ml-3 font-mono text-sm font-semibold">{fmt(s.open_incidents)}</span></div></div>
         <Card className="overflow-hidden">
           <div className="p-3 sm:p-4 border-b border-white/[.055] flex flex-col lg:flex-row lg:items-center gap-3">
