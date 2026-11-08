@@ -82,7 +82,7 @@ describe('CDS Performance Analysis v2 contract', () => {
     for (const marker of [
       'Registered-fleet share in use',
       'Status-derived deployment share',
-      'not a productivity ranking',
+      'not productivity rankings',
       'contractual SLA cannot be inferred',
       'not a time-based utilization rate',
     ]) expect(component).toContain(marker);
