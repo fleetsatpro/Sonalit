@@ -336,7 +336,7 @@
   backdrop-filter: blur(14px);
   pointer-events: none;
 }
-.cc-map__overlay--tl { top: 62px; left: 17px; }
+.cc-map__overlay--tl { top: 62px; left: 180px; }
 .cc-map__overlay--tr { top: 62px; right: 17px; }
 .cc-map__overlay--bl { bottom: 18px; left: 17px; gap: 8px; }
 .cc-orbit-mark { display: grid; place-items: center; width: 25px; height: 25px; color: #8fe1ff; border: 1px solid rgba(105,201,255,.28); border-radius: 7px; background: rgba(72,157,223,.12); }
