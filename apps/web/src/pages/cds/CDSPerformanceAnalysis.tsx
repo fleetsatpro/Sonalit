@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
-  Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, BatteryWarning,
-  CheckCircle2, Clock3, Gauge, PackageCheck, RefreshCw, ShieldAlert, Truck, Users,
-  XCircle,
+  Activity, AlertTriangle, BarChart3, CheckCircle2, Clock3, Gauge, PackageCheck,
+  RefreshCw, ShieldAlert, Truck, Users,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { CDSAnalyticsPayload, CDSAnalyticsSummary } from './types.js';
 import { LoadingState } from './CDSDashboard.js';
 import { useAcknowledgeAlert, useCDSAnalytics } from './hooks.js';
@@ -45,7 +46,6 @@ const signedHours = (value: number | null | undefined) => {
   return (amount > 0 ? '+' : '') + amount.toFixed(1) + 'h';
 };
 const duration = (value: number | null | undefined) => value == null ? '—' : Number(value).toFixed(1) + 'h';
-const safeRatio = (numerator: number, denominator: number) => denominator > 0 ? numerator / denominator * 100 : null;
 const displayDateTime = (value: string | null | undefined) => {
   if (!value) return 'Not recorded';
   const date = new Date(value);
@@ -60,7 +60,7 @@ function compareLabel(current: number | null | undefined, previous: number | nul
   return (delta > 0 ? '+' : delta < 0 ? '−' : '') + fmt(Math.abs(delta)) + ' · ' + change.toFixed(1) + '%';
 }
 
-function SectionHeading({ index, kicker, title, aside }: { index: string; kicker: string; title: string; aside?: React.ReactNode }) {
+function SectionHeading({ index, kicker, title, aside }: { index: string; kicker: string; title: string; aside?: ReactNode }) {
   return (
     <div className="cpa-v2__section-heading">
       <div className="min-w-0">
@@ -80,7 +80,7 @@ function KpiTile({
   label, value, note, comparison, color, icon: Icon, emphasis = false,
 }: {
   label: string; value: string; note: string; comparison?: string; color: string;
-  icon: typeof Activity; emphasis?: boolean;
+  icon: LucideIcon; emphasis?: boolean;
 }) {
   return (
     <article className={'cpa-v2__kpi cpa-v2__kpi--' + color + (emphasis ? ' is-emphasis' : '')}>
@@ -300,7 +300,7 @@ function ServiceQuality({ data }: { data: CDSAnalyticsPayload }) {
         </div>
         <div className="cpa-v2__reliability">
           <div className="cpa-v2__reliability-value">{pct(adherence)}</div>
-          <div className="cpa-v2__reliability-gauge" style={{ '--cpa-value': Math.max(0, Math.min(100, adherence ?? 0)) + '%' } as React.CSSProperties}><span /></div>
+          <div className="cpa-v2__reliability-gauge" style={{ '--cpa-value': Math.max(0, Math.min(100, adherence ?? 0)) + '%' } as CSSProperties}><span /></div>
           <div className="cpa-v2__reliability-foot"><span>{fmt(s.eta_met)} on or before ETA</span><strong>{fmt(s.eta_observed)} delivered with ETA</strong></div>
         </div>
         <div className="cpa-v2__stat-pair">
@@ -379,8 +379,6 @@ function PartnerAnalysis({ data }: { data: CDSAnalyticsPayload }) {
 
 function AssetIntegrity({ data }: { data: CDSAnalyticsPayload }) {
   const s = data.summary;
-  const usableContainers = s.available_containers + s.containers_in_use;
-  const vehicleReadyPool = s.available_vehicles + s.vehicles_in_use;
   return (
     <div className="cpa-v2__asset-grid" id="cds-assets">
       <GlassPanel className="cpa-v2__asset-card">
@@ -610,7 +608,7 @@ export function AnalyticsView() {
       {isError ? <div className="cpa-v2__stale-banner"><AlertTriangle size={14} /> Latest refresh failed. The previously loaded database snapshot is retained; it has not been replaced with sample figures.</div> : null}
 
       <section className="cpa-v2__kpi-grid" aria-label="Performance indicators">
-        {kpis.map((kpi, index) => <KpiTile key={kpi.label} {...kpi} style={undefined} />)}
+        {kpis.map(kpi => <KpiTile key={kpi.label} {...kpi} />)}
       </section>
       <div className="cpa-v2__comparison-note"><span>PERIOD COMPARISON</span><strong>Current {days} days vs immediately preceding {days} days</strong><small>Volume changes are descriptive; a higher count is not automatically a better outcome.</small></div>
 
