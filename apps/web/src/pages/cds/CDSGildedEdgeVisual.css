@@ -51,6 +51,86 @@
   opacity: .9 !important;
 }
 
+/* E-Lock density pass: smaller dashboard tiles and a denser device register.
+   Auto-fill creates more useful columns as the workspace widens without
+   forcing narrow cards on phones. */
+.cds-view-stage[data-view="locks"] .cds-lock-console {
+  padding-top: 12px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-console__head {
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-metrics {
+  gap: 7px;
+  margin: 9px 0;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-metrics > div {
+  min-height: 68px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-metrics b {
+  margin-top: 3px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-metrics span {
+  margin-top: 2px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-power-watch {
+  margin: 8px 0 10px;
+  padding: 8px 10px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-power-watch__items {
+  gap: 6px;
+  margin-top: 7px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-power-watch__items > button {
+  gap: 7px;
+  padding: 7px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-results-head {
+  margin: 12px 1px 7px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 248px), 1fr));
+  align-items: start;
+  gap: 8px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-device {
+  padding: 9px 10px 8px;
+  border-radius: 9px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-device__top {
+  gap: 6px;
+  padding-bottom: 7px;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-device__power {
+  column-gap: 9px;
+  row-gap: 4px;
+  padding: 7px 0;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-device__telemetry {
+  gap: 5px;
+  padding: 7px 0;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-device__assignment {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr);
+  gap: 6px;
+  padding: 7px 0;
+}
+.cds-view-stage[data-view="locks"] .cds-lock-device > footer {
+  gap: 5px;
+  padding-top: 6px;
+}
+@media (max-width: 680px) {
+  .cds-view-stage[data-view="locks"] .cds-lock-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cds-view-stage[data-view="locks"] .cds-lock-console__head {
+    padding: 13px 14px;
+  }
+}
+
 /* Fine-pointer hover reveals a restrained metallic glint without moving cards. */
 @media (hover: hover) and (pointer: fine) {
   .cds-shell :is(.cds-panel, .cds-overview-heading, .cds-overview-metric, .cds-overview-secondary, .cds-overview-panel):hover,
