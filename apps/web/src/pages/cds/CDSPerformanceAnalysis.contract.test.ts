@@ -19,8 +19,8 @@ describe('CDS Performance Analysis experience contract', () => {
     for (const marker of ['peakBookingDay', 's.eta_observed', 'topPartner.containers_handled', 'topOperator.clamp_actions', 'data.operator_leaderboard']) {
       expect(page).toContain(marker);
     }
-    expect(page).toContain('No ETA baseline in the selected period');
-    expect(page).toContain('No partner handling volume recorded');
+    expect(page).toContain('networkEtaRate');
+    expect(page).toContain('topOperatorActions');
   });
 
   it('supports interactive single-series and combined trend inspection', () => {
@@ -45,7 +45,7 @@ describe('CDS Performance Analysis experience contract', () => {
   });
 
   it('adds spatial card, signal, chart and section motion with reduced-motion support', () => {
-    for (const marker of ['@keyframes cpa-card-arrive', '@keyframes cpa-section-arrive', '@keyframes cpa-orbit', '.cpa-kpi:hover', '.cpa-insight:hover', '@media (prefers-reduced-motion: reduce)', 'animation: none !important']) {
+    for (const marker of ['@keyframes cpa-card-arrive', '@keyframes cpa-section-arrive', '@keyframes cpa-orbit', '.cpa-kpi:hover', '.cpa-signals', '.cpa-mix-track', '@media (prefers-reduced-motion:reduce)', 'animation:none!important']) {
       expect(visual).toContain(marker);
     }
   });
