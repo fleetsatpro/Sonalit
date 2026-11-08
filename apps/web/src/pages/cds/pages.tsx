@@ -1143,6 +1143,69 @@ export function AnalyticsView() {
 
       <style>{'@keyframes cdsBarRise { from { transform: scaleY(.08); opacity: .3; } to { transform: scaleY(1); opacity: 1; } } @keyframes cdsPartnerEnter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } } @keyframes cdsPartnerFill { from { width: 0; filter: brightness(1.8); } to { filter: brightness(1); } } .cds-partner-rank { animation: cdsPartnerEnter 560ms cubic-bezier(.2,.7,.2,1) both; } .cds-partner-bar { background: linear-gradient(90deg,#66a6e7 0%,#55c8c2 66%,#9ac7f0 100%); box-shadow: 0 0 14px rgba(100,175,231,.18); animation: cdsPartnerFill 900ms cubic-bezier(.18,.75,.25,1) both; } @media (prefers-reduced-motion: reduce) { .cds-analytics-bar, .cds-partner-rank, .cds-partner-bar { animation: none !important; transition: none !important; } }'}</style>
       <section id="cds-throughput" className="cpa-section scroll-mt-4 grid grid-cols-1 2xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.8fr)] gap-3 sm:gap-4">
+        <Card className="min-w-0 overflow-hidden">
+          <div className="flex flex-wrap justify-between gap-3 items-start p-4 sm:p-5 border-b border-white/[.055]">
+            <div><div className="text-[9px] uppercase tracking-[.18em] font-mono text-text-2">DAILY OPERATIONS / SELECTED PERIOD</div><h3 className="text-base font-semibold mt-1">Bookings → clamp → unclamp</h3></div>
+            <div className="cpa-series-controls flex flex-wrap gap-1.5" role="group" aria-label="Choose activity series">
+              {trendSeriesOptions.map(option => (
+                <button key={option.id} type="button" aria-pressed={trendMetric === option.id} onClick={() => setTrendMetric(option.id)} className="cpa-series-toggle">
+                  <span className="cpa-series-toggle__dot" style={{ background: option.color }} />
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="p-3 sm:p-5">
+            {trendBuckets.length === 0 || trendBuckets.every(row => !row.bookings && !row.clamped && !row.unclamped && !row.started && !row.delivered) ? (
+              <div className="min-h-[240px] flex flex-col justify-center items-center text-center"><div className="text-2xl text-text-2">—</div><div className="text-sm font-medium mt-2">No recorded operations</div></div>
+            ) : (
+              <div className="w-full">
+                <svg viewBox="0 0 1000 255" preserveAspectRatio="none" className="w-full h-[190px] sm:h-[250px]" role="img" aria-label="Daily bookings, clamps, unclamps, trips and deliveries">
+                  <title>Daily booking, clamp, unclamp, trip and delivery counts from persisted CDS timestamps.</title>
+                  {[0, 1, 2, 3, 4].map(i => <g key={i}><line x1="0" x2="1000" y1={18 + i * 48} y2={18 + i * 48} stroke="rgba(255,255,255,.075)" strokeDasharray="3 7" /><text x="0" y={13 + i * 48} fill="rgba(255,255,255,.34)" fontSize="10">{Math.round(maxTrend * (4 - i) / 4)}</text></g>)}
+                  {trendBuckets.map((row, index) => {
+                    const step = 990 / Math.max(1, trendBuckets.length);
+                    const groupAnchor = 7 + index * step;
+                    const barWidth = Math.max(5, Math.min(16, step * (trendMetric === 'all' ? .13 : .3)));
+                    const series = [
+                      { id: 'bookings', label: 'bookings', value: row.bookings, color: '#f59a3c' },
+                      { id: 'clamped', label: 'clamped', value: row.clamped, color: '#42cbb5' },
+                      { id: 'unclamped', label: 'unclamped', value: row.unclamped, color: '#82b6eb' },
+                      { id: 'started', label: 'trips', value: row.started, color: '#b69cff' },
+                      { id: 'delivered', label: 'delivered', value: row.delivered, color: '#f0c16c' },
+                    ];
+                    const visibleSeries = trendMetric === 'all' ? series : series.filter(item => item.id === trendMetric);
+                    const groupWidth = visibleSeries.length * (barWidth + 1) - 1;
+                    const x = groupAnchor + Math.max(0, (step - groupWidth) / 2);
+                    const focusWidth = Math.max(groupWidth, step * .82);
+                    const focusX = Math.max(0, x - (focusWidth - groupWidth) / 2);
+                    return <g key={row.start} tabIndex={0} role="group" aria-label={row.start + ' through ' + row.end} onMouseEnter={() => setActiveTrend(index)} onMouseLeave={() => setActiveTrend(null)} onFocus={() => setActiveTrend(index)} onBlur={() => setActiveTrend(null)}><rect x={focusX} y="18" width={focusWidth} height="193" rx="4" fill={activeTrendIndex === index ? 'rgba(255,255,255,.045)' : 'transparent'} stroke={activeTrendIndex === index ? 'rgba(255,255,255,.08)' : 'transparent'} /><title>{row.start} – {row.end}: {series.map(item => item.label + ' ' + item.value).join(' · ')}</title>{visibleSeries.map((item, seriesIndex) => {
+                      const height = item.value / maxTrend * 178;
+                      return <rect className="cds-analytics-bar" key={item.label} x={x + seriesIndex * (barWidth + 1)} y={204 - height} width={barWidth} height={height} rx="1.5" fill={item.color} style={{ transformBox: 'fill-box', transformOrigin: 'center bottom', animation: 'cdsBarRise 650ms cubic-bezier(.2,.7,.2,1) both', animationDelay: (index * 8 + seriesIndex * 25) + 'ms', transition: 'height 600ms ease' }} />;
+                    })}</g>;
+                  })}
+                </svg>
+                <div aria-live="polite" className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-white/[.06] bg-white/[.025] px-3 py-2.5">
+                  {activeTrendPoint ? <><span className="text-[10px] font-mono text-text-2">{activeTrendPoint.start === activeTrendPoint.end ? dateLabel(activeTrendPoint.start) : dateLabel(activeTrendPoint.start) + ' — ' + dateLabel(activeTrendPoint.end)}</span>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-cds-orange" />Bookings <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.bookings)}</strong></span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-cds-teal" />Clamped <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.clamped)}</strong></span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-sky-300" />Unclamped <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.unclamped)}</strong></span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-violet-300" />Trips <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.started)}</strong></span>
+                      <span className="inline-flex items-center gap-1.5"><i className="w-2 h-2 rounded-sm bg-amber-300" />Delivered <strong className="font-mono tabular-nums text-text-0">{fmt(activeTrendPoint.delivered)}</strong></span>
+                    </div></> : null}
+                </div>
+                <div className="flex justify-between gap-2 px-1 text-[9px] font-mono text-text-2"><span>{dateLabel(trendBuckets[0].start)}</span><span>{dateLabel(trendBuckets[Math.floor(trendBuckets.length / 2)].start)}</span><span>{dateLabel(trendBuckets[trendBuckets.length - 1].end)}</span></div>
+              </div>
+            )}
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="rounded-lg border border-white/[.055] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">ETA attainment</div><div className="text-xl font-semibold mt-1 tabular-nums">{pct(s.eta_attainment_pct)}</div><div className="text-[10px] text-text-2 mt-1">{fmt(s.eta_met)} / {fmt(s.eta_observed)} with known ETA</div></div>
+              <div className="rounded-lg border border-white/[.055] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Average transit</div><div className="text-xl font-semibold mt-1 tabular-nums">{s.avg_transit_hours == null ? '—' : Number(s.avg_transit_hours).toFixed(1) + 'h'}</div><div className="text-[10px] text-text-2 mt-1">Completed trips with both timestamps</div></div>
+              <div className="rounded-lg border border-white/[.055] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Active / moving</div><div className="text-xl font-semibold mt-1 tabular-nums">{fmt(s.active_trips)} <span className="text-sm text-cds-teal">/ {fmt(s.moving_trips)}</span></div><div className="text-[10px] text-text-2 mt-1">Current trip lifecycle</div></div>
+              <div className="rounded-lg border border-white/[.055] p-3"><div className="text-[9px] uppercase tracking-wider text-text-2">Delayed now</div><div className={'text-xl font-semibold mt-1 tabular-nums ' + (s.delayed_trips ? 'text-red-300' : 'text-cds-teal')}>{fmt(s.delayed_trips)}</div><div className="text-[10px] text-text-2 mt-1">Current persisted status</div></div>
+            </div>
+          </div>
+        </Card>
         <Card className="cpa-booking-mix min-w-0 overflow-hidden">
           <div className="border-b border-white/[.055] p-4 sm:p-5">
             <span className="cpa-panel-kicker">BOOKING DISTRIBUTION</span>
