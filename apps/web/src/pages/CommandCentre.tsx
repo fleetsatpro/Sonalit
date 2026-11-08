@@ -212,6 +212,7 @@ export default function CommandCentre() {
   const updatedLabel = overviewQuery.dataUpdatedAt > 0
     ? formatAge(new Date(overviewQuery.dataUpdatedAt).toISOString()) + ' AGO'
     : 'NO VERIFIED SNAPSHOT';
+  const overviewNote = overview ? 'as of ' + updatedLabel.toLowerCase() : 'not available';
 
   const nextDelivery = overview?.next_delivery ?? null;
   const shiftStarted = overview?.shift_started_at ?? null;
@@ -266,13 +267,13 @@ export default function CommandCentre() {
           icon={Truck}
           label='VEHICLES REPORTING'
           value={overview ? overview.kpi.vehicles_live : '—'}
-          note={overview ? 'overview snapshot' : 'not available'}
+          note={overviewNote}
         />
         <Instrument
           icon={Route}
           label='ACTIVE CONVOYS'
           value={overview ? overview.kpi.convoys_active : '—'}
-          note={overview ? 'overview snapshot' : 'not available'}
+          note={overviewNote}
         />
         <Instrument
           icon={AlertTriangle}
@@ -285,7 +286,7 @@ export default function CommandCentre() {
           icon={ShieldCheck}
           label='OPEN INCIDENTS'
           value={overview ? overview.kpi.incidents_open : '—'}
-          note={overview ? 'overview snapshot' : 'not available'}
+          note={overviewNote}
           tone={overview?.kpi.incidents_open ? 'red' : 'neutral'}
         />
         <div className='cc-rail-actions'>
