@@ -268,7 +268,7 @@
 .cpa-v2__reliability {padding:17px 18px 12px}
 .cpa-v2__reliability-value {color:#f4f9ff;font:800 clamp(31px,3vw,40px)/1 'Space Grotesk',sans-serif;letter-spacing:-.06em}
 .cpa-v2__reliability-gauge {position:relative;height:8px;margin-top:13px;overflow:hidden;border:1px solid rgba(170,207,235,.13);border-radius:99px;background:rgba(190,215,238,.075)}
-.cpa-v2__reliability-gauge>span {display:block;width:var(--cpa-value);height:100%;border-radius:inherit;background:linear-gradient(90deg,#55cbb6,#83b8ff 72%,#e5c17c);box-shadow:0 0 15px rgba(99,204,196,.3)}
+.cpa-v2__reliability-gauge>span {display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#55cbb6,#83b8ff 72%,#e5c17c);box-shadow:0 0 15px rgba(99,204,196,.3)}
 .cpa-v2__reliability-foot {display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:8px;color:rgba(157,183,207,.7);font-size:8px}
 .cpa-v2__reliability-foot strong {color:#dce9f5;font-weight:700}
 .cpa-v2__stat-pair {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;margin:0 13px 13px;border:1px solid rgba(156,192,221,.1);border-radius:8px;overflow:hidden;background:rgba(154,192,223,.08)}
