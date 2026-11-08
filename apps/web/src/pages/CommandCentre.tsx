@@ -25,7 +25,7 @@ import '../styles/command-centre-premium.css';
 
 const TacticalMap = lazy(() => import('../components/dashboard/TacticalMap.js'));
 
-type Freshness = 'CURRENT' | 'REFRESHING' | 'AGING' | 'REFRESH FAILED' | 'STALE' | 'CONNECTING' | 'UNAVAILABLE';
+type ResponseState = 'RECEIVED' | 'REFRESHING' | 'RESPONSE AGING' | 'REFRESH FAILED' | 'OLD RESPONSE' | 'CONNECTING' | 'UNAVAILABLE';
 
 function formatTime(iso?: string | null) {
   if (!iso) return '—';
@@ -175,33 +175,36 @@ export default function CommandCentre() {
     ? Math.max(0, Date.now() - overviewQuery.dataUpdatedAt)
     : null;
 
-  let freshness: Freshness = 'UNAVAILABLE';
+  // The overview API does not expose a source-generated timestamp. These states
+  // describe only when this browser received the last successful HTTP response;
+  // they must not be presented as proof that upstream telemetry is current.
+  let responseState: ResponseState = 'UNAVAILABLE';
   if (overview) {
-    if (ageMs != null && ageMs > 180000) freshness = 'STALE';
-    else if (overviewQuery.isRefetchError) freshness = 'REFRESH FAILED';
-    else if (overviewQuery.isFetching) freshness = 'REFRESHING';
-    else if (ageMs != null && ageMs > 90000) freshness = 'AGING';
-    else freshness = 'CURRENT';
+    if (ageMs != null && ageMs > 180000) responseState = 'OLD RESPONSE';
+    else if (overviewQuery.isRefetchError) responseState = 'REFRESH FAILED';
+    else if (overviewQuery.isFetching) responseState = 'REFRESHING';
+    else if (ageMs != null && ageMs > 90000) responseState = 'RESPONSE AGING';
+    else responseState = 'RECEIVED';
   } else if (overviewQuery.isPending) {
-    freshness = 'CONNECTING';
+    responseState = 'CONNECTING';
   }
 
   const threatLevel = overview?.threat?.level ?? null;
   const posture = !overview
     ? 'UNASSESSED'
-    : freshness === 'STALE'
-      ? 'STALE SNAPSHOT'
-      : freshness === 'REFRESH FAILED' || freshness === 'AGING'
-        ? 'DATA AGING'
+    : responseState === 'OLD RESPONSE'
+      ? 'OLD RESPONSE'
+      : responseState === 'REFRESH FAILED' || responseState === 'RESPONSE AGING'
+        ? 'RESPONSE AGING'
         : (threatLevel ?? 'unassessed').toUpperCase();
 
-  const postureTone = !overview || freshness === 'STALE' || freshness === 'UNAVAILABLE'
+  const postureTone = !overview || responseState === 'OLD RESPONSE' || responseState === 'UNAVAILABLE'
     ? 'unknown'
     : threatLevel === 'critical'
       ? 'critical'
       : threatLevel === 'elevated'
         ? 'warn'
-        : freshness === 'REFRESH FAILED' || freshness === 'AGING'
+        : responseState === 'REFRESH FAILED' || responseState === 'RESPONSE AGING'
           ? 'degraded'
           : 'normal';
 
@@ -209,10 +212,10 @@ export default function CommandCentre() {
     ? alertsQuery.data.filter((alert) => alert.severity === 'critical' || alert.severity === 'high').length
     : null;
 
-  const updatedLabel = overviewQuery.dataUpdatedAt > 0
+  const responseAgeLabel = overviewQuery.dataUpdatedAt > 0
     ? formatAge(new Date(overviewQuery.dataUpdatedAt).toISOString()) + ' AGO'
-    : 'NO VERIFIED SNAPSHOT';
-  const overviewNote = overview ? 'as of ' + updatedLabel.toLowerCase() : 'not available';
+    : 'NOT RECEIVED';
+  const overviewNote = overview ? 'response received ' + responseAgeLabel.toLowerCase() : 'not available';
 
   const nextDelivery = overview?.next_delivery ?? null;
   const shiftStarted = overview?.shift_started_at ?? null;
@@ -233,7 +236,7 @@ export default function CommandCentre() {
           <div className='cc-posture__copy'>
             <small>GLOBAL POSTURE</small>
             <strong>{posture}</strong>
-            <em>{overview ? freshness + ' · UPDATED ' + updatedLabel : freshness + ' · NO VERIFIED OVERVIEW'}</em>
+            <em>{overview ? responseState + ' · RECEIVED ' + responseAgeLabel : responseState + ' · NO VERIFIED OVERVIEW'}</em>
           </div>
         </div>
 
@@ -309,8 +312,8 @@ export default function CommandCentre() {
               <span><b>THEATRE / EAST AFRICA</b><small>COMMON OPERATIONAL PICTURE</small></span>
             </div>
             <div className='cc-map__overlay cc-map__overlay--tr'>
-              <span className={'cc-freshness-dot cc-freshness-dot--' + freshness.toLowerCase().replaceAll(' ', '-')} />
-              <span><b>{freshness}</b><small>OVERVIEW SOURCE</small></span>
+              <span className={'cc-freshness-dot cc-freshness-dot--' + responseState.toLowerCase().replaceAll(' ', '-')} />
+              <span><b>{responseState}</b><small>OVERVIEW RESPONSE</small></span>
             </div>
             <div className='cc-map__overlay cc-map__overlay--bl'>
               <span>POSITION RECORDS ONLY</span><i />

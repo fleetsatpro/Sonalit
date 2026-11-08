@@ -349,8 +349,8 @@
 .cc-map__overlay--bl i { width: 3px; height: 3px; border-radius: 50%; background: var(--cc-cyan); box-shadow: 0 0 7px var(--cc-cyan); }
 .cc-freshness-dot { width: 6px; height: 6px; border-radius: 50%; background: #55dcae; box-shadow: 0 0 9px rgba(85,220,174,.55); }
 .cc-freshness-dot--refreshing { background: #6ecbff; animation: cc-fresh-pulse 1.5s ease infinite; }
-.cc-freshness-dot--aging, .cc-freshness-dot--refresh-failed { background: var(--cc-gold); box-shadow: 0 0 9px rgba(233,188,114,.4); }
-.cc-freshness-dot--stale, .cc-freshness-dot--unavailable, .cc-freshness-dot--connecting { background: #8997ad; box-shadow: none; }
+.cc-freshness-dot--response-aging, .cc-freshness-dot--refresh-failed { background: var(--cc-gold); box-shadow: 0 0 9px rgba(233,188,114,.4); }
+.cc-freshness-dot--old-response, .cc-freshness-dot--unavailable, .cc-freshness-dot--connecting { background: #8997ad; box-shadow: none; }
 .cc-map__index { position: absolute; right: 18px; bottom: 18px; z-index: 7; color: #d3e7fa; font: 800 8px var(--d-font-mono,monospace); letter-spacing: .08em; text-shadow: 0 2px 8px #000; pointer-events: none; }
 .cc-map__index span { padding: 0 4px; color: #7690aa; }
 .cc-map__crosshair { position: absolute; z-index: 6; top: 50%; left: 50%; width: 28px; height: 28px; opacity: .22; transform: translate(-50%,-50%); pointer-events: none; }

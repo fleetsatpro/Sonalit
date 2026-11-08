@@ -124,7 +124,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
   ].sort((x, y) => x.rank - y.rank || new Date(y.at).getTime() - new Date(x.at).getTime());
 
   const nextDelivery = overview?.next_delivery ?? null;
-  const focusConvoy = nextDelivery ? convoys.find((c) => c.id === nextDelivery.convoy_id) ?? null : convoys[0] ?? null;
+  const focusConvoy = nextDelivery ? convoys.find((c) => c.id === nextDelivery.convoy_id) ?? null : null;
 
   return (
     <aside className='d-console-queue' style={{ background: 'var(--d-carbon)', borderLeft: '1px solid var(--d-rim2)', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none', minHeight: 0 }}>
@@ -189,11 +189,11 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
         ))}
       </div>
 
-      {(nextDelivery || focusConvoy) && (
+      {nextDelivery && (
         <div style={{ borderTop: '1px solid var(--d-rim2)', padding: '10px 14px 14px', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{ width: 3, height: 12, background: '#37e6ff', borderRadius: 2, flexShrink: 0 }} />
-            <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 10, letterSpacing: '.1em', color: 'var(--d-t1)' }}>CONVOY {(nextDelivery?.convoy_name ?? focusConvoy?.name ?? '').toUpperCase()}</span>
+            <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 10, letterSpacing: '.1em', color: 'var(--d-t1)' }}>NEXT DELIVERY / {nextDelivery.convoy_name.toUpperCase()}</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div style={{ background: 'var(--d-well)', border: '1px solid var(--d-rim2)', borderRadius: 7, padding: '7px 10px' }}>
@@ -202,7 +202,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
             </div>
             <div style={{ background: 'var(--d-well)', border: '1px solid var(--d-rim2)', borderRadius: 7, padding: '7px 10px' }}>
               <div style={{ fontSize: 8, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.1em', color: 'var(--d-t3)', marginBottom: 2 }}>STATUS</div>
-              <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 13, color: '#37e6ff', textTransform: 'uppercase' }}>{focusConvoy?.status ?? 'scheduled'}</div>
+              <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 13, color: '#37e6ff', textTransform: 'uppercase' }}>{focusConvoy?.status ?? 'STATE NOT IN LIVE FEED'}</div>
             </div>
           </div>
           {focusConvoy?.progress != null && <div style={{ marginTop: 8 }}><div style={{ height: 4, background: 'var(--d-lift2)', borderRadius: 2, overflow: 'hidden' }}><div style={{ height: '100%', width: `${Math.min(100, Math.max(0, focusConvoy.progress))}%`, background: '#37e6ff', borderRadius: 2, transition: 'width .6s ease' }} /></div><div style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)', marginTop: 3, textAlign: 'right' }}>{Math.round(focusConvoy.progress)}% of route</div></div>}
