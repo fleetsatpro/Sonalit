@@ -699,11 +699,43 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         LEFT JOIN cds_electronic_locks l ON l.status = lsv.status AND l.org_id = $2 AND l.deleted_at IS NULL
        GROUP BY lsv.status
     ),
-    booking_status_values(status) AS (VALUES ('draft'), ('pending'), ('approved'), ('assigned'), ('in_progress'), ('delivered'), ('completed'), ('billed'), ('cancelled')),
+    -- One mutually-exclusive operational stage per booking. The stage is
+    -- derived from the booking's own state plus its current clamp/trip evidence;
+    -- this keeps the mix at booking grain (not container or trip grain).
+    booking_mix_classified AS (
+      SELECT b.id,
+             CASE
+               WHEN b.status = 'cancelled' THEN 'cancelled'
+               WHEN b.status IN ('delivered', 'completed', 'billed') THEN 'completed'
+               WHEN b.status = 'in_progress' OR EXISTS (
+                 SELECT 1
+                   FROM cds_trips t
+                  WHERE t.booking_id = b.id AND t.org_id = $2 AND t.deleted_at IS NULL
+                    AND t.status IN ('dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed', 'completed')
+               ) THEN 'in_progress'
+               WHEN EXISTS (
+                 SELECT 1
+                   FROM cds_booking_containers bc
+                   LEFT JOIN cds_trips t
+                     ON t.id = bc.trip_id AND t.org_id = $2 AND t.deleted_at IS NULL
+                  WHERE bc.booking_id = b.id AND bc.org_id = $2 AND bc.deleted_at IS NULL
+                    AND bc.status NOT IN ('delivered', 'completed')
+                    AND (
+                      (bc.clamped_at IS NOT NULL AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at))
+                      OR t.status = 'locked'
+                    )
+               ) THEN 'clamped'
+               ELSE 'yard'
+             END AS status
+        FROM cds_bookings b
+       WHERE b.org_id = $2 AND b.deleted_at IS NULL
+    ),
+    booking_status_values(status) AS (VALUES ('clamped'), ('cancelled'), ('completed'), ('yard'), ('in_progress')),
     booking_pipeline AS (
-      SELECT bsv.status, COUNT(b.id)::int AS count FROM booking_status_values bsv
-      LEFT JOIN cds_bookings b ON b.status = bsv.status AND b.org_id = $2 AND b.deleted_at IS NULL
-      GROUP BY bsv.status
+      SELECT bsv.status, COUNT(bmc.id)::int AS count
+        FROM booking_status_values bsv
+        LEFT JOIN booking_mix_classified bmc ON bmc.status = bsv.status
+       GROUP BY bsv.status
     ),
     operator_activity AS (
       SELECT e.operator_key,
