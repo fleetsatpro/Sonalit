@@ -469,6 +469,8 @@ export interface CDSAnalyticsSummary {
   containers_clamped_over_24h: number;
   unclamps_after_24h: number;
   avg_clamp_duration_hours: number | null;
+  p50_clamp_duration_hours: number | null;
+  p90_clamp_duration_hours: number | null;
   trips_started: number;
   deliveries_completed: number;
   active_trips: number;
@@ -478,6 +480,11 @@ export interface CDSAnalyticsSummary {
   eta_observed: number;
   eta_attainment_pct: number | null;
   avg_transit_hours: number | null;
+  p50_transit_hours: number | null;
+  p90_transit_hours: number | null;
+  avg_eta_variance_hours: number | null;
+  p90_eta_late_hours: number | null;
+  trips_with_data_gaps: number;
   trips_missing_vehicle: number;
   trips_missing_driver: number;
   trips_missing_container: number;
@@ -514,6 +521,14 @@ export interface CDSAnalyticsSummary {
 export interface CDSAnalyticsPayload {
   meta: { window_days: CDSAnalyticsWindow; period_start: string; period_end: string; generated_at: string };
   summary: CDSAnalyticsSummary;
+  period_comparison?: {
+    bookings_received: number; containers_clamped: number; containers_unclamped: number;
+    trips_started: number; deliveries_completed: number;
+    eta_met: number; eta_observed: number; eta_attainment_pct: number | null;
+  };
+  booking_cohort?: {
+    bookings_received: number; bookings_with_clamp: number; bookings_with_trip: number; bookings_delivered: number;
+  };
   daily: Array<{
     day: string; bookings_received: number; containers_clamped: number; containers_unclamped: number;
     trips_started: number; deliveries_completed: number;
@@ -541,6 +556,7 @@ export interface CDSAnalyticsPayload {
   lanes: Array<{
     origin: string; destination: string; trips_started: number; deliveries_completed: number;
     currently_delayed: number; avg_transit_hours: number | null;
+    p50_transit_hours?: number | null; delivery_completion_pct?: number | null;
   }>;
   alerts: Array<{
     id: string; type: string; severity: string; title: string; message: string;
