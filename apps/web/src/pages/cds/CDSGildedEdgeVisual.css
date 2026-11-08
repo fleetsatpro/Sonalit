@@ -20,7 +20,7 @@
 .cds-view-stage[data-view="locks"] :is(.cds-lock-device, .cds-lock-battery-trend) {
   border-color: var(--cds-gold-edge) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 239, 194, .12),
+    inset 0 1px 0 var(--cds-gold-foil),
     inset 0 -1px 0 rgba(116, 79, 24, .15),
     0 0 0 1px var(--cds-gold-edge-soft),
     0 10px 24px rgba(0, 0, 0, .2) !important;
