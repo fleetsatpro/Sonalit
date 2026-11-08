@@ -57,14 +57,14 @@ describe('CDS gilded edge visual contract', () => {
   });
 
   it('keeps the dark surface, text contrast, semantic accents and control focus unchanged', () => {
-    expect(gilded).not.toMatch(/(^|\\n)\\s*color\\s*:/);
-    expect(gilded.match(/background\\s*:/g) ?? []).toHaveLength(1);
+    expect(gilded).not.toMatch(/(^|\n)\s*color\s*:/);
+    expect(gilded.match(/background\s*:/g) ?? []).toHaveLength(1);
     expect(gilded).toContain('.cds-booking-command::after');
     expect(gilded).toContain('preserve the existing cyan focus ring');
   });
 
   it('adds no continuous animation, layout movement, filtering or motion-sensitive effect', () => {
-    expect(gilded).not.toMatch(/animation\\s*:|@keyframes|transform\\s*:|filter\\s*:/);
+    expect(gilded).not.toMatch(/animation\s*:|@keyframes|transform\s*:|filter\s*:/);
     expect(gilded).not.toMatch(/background-position|will-change/);
     expect(gilded).toContain('@media (hover: hover) and (pointer: fine)');
   });
