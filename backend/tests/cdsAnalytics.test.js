@@ -63,6 +63,12 @@ describe('GET /cds/analytics', () => {
     expect(captured[0].sql).toContain("('new'), ('good'), ('fair'), ('damaged'), ('retired')");
     expect(captured[0].sql).toContain("'container_statuses'");
     expect(captured[0].sql).toContain('battery_level < 25');
+    expect(captured[0].sql).toContain("VALUES ('clamped'), ('cancelled'), ('completed'), ('yard'), ('in_progress')");
+    expect(captured[0].sql).toContain("WHEN b.status = 'cancelled' THEN 'cancelled'");
+    expect(captured[0].sql).toContain("WHEN b.status IN ('delivered', 'completed', 'billed') THEN 'completed'");
+    expect(captured[0].sql).toContain("OR t.status = 'locked'");
+    expect(captured[0].sql).toContain("WHEN b.status = 'in_progress' OR EXISTS");
+    expect(captured[0].sql).toContain('booking_mix_classified');
     expect(captured[0].sql).toContain('bookings_received');
     expect(captured[0].sql).toContain('clamp_action_events AS');
     expect(captured[0].sql).toContain("a.action IN ('clamp', 'unclamp')");
