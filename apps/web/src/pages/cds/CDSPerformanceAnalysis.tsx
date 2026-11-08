@@ -643,7 +643,7 @@ export function AnalyticsView() {
       ) : null}
       {section === 'network' ? (
         <div id="cpa-panel-network" className="cpa-v2__workspace" role="region" aria-label="Network performance" tabIndex={0}>
-          <SectionHeading index="01–02" kicker="CARRIER / CORRIDOR PERFORMANCE" title="Network execution" />
+          <SectionHeading index="06–07" kicker="CARRIER / CORRIDOR PERFORMANCE" title="Network execution" />
           <LaneAnalysis data={data} />
           <PartnerAnalysis data={data} />
         </div>
@@ -657,7 +657,7 @@ export function AnalyticsView() {
       ) : null}
       {section === 'exceptions' ? (
         <div id="cpa-panel-exceptions" className="cpa-v2__workspace" role="region" aria-label="Operational exceptions" tabIndex={0}>
-          <SectionHeading index="01–02" kicker="EXPOSURE / ACTION REQUIRED" title="Operational exceptions" />
+          <SectionHeading index="14–15" kicker="EXPOSURE / ACTION REQUIRED" title="Operational exceptions" />
           <div className="cpa-v2__ops-grid">
             <OverdueClamps data={data} />
             <ExceptionQueue data={data} />
