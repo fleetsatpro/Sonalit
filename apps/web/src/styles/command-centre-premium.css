@@ -288,6 +288,9 @@
   min-height: 0 !important;
   padding: 0 !important;
 }
+.cc-map__canvas > div > div:first-child > div:first-child,
+.cc-map__canvas > div > div:first-child > span:nth-child(2),
+.cc-map__canvas > div > div:first-child > span:nth-child(3) { display: none !important; }
 .cc-map__canvas > div > div:first-child {
   position: absolute !important;
   z-index: 9 !important;
