@@ -42,8 +42,6 @@ export interface QueueItem {
   body?: string;
   at: string;
   rank: number;
-  severity: string;
-  source: string;
   ackId?: string;
 }
 
@@ -81,14 +79,9 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
   const convoys = useDashboardStore((s) => s.convoys);
   const { setAlerts, removeAlert } = useDashboardStore.getState();
 
-  const alertsQuery = useQuery({
+  useQuery({
     queryKey: ['dashboard-alerts-ops'],
-    queryFn: async () => {
-      const r = await api.get<{ data?: DashboardAlert[] }>('/dashboard/alerts?limit=10');
-      const records = r.data.data ?? [];
-      setAlerts(records);
-      return records;
-    },
+    queryFn: async () => { const r = await api.get<{ data: DashboardAlert[] }>('/dashboard/alerts?limit=10'); setAlerts(r.data.data ?? []); return r.data.data; },
     staleTime: 30000,
     refetchInterval: 60000,
   });
@@ -106,8 +99,6 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
       ...(a.summary && a.summary.trim() !== a.title.trim() ? { body: shortenIds(a.summary) } : {}),
       at: a.occurred_at,
       rank: SEV_RANK[a.severity] ?? 3,
-      severity: a.severity,
-      source: 'ALERT REGISTER',
       ...(!a.acknowledged ? { ackId: a.id } : {}),
     })),
     ...feedItems
@@ -118,17 +109,15 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
         title: shortenIds(f.message),
         at: f.timestamp,
         rank: SEV_RANK[f.severity ?? f.type] ?? 3,
-        severity: f.severity ?? 'unclassified',
-        source: 'OPERATIONAL EVENT FEED',
       })),
   ].sort((x, y) => x.rank - y.rank || new Date(y.at).getTime() - new Date(x.at).getTime());
 
   const nextDelivery = overview?.next_delivery ?? null;
-  const focusConvoy = nextDelivery ? convoys.find((c) => c.id === nextDelivery.convoy_id) ?? null : null;
+  const focusConvoy = nextDelivery ? convoys.find((c) => c.id === nextDelivery.convoy_id) ?? null : convoys[0] ?? null;
 
   return (
     <aside className='d-console-queue' style={{ background: 'var(--d-carbon)', borderLeft: '1px solid var(--d-rim2)', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none', minHeight: 0 }}>
-      <SectionHeader count={items.length + (panic ? 1 : 0) + (voiceNote ? 1 : 0)}>PRIORITY QUEUE</SectionHeader>
+      <SectionHeader count={items.length + (panic ? 1 : 0)}>PRIORITY QUEUE</SectionHeader>
 
       {panic && (
         <div style={{ padding: '0 14px 10px' }}>
@@ -160,15 +149,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
       <div style={{ padding: '0 14px 10px' }}><Suspense fallback={null}><ResponseCrewPanel /></Suspense></div>
 
       <div style={{ flex: 1, padding: '0 14px' }}>
-        {items.length === 0 && !panic && !voiceNote && (
-          <div style={{ fontSize: 11, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', lineHeight: 1.55, padding: '12px 3px' }}>
-            {alertsQuery.isPending
-              ? 'Connecting to the alert feed…'
-              : alertsQuery.isError && !alertsQuery.data
-                ? 'Alert feed unavailable. An empty queue is not an all-clear.'
-                : 'No items in the currently loaded operational queue.'}
-          </div>
-        )}
+        {items.length === 0 && !panic && !voiceNote && <div style={{ fontSize: 12, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', padding: '10px 2px' }}>All clear — awaiting new operational events.</div>}
         {items.map((it) => (
           <div key={it.id} style={{ padding: '11px 11px', marginBottom: 8, background: 'linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.015))', borderRadius: 10, border: '1px solid var(--d-rim2)', borderLeft: `4px solid rgb(${it.chip.hue})` }}>
             <button type='button' onClick={() => onSelect?.(it)} disabled={!onSelect} style={{ width: '100%', display: 'block', padding: 0, margin: 0, background: 'none', border: 0, color: 'inherit', textAlign: 'left', cursor: onSelect ? 'pointer' : 'default' }} aria-label={`Open ${it.title}`}>
@@ -189,11 +170,11 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
         ))}
       </div>
 
-      {nextDelivery && (
+      {(nextDelivery || focusConvoy) && (
         <div style={{ borderTop: '1px solid var(--d-rim2)', padding: '10px 14px 14px', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{ width: 3, height: 12, background: '#37e6ff', borderRadius: 2, flexShrink: 0 }} />
-            <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 10, letterSpacing: '.1em', color: 'var(--d-t1)' }}>NEXT DELIVERY / {nextDelivery.convoy_name.toUpperCase()}</span>
+            <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 10, letterSpacing: '.1em', color: 'var(--d-t1)' }}>CONVOY {(nextDelivery?.convoy_name ?? focusConvoy?.name ?? '').toUpperCase()}</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div style={{ background: 'var(--d-well)', border: '1px solid var(--d-rim2)', borderRadius: 7, padding: '7px 10px' }}>
@@ -202,7 +183,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
             </div>
             <div style={{ background: 'var(--d-well)', border: '1px solid var(--d-rim2)', borderRadius: 7, padding: '7px 10px' }}>
               <div style={{ fontSize: 8, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.1em', color: 'var(--d-t3)', marginBottom: 2 }}>STATUS</div>
-              <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 13, color: '#37e6ff', textTransform: 'uppercase' }}>{focusConvoy?.status ?? 'STATE NOT IN LIVE FEED'}</div>
+              <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 13, color: '#37e6ff', textTransform: 'uppercase' }}>{focusConvoy?.status ?? 'scheduled'}</div>
             </div>
           </div>
           {focusConvoy?.progress != null && <div style={{ marginTop: 8 }}><div style={{ height: 4, background: 'var(--d-lift2)', borderRadius: 2, overflow: 'hidden' }}><div style={{ height: '100%', width: `${Math.min(100, Math.max(0, focusConvoy.progress))}%`, background: '#37e6ff', borderRadius: 2, transition: 'width .6s ease' }} /></div><div style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)', marginTop: 3, textAlign: 'right' }}>{Math.round(focusConvoy.progress)}% of route</div></div>}

@@ -563,7 +563,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap', rowGap: 6, ...(expanded && { padding: '12px 16px 0' }) }}>
         <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2, flexShrink: 0 }} />
         <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>TACTICAL MAP</span>
-        <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · operational view</span>
+        <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · Live</span>
         <div style={{ flex: 1 }} />
         <LegendDot color='#29ffb0' label='OK' />
         <LegendDot color='#ffc93f' label='WARN' />
