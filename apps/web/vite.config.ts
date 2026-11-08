@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import cesium from 'vite-plugin-cesium';
 import path from 'path';
+import { stripCesiumGlobalHtmlAssets } from './scripts/cesiumHtmlAssets.js';
 
 function clientPhoneValidationTransform(): Plugin {
   return {
@@ -27,11 +28,25 @@ function clientPhoneValidationTransform(): Plugin {
   };
 }
 
+
+function deferCesiumGlobalAssets(): Plugin {
+  return {
+    name: 'sonalit-defer-cesium-global-assets',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html) {
+        return stripCesiumGlobalHtmlAssets(html);
+      },
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     clientPhoneValidationTransform(),
     react(),
     cesium(),
+    deferCesiumGlobalAssets(),
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
