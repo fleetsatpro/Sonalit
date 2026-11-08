@@ -55,9 +55,17 @@ const displayDateTime = (value: string | null | undefined) => {
 function compareLabel(current: number | null | undefined, previous: number | null | undefined) {
   if (current == null || previous == null) return 'No comparable baseline';
   const delta = Number(current) - Number(previous);
-  if (previous === 0) return delta === 0 ? 'No change' : 'New activity';
+  if (previous === 0) return delta === 0 ? 'No change' : 'New activity · +' + fmt(delta);
   const change = Math.abs(delta / Number(previous) * 100);
-  return (delta > 0 ? '+' : delta < 0 ? '−' : '') + fmt(Math.abs(delta)) + ' · ' + change.toFixed(1) + '%';
+  const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
+  return sign + fmt(Math.abs(delta)) + ' · ' + sign + change.toFixed(1) + '%';
+}
+
+function compareRate(current: number | null | undefined, previous: number | null | undefined) {
+  if (current == null || previous == null) return 'No comparable sample';
+  const delta = Number(current) - Number(previous);
+  const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
+  return delta === 0 ? 'No change' : sign + Math.abs(delta).toFixed(1) + ' percentage points';
 }
 
 function SectionHeading({ index, kicker, title, aside }: { index: string; kicker: string; title: string; aside?: ReactNode }) {
@@ -465,7 +473,7 @@ function OperationsAnalysis({ data }: { data: CDSAnalyticsPayload }) {
       </GlassPanel>
       <GlassPanel className="cpa-v2__quality-panel">
         <div className="cpa-v2__panel-head"><div><div className="cpa-v2__kicker"><span>13</span> RECORD INTEGRITY</div><h3>Trip data completeness</h3><p>Assignment checks apply only to lifecycle stages that require those fields.</p></div><Gauge size={17} /></div>
-        <div className="cpa-v2__quality-total"><strong>{fmt(s.trips_with_data_gaps)}</strong><span>active trips with one or more missing fields</span></div>
+        <div className="cpa-v2__quality-total"><strong>{fmt(s.trips_with_data_gaps)}</strong><span>trips with one or more required fields missing</span></div>
         <div className="cpa-v2__quality-list">
           {dataGaps.map(item => <div key={item.label}><span>{item.label}</span><strong>{fmt(item.value)}</strong></div>)}
         </div>
@@ -574,7 +582,7 @@ export function AnalyticsView() {
     { label: 'Containers clamped', value: fmt(s.containers_clamped), note: 'Distinct container records', comparison: comparison(s.containers_clamped, previous?.containers_clamped), color: 'teal', icon: CheckCircle2 },
     { label: 'Trips started', value: fmt(s.trips_started), note: 'Trip creation timestamps', comparison: comparison(s.trips_started, previous?.trips_started), color: 'blue', icon: Truck },
     { label: 'Deliveries completed', value: fmt(s.deliveries_completed), note: 'Delivery timestamps in window', comparison: comparison(s.deliveries_completed, previous?.deliveries_completed), color: 'violet', icon: PackageCheck },
-    { label: 'ETA adherence', value: pct(s.eta_attainment_pct), note: fmt(s.eta_met) + ' / ' + fmt(s.eta_observed) + ' known-ETA deliveries', comparison: previous?.eta_observed ? comparison(s.eta_attainment_pct, previous.eta_attainment_pct) : 'No comparable ETA sample', color: 'blue', icon: Gauge },
+    { label: 'ETA adherence', value: pct(s.eta_attainment_pct), note: fmt(s.eta_met) + ' / ' + fmt(s.eta_observed) + ' known-ETA deliveries', comparison: previous?.eta_observed ? compareRate(s.eta_attainment_pct, previous.eta_attainment_pct) : 'No comparable ETA sample', color: 'blue', icon: Gauge },
     { label: 'Clamped beyond 24h', value: fmt(s.containers_clamped_over_24h), note: 'Current unresolved exposure', color: 'risk', icon: AlertTriangle, emphasis: s.containers_clamped_over_24h > 0 },
   ];
 
