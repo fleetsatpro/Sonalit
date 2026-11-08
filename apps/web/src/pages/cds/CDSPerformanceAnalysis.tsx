@@ -298,13 +298,13 @@ function BookingCohort({ data }: { data: CDSAnalyticsPayload }) {
 function ServiceQuality({ data }: { data: CDSAnalyticsPayload }) {
   const s = data.summary;
   const adherence = s.eta_attainment_pct;
-  const etaTone = adherence == null ? 'neutral' : adherence >= 90 ? 'good' : adherence >= 75 ? 'watch' : 'risk';
+  const etaTone = adherence == null ? 'neutral' : 'observed';
   return (
     <div className="cpa-v2__service-grid" id="cds-service">
       <GlassPanel className="cpa-v2__service-card">
         <div className="cpa-v2__panel-head">
           <div><div className="cpa-v2__kicker"><span>04</span> DELIVERY RELIABILITY</div><h3>ETA adherence</h3></div>
-          <span className={'cpa-v2__status-tag is-' + etaTone}>{adherence == null ? 'NO SAMPLE' : etaTone === 'good' ? 'ON TRACK' : etaTone === 'watch' ? 'WATCH' : 'BELOW THRESHOLD'}</span>
+          <span className={'cpa-v2__status-tag is-' + etaTone}>{adherence == null ? 'NO SAMPLE' : 'OBSERVED'}</span>
         </div>
         <div className="cpa-v2__reliability">
           <div className="cpa-v2__reliability-value">{pct(adherence)}</div>
