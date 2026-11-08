@@ -88,13 +88,6 @@ body {
 
 /* Shared interaction response: tactile feedback, not gratuitous movement. */
 @media (prefers-reduced-motion: no-preference) {
-  #root :is(button:not(:disabled), a[href], [role="button"]) {
-    transition:
-      color 160ms ease,
-      border-color 160ms ease,
-      background-color 160ms ease,
-      box-shadow 180ms ease;
-  }
   #root :is(button:not(:disabled), a[href], [role="button"]):active {
     filter: brightness(1.06);
   }
