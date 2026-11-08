@@ -42,6 +42,8 @@ export interface QueueItem {
   body?: string;
   at: string;
   rank: number;
+  severity: string;
+  source: string;
   ackId?: string;
 }
 
@@ -79,9 +81,14 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
   const convoys = useDashboardStore((s) => s.convoys);
   const { setAlerts, removeAlert } = useDashboardStore.getState();
 
-  useQuery({
+  const alertsQuery = useQuery({
     queryKey: ['dashboard-alerts-ops'],
-    queryFn: async () => { const r = await api.get<{ data: DashboardAlert[] }>('/dashboard/alerts?limit=10'); setAlerts(r.data.data ?? []); return r.data.data; },
+    queryFn: async () => {
+      const r = await api.get<{ data?: DashboardAlert[] }>('/dashboard/alerts?limit=10');
+      const records = r.data.data ?? [];
+      setAlerts(records);
+      return records;
+    },
     staleTime: 30000,
     refetchInterval: 60000,
   });
@@ -99,6 +106,8 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
       ...(a.summary && a.summary.trim() !== a.title.trim() ? { body: shortenIds(a.summary) } : {}),
       at: a.occurred_at,
       rank: SEV_RANK[a.severity] ?? 3,
+      severity: a.severity,
+      source: 'ALERT REGISTER',
       ...(!a.acknowledged ? { ackId: a.id } : {}),
     })),
     ...feedItems
@@ -109,6 +118,8 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
         title: shortenIds(f.message),
         at: f.timestamp,
         rank: SEV_RANK[f.severity ?? f.type] ?? 3,
+        severity: f.severity ?? 'unclassified',
+        source: 'OPERATIONAL EVENT FEED',
       })),
   ].sort((x, y) => x.rank - y.rank || new Date(y.at).getTime() - new Date(x.at).getTime());
 
@@ -117,7 +128,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
 
   return (
     <aside className='d-console-queue' style={{ background: 'var(--d-carbon)', borderLeft: '1px solid var(--d-rim2)', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none', minHeight: 0 }}>
-      <SectionHeader count={items.length + (panic ? 1 : 0)}>PRIORITY QUEUE</SectionHeader>
+      <SectionHeader count={items.length + (panic ? 1 : 0) + (voiceNote ? 1 : 0)}>PRIORITY QUEUE</SectionHeader>
 
       {panic && (
         <div style={{ padding: '0 14px 10px' }}>
@@ -149,7 +160,15 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
       <div style={{ padding: '0 14px 10px' }}><Suspense fallback={null}><ResponseCrewPanel /></Suspense></div>
 
       <div style={{ flex: 1, padding: '0 14px' }}>
-        {items.length === 0 && !panic && !voiceNote && <div style={{ fontSize: 12, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', padding: '10px 2px' }}>All clear — awaiting new operational events.</div>}
+        {items.length === 0 && !panic && !voiceNote && (
+          <div style={{ fontSize: 11, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', lineHeight: 1.55, padding: '12px 3px' }}>
+            {alertsQuery.isPending
+              ? 'Connecting to the alert feed…'
+              : alertsQuery.isError && !alertsQuery.data
+                ? 'Alert feed unavailable. An empty queue is not an all-clear.'
+                : 'No items in the currently loaded operational queue.'}
+          </div>
+        )}
         {items.map((it) => (
           <div key={it.id} style={{ padding: '11px 11px', marginBottom: 8, background: 'linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.015))', borderRadius: 10, border: '1px solid var(--d-rim2)', borderLeft: `4px solid rgb(${it.chip.hue})` }}>
             <button type='button' onClick={() => onSelect?.(it)} disabled={!onSelect} style={{ width: '100%', display: 'block', padding: 0, margin: 0, background: 'none', border: 0, color: 'inherit', textAlign: 'left', cursor: onSelect ? 'pointer' : 'default' }} aria-label={`Open ${it.title}`}>
