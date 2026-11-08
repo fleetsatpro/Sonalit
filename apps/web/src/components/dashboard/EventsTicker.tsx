@@ -13,77 +13,66 @@ const SEVERITY_COLOR: Record<string, string> = {
   default: 'var(--d-t3)',
 };
 
-const SEED_EVENTS = [
-  { id: 's1', severity: 'convoy', message: 'SONALIT Command Center online — all systems nominal' },
-  { id: 's2', severity: 'low', message: 'Fleet telemetry streaming live' },
-  { id: 's3', severity: 'convoy', message: 'GPS positioning active on all tracked vehicles' },
-];
-
 const EventsTicker = React.memo(function EventsTicker() {
-  const tickerEvents = useDashboardStore((s) => s.tickerEvents);
+  const tickerEvents = useDashboardStore((state) => state.tickerEvents);
   const containerRef = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = React.useState(false);
-
-  const events = tickerEvents.length > 0 ? tickerEvents : SEED_EVENTS;
-  const doubled = [...events, ...events];
+  const doubled = tickerEvents.length > 0 ? [...tickerEvents, ...tickerEvents] : [];
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.style.animationPlayState = paused ? 'paused' : 'running';
+    const element = containerRef.current;
+    if (!element) return;
+    element.style.animationPlayState = paused ? 'paused' : 'running';
   }, [paused]);
 
-  const getColor = (severity: string): string => SEVERITY_COLOR[severity] ?? (SEVERITY_COLOR['default'] as string);
+  const getColor = (severity: string): string =>
+    SEVERITY_COLOR[severity] ?? (SEVERITY_COLOR.default as string);
 
   return (
     <div
+      className='cc-event-ticker'
+      role='status'
+      aria-label='Recent operational events'
       style={{
-        // Bottom rail of the command console — a fixed-height flex row, so
-        // no sticky positioning needed.
         flexShrink: 0,
-        height: 'var(--d-tick-h)',
-        background: 'rgba(8,14,24,.95)',
-        borderTop: '1px solid var(--d-rim)',
+        minHeight: 45,
         overflow: 'hidden',
         maskImage: 'linear-gradient(90deg, transparent, black 3%, black 97%, transparent)',
         WebkitMaskImage: 'linear-gradient(90deg, transparent, black 3%, black 97%, transparent)',
-        cursor: 'default',
       }}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
     >
-      <div
-        ref={containerRef}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          height: '100%',
-          width: 'max-content',
-          animation: 'd-tick 45s linear infinite',
-          willChange: 'transform',
-        }}
-      >
-        {doubled.map((evt, i) => (
-          <span key={`${evt.id}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 24px', flexShrink: 0 }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-              background: getColor(evt.severity),
-            }} />
-            <span style={{
-              fontSize: 10,
-              fontFamily: 'IBM Plex Mono, monospace',
-              fontWeight: 600,
-              letterSpacing: '.06em',
-              textTransform: 'uppercase',
-              color: getColor(evt.severity),
-            }}>{evt.severity.toUpperCase()}</span>
-            <span style={{ fontSize: 11, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t2)', letterSpacing: '.02em' }}>
-              {evt.message}
+      {tickerEvents.length === 0 ? (
+        <span className='cc-event-ticker__empty'>NO RECENT OPERATIONAL EVENTS RECEIVED</span>
+      ) : (
+        <div
+          ref={containerRef}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            height: '100%',
+            width: 'max-content',
+            animation: 'd-tick 52s linear infinite',
+            willChange: 'transform',
+          }}
+        >
+          {doubled.map((event, index) => (
+            <span key={event.id + '-' + index} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '0 18px', flexShrink: 0 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: getColor(event.severity) }} />
+              <span style={{ color: getColor(event.severity), fontSize: 8, fontFamily: 'var(--d-font-mono, monospace)', fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>
+                {event.severity.toUpperCase()}
+              </span>
+              <span style={{ color: 'var(--d-t2)', fontSize: 9, fontFamily: 'var(--d-font-mono, monospace)', letterSpacing: '.015em' }}>
+                {event.message}
+              </span>
+              <span style={{ width: 1, height: 12, margin: '0 7px', background: 'var(--d-rim2)' }} />
             </span>
-            <span style={{ width: 1, height: 12, background: 'var(--d-rim2)', margin: '0 8px' }} />
-          </span>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
