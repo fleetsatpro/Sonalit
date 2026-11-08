@@ -1,0 +1,77 @@
+/* CDS gilded edge finish — gold belongs on the frame, not the content.
+   Keep the obsidian/crystalline surfaces and their existing semantic colors. */
+.cds-shell {
+  --cds-gold-foil: rgba(255, 235, 180, .58);
+  --cds-gold-edge: rgba(205, 163, 77, .34);
+  --cds-gold-edge-soft: rgba(205, 163, 77, .12);
+  --cds-gold-shadow: rgba(190, 139, 43, .09);
+}
+
+/* Main operating surfaces: a cool highlight above, a warmer alloy line below. */
+.cds-shell :is(.cds-panel, .cds-overview-heading, .cds-overview-metric, .cds-overview-secondary, .cds-overview-panel),
+.cds-view-stage[data-view="bookings"] :is(
+  .cds-booking-command,
+  .cds-booking-metric,
+  .cds-booking-workbench,
+  .cds-booking-manifest-frame,
+  .cds-booking-group,
+  .cds-booking-record
+),
+.cds-view-stage[data-view="locks"] :is(.cds-lock-device, .cds-lock-battery-trend) {
+  border-color: var(--cds-gold-edge) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 239, 194, .12),
+    inset 0 -1px 0 rgba(116, 79, 24, .15),
+    0 0 0 1px var(--cds-gold-edge-soft),
+    0 10px 24px rgba(0, 0, 0, .2) !important;
+}
+
+/* A slim gilded rail on the workspace chrome, not a blanket gold wash. */
+.cds-shell .cds-topbar {
+  border-bottom-color: rgba(207, 166, 82, .34) !important;
+  box-shadow:
+    0 9px 34px rgba(0, 0, 0, .22),
+    inset 0 -1px 0 rgba(255, 232, 172, .1),
+    inset 0 1px rgba(255, 255, 255, .04) !important;
+}
+.cds-shell .cds-navigation {
+  border-right-color: rgba(190, 148, 65, .27) !important;
+}
+
+/* Booking Desk gets a finer gold cap; its status stripe remains semantic. */
+.cds-view-stage[data-view="bookings"] .cds-booking-command::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 235, 177, .72) 28%,
+    rgba(219, 174, 82, .54) 58%,
+    rgba(142, 100, 35, .18) 82%,
+    transparent 100%
+  ) !important;
+  opacity: .9 !important;
+}
+
+/* Fine-pointer hover reveals a restrained metallic glint without moving cards. */
+@media (hover: hover) and (pointer: fine) {
+  .cds-shell :is(.cds-panel, .cds-overview-heading, .cds-overview-metric, .cds-overview-secondary, .cds-overview-panel):hover,
+  .cds-view-stage[data-view="bookings"] :is(
+    .cds-booking-command,
+    .cds-booking-metric,
+    .cds-booking-workbench,
+    .cds-booking-manifest-frame,
+    .cds-booking-group,
+    .cds-booking-record
+  ):hover,
+  .cds-view-stage[data-view="locks"] :is(.cds-lock-device, .cds-lock-battery-trend):hover {
+    border-color: rgba(242, 205, 125, .62) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 244, 207, .2),
+      inset 0 -1px 0 rgba(125, 86, 25, .19),
+      0 0 0 1px rgba(231, 188, 98, .14),
+      0 0 23px var(--cds-gold-shadow),
+      0 12px 26px rgba(0, 0, 0, .22) !important;
+  }
+}
+
+/* Keep keyboard focus unmistakable and preserve the existing cyan focus ring.
+   The gold finish is static, so reduced-motion preferences need no override. */

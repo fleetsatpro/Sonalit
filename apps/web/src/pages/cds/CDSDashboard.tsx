@@ -7,6 +7,7 @@ import './CDSDesignSystem.css';
 import './CDSOverviewVisual.css';
 import './CDSCosmicVisual.css';
 import './CDSOperationalPolish.css';
+import './CDSGildedEdgeVisual.css';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { NavArtwork } from '../../components/layout/Rail.js';
