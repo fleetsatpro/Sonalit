@@ -530,13 +530,13 @@ router.get('/analytics', asyncHandler(async (req, res) => {
          WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
            AND bc.clamped_at IS NOT NULL
            AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at)
-           AND bc.status NOT IN ('delivered', 'completed')) AS containers_currently_clamped,
+           AND COALESCE(bc.status, '') NOT IN ('delivered', 'completed')) AS containers_currently_clamped,
         (SELECT COUNT(*)::int FROM cds_booking_containers bc
           JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
          WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
            AND bc.clamped_at IS NOT NULL AND bc.clamped_at <= NOW() - INTERVAL '24 hours'
            AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at)
-           AND bc.status NOT IN ('delivered', 'completed')) AS containers_clamped_over_24h,
+           AND COALESCE(bc.status, '') NOT IN ('delivered', 'completed')) AS containers_clamped_over_24h,
         (SELECT COUNT(*)::int FROM cds_booking_containers bc
           JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
           CROSS JOIN bounds win
@@ -574,7 +574,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
     container_clamp_rows AS (
       SELECT CASE
         WHEN bc.clamped_at IS NOT NULL AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at)
-          AND bc.status NOT IN ('delivered', 'completed') THEN 'clamped'
+          AND COALESCE(bc.status, '') NOT IN ('delivered', 'completed') THEN 'clamped'
         WHEN bc.unclamped_at IS NOT NULL AND (bc.clamped_at IS NULL OR bc.unclamped_at >= bc.clamped_at) THEN 'unclamped'
         WHEN bc.clamped_at IS NULL AND bc.status IN ('pending', 'assigned') THEN 'awaiting_clamp'
         ELSE 'other'
@@ -761,7 +761,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
                      LEFT JOIN cds_trips t
                        ON t.id = bc.trip_id AND t.org_id = $2 AND t.deleted_at IS NULL
                     WHERE bc.booking_id = b.id AND bc.org_id = $2 AND bc.deleted_at IS NULL
-                      AND bc.status NOT IN ('delivered', 'completed')
+                      AND COALESCE(bc.status, '') NOT IN ('delivered', 'completed')
                       AND (t.id IS NULL OR (t.delivered_at IS NULL AND t.status NOT IN ('delivered', 'completed')))
                  )
                ) THEN 'completed'
@@ -777,7 +777,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
                    LEFT JOIN cds_trips t
                      ON t.id = bc.trip_id AND t.org_id = $2 AND t.deleted_at IS NULL
                   WHERE bc.booking_id = b.id AND bc.org_id = $2 AND bc.deleted_at IS NULL
-                    AND bc.status NOT IN ('delivered', 'completed')
+                    AND COALESCE(bc.status, '') NOT IN ('delivered', 'completed')
                     AND (
                       (bc.clamped_at IS NOT NULL AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at))
                       OR t.status = 'locked'
@@ -891,7 +891,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
        WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
          AND bc.clamped_at IS NOT NULL AND bc.clamped_at <= NOW() - INTERVAL '24 hours'
          AND (bc.unclamped_at IS NULL OR bc.unclamped_at < bc.clamped_at)
-         AND bc.status NOT IN ('delivered', 'completed')
+         AND COALESCE(bc.status, '') NOT IN ('delivered', 'completed')
        ORDER BY bc.clamped_at ASC
        LIMIT 20
     ),
