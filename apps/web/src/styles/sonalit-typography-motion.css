@@ -15,6 +15,12 @@
   --sonalit-weight-strong: 700;
 }
 
+/* Keep CDS on the same bundled reading face as the rest of Sonalit. */
+#root .cds-shell {
+  font-family: var(--sonalit-font-reading);
+  font-weight: 500;
+}
+
 body {
   font-family: var(--sonalit-font-reading);
   font-weight: var(--sonalit-weight-reading);
