@@ -7,6 +7,7 @@ import './CDSDesignSystem.css';
 import './CDSOverviewVisual.css';
 import './CDSCosmicVisual.css';
 import './CDSOperationalPolish.css';
+import './CDSGildedEdgeVisual.css';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { NavArtwork } from '../../components/layout/Rail.js';
@@ -92,8 +93,8 @@ const CDS_MODULE_HEADINGS: Partial<Record<CDSView, { eyebrow: string; descriptio
     description: 'Identify ageing bookings, delayed journeys and records that need an operator review.',
   },
   analytics: {
-    eyebrow: 'OPERATIONAL INTELLIGENCE / PERFORMANCE',
-    description: 'Explore measured throughput, equipment utilisation, delivery performance and recorded operational trends.',
+    eyebrow: 'PERFORMANCE ANALYSIS / OPERATIONAL EVIDENCE',
+    description: 'Investigate throughput, delivery reliability, partner execution, fleet capacity and equipment integrity using persisted operational records.',
   },
   reports: {
     eyebrow: 'RECORDS & ASSURANCE / REPORTING',

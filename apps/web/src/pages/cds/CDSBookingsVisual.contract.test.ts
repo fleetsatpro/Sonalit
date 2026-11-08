@@ -138,7 +138,7 @@ describe('CDS cosmic surface and booking desk visual contract', () => {
     expect(components).toContain('<ArrowUp size={12}');
     expect(components).toContain('<ArrowDown size={12}');
     expect(dashboard).toContain('<ArrowUpRight size={13}');
-    expect(modulePages).toContain('<ArrowUpRight size={12}');
+    expect(modulePages).not.toContain('<ArrowUpRight size={12}');
     expect(manifest).toContain('<ChevronDown size={11}');
   });
 

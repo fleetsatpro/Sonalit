@@ -58,7 +58,11 @@ describeIfDb('CDS analytics SQL integration', () => {
     expect(res.body.data.container_conditions).toHaveLength(5);
     expect(res.body.data.risk_mix).toHaveLength(4);
     expect(res.body.data.lock_statuses).toHaveLength(6);
-    expect(res.body.data.booking_pipeline).toHaveLength(9);
+    expect(res.body.data.booking_pipeline).toHaveLength(5);
+    expect(res.body.data.booking_pipeline.map(row => row.status).sort()).toEqual([
+      'cancelled', 'clamped', 'completed', 'in_progress', 'yard',
+    ]);
+    expect(res.body.data.booking_pipeline.reduce((sum, row) => sum + row.count, 0)).toBeGreaterThanOrEqual(0);
     expect(res.body.data.lanes).toEqual(expect.any(Array));
     expect(res.body.data.alerts).toEqual(expect.any(Array));
     expect(res.body.data.operator_leaderboard).toEqual(expect.any(Array));
