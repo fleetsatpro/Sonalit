@@ -417,6 +417,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
   const result = await req.db(`
     WITH bounds AS (
       SELECT date_trunc('day', NOW()) - (($1::int - 1) * INTERVAL '1 day') AS start_at,
+             date_trunc('day', NOW()) - (($1::int - 1) * INTERVAL '1 day') - ($1::int * INTERVAL '1 day') AS previous_start_at,
              NOW() AS end_at,
              (CURRENT_DATE - ($1::int - 1))::date AS period_start,
              CURRENT_DATE::date AS period_end
@@ -451,14 +452,31 @@ router.get('/analytics', asyncHandler(async (req, res) => {
           ), 0), 1)
           ELSE NULL
         END AS eta_attainment_pct,
+        ROUND((AVG(EXTRACT(EPOCH FROM (t.delivered_at - t.eta)) / 3600.0)
+          FILTER (WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at AND t.eta IS NOT NULL))::numeric, 1) AS avg_eta_variance_hours,
+        ROUND((PERCENTILE_CONT(0.9) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (t.delivered_at - t.eta)) / 3600.0
+        ) FILTER (WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at
+          AND t.eta IS NOT NULL AND t.delivered_at > t.eta))::numeric, 1) AS p90_eta_late_hours,
         ROUND((AVG(EXTRACT(EPOCH FROM (t.delivered_at - t.departed_at)) / 3600.0)
           FILTER (WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at
             AND t.departed_at IS NOT NULL AND t.delivered_at IS NOT NULL))::numeric, 1) AS avg_transit_hours,
+        ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (t.delivered_at - t.departed_at)) / 3600.0
+        ) FILTER (WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at
+          AND t.departed_at IS NOT NULL AND t.delivered_at IS NOT NULL))::numeric, 1) AS p50_transit_hours,
+        ROUND((PERCENTILE_CONT(0.9) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (t.delivered_at - t.departed_at)) / 3600.0
+        ) FILTER (WHERE t.delivered_at >= b.start_at AND t.delivered_at < b.end_at
+          AND t.departed_at IS NOT NULL AND t.delivered_at IS NOT NULL))::numeric, 1) AS p90_transit_hours,
         COUNT(*) FILTER (WHERE t.status IN ('awaiting_lock', 'locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.vehicle_id IS NULL)::int AS trips_missing_vehicle,
         COUNT(*) FILTER (WHERE t.status IN ('awaiting_lock', 'locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.driver_id IS NULL)::int AS trips_missing_driver,
         COUNT(*) FILTER (WHERE t.status IN ('awaiting_lock', 'locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.container_id IS NULL)::int AS trips_missing_container,
         COUNT(*) FILTER (WHERE t.status IN ('locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.lock_id IS NULL)::int AS trips_missing_lock,
-        COUNT(*) FILTER (WHERE t.status IN ('locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.eta IS NULL)::int AS trips_missing_eta
+        COUNT(*) FILTER (WHERE t.status IN ('locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND t.eta IS NULL)::int AS trips_missing_eta,
+        COUNT(*) FILTER (WHERE t.status IN ('awaiting_lock', 'locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed')
+          AND (t.vehicle_id IS NULL OR t.driver_id IS NULL OR t.container_id IS NULL
+            OR (t.status IN ('locked', 'dispatched', 'checkpoint', 'delayed', 'at_port', 'delivered', 'lock_removed') AND (t.lock_id IS NULL OR t.eta IS NULL))))::int AS trips_with_data_gaps
       FROM trip_rows t CROSS JOIN bounds b
     ),
     booking_metrics AS (
@@ -533,7 +551,25 @@ router.get('/analytics', asyncHandler(async (req, res) => {
           WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
             AND bc.clamped_at IS NOT NULL AND bc.unclamped_at IS NOT NULL
             AND bc.unclamped_at >= win.start_at AND bc.unclamped_at < win.end_at
-            AND bc.unclamped_at >= bc.clamped_at) AS avg_clamp_duration_hours
+            AND bc.unclamped_at >= bc.clamped_at) AS avg_clamp_duration_hours,
+        (SELECT ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (
+           ORDER BY EXTRACT(EPOCH FROM (bc.unclamped_at - bc.clamped_at)) / 3600.0))::numeric, 1)
+           FROM cds_booking_containers bc
+           JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
+           CROSS JOIN bounds win
+          WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
+            AND bc.clamped_at IS NOT NULL AND bc.unclamped_at IS NOT NULL
+            AND bc.unclamped_at >= win.start_at AND bc.unclamped_at < win.end_at
+            AND bc.unclamped_at >= bc.clamped_at) AS p50_clamp_duration_hours,
+        (SELECT ROUND((PERCENTILE_CONT(0.9) WITHIN GROUP (
+           ORDER BY EXTRACT(EPOCH FROM (bc.unclamped_at - bc.clamped_at)) / 3600.0))::numeric, 1)
+           FROM cds_booking_containers bc
+           JOIN cds_bookings b ON b.id = bc.booking_id AND b.org_id = $2 AND b.deleted_at IS NULL
+           CROSS JOIN bounds win
+          WHERE bc.org_id = $2 AND bc.deleted_at IS NULL
+            AND bc.clamped_at IS NOT NULL AND bc.unclamped_at IS NOT NULL
+            AND bc.unclamped_at >= win.start_at AND bc.unclamped_at < win.end_at
+            AND bc.unclamped_at >= bc.clamped_at) AS p90_clamp_duration_hours
     ),
     container_clamp_rows AS (
       SELECT CASE
@@ -601,6 +637,7 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         opm.containers_clamped, opm.containers_unclamped,
         opm.containers_currently_clamped, opm.containers_clamped_over_24h,
         opm.unclamps_after_24h, opm.avg_clamp_duration_hours,
+        opm.p50_clamp_duration_hours, opm.p90_clamp_duration_hours,
         cm.total_containers,
         cm.available_containers,
         cm.containers_in_use,
@@ -727,8 +764,28 @@ router.get('/analytics', asyncHandler(async (req, res) => {
                ) THEN 'clamped'
                ELSE 'yard'
              END AS status
-        FROM cds_bookings b
+        FROM cds_bookings b CROSS JOIN bounds win
        WHERE b.org_id = $2 AND b.deleted_at IS NULL
+         AND b.created_at >= win.start_at AND b.created_at < win.end_at
+    ),
+    booking_cohort_metrics AS (
+      SELECT
+        COUNT(*)::int AS bookings_received,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM cds_booking_containers bc
+           WHERE bc.booking_id = b.id AND bc.org_id = $2 AND bc.deleted_at IS NULL AND bc.clamped_at IS NOT NULL
+        ))::int AS bookings_with_clamp,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM cds_trips t
+           WHERE t.booking_id = b.id AND t.org_id = $2 AND t.deleted_at IS NULL
+        ))::int AS bookings_with_trip,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM cds_trips t
+           WHERE t.booking_id = b.id AND t.org_id = $2 AND t.deleted_at IS NULL AND t.delivered_at IS NOT NULL
+        ))::int AS bookings_delivered
+      FROM cds_bookings b CROSS JOIN bounds win
+     WHERE b.org_id = $2 AND b.deleted_at IS NULL
+       AND b.created_at >= win.start_at AND b.created_at < win.end_at
     ),
     booking_status_values(status) AS (VALUES ('clamped'), ('cancelled'), ('completed'), ('yard'), ('in_progress')),
     booking_pipeline AS (
@@ -823,12 +880,47 @@ router.get('/analytics', asyncHandler(async (req, res) => {
              COUNT(*)::int AS trips_started,
              COUNT(*) FILTER (WHERE t.delivered_at IS NOT NULL)::int AS deliveries_completed,
              COUNT(*) FILTER (WHERE t.status = 'delayed')::int AS currently_delayed,
+             COUNT(*) FILTER (WHERE t.delivered_at IS NOT NULL)::int AS deliveries_completed,
              ROUND((AVG(EXTRACT(EPOCH FROM (t.delivered_at - t.departed_at)) / 3600.0)
-               FILTER (WHERE t.delivered_at IS NOT NULL AND t.departed_at IS NOT NULL))::numeric, 1) AS avg_transit_hours
+               FILTER (WHERE t.delivered_at IS NOT NULL AND t.departed_at IS NOT NULL))::numeric, 1) AS avg_transit_hours,
+             ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY EXTRACT(EPOCH FROM (t.delivered_at - t.departed_at)) / 3600.0
+             ) FILTER (WHERE t.delivered_at IS NOT NULL AND t.departed_at IS NOT NULL))::numeric, 1) AS p50_transit_hours,
+             CASE WHEN COUNT(*) > 0
+               THEN ROUND(100.0 * COUNT(*) FILTER (WHERE t.delivered_at IS NOT NULL) / COUNT(*), 1)
+               ELSE NULL END AS delivery_completion_pct
         FROM trip_rows t CROSS JOIN bounds b
        WHERE t.created_at >= b.start_at AND t.created_at < b.end_at
        GROUP BY 1, 2
        ORDER BY COUNT(*) DESC, origin ASC, destination ASC LIMIT 8
+    ),
+    period_comparison AS (
+      SELECT
+        (SELECT COUNT(*)::int FROM cds_bookings b WHERE b.org_id = $2 AND b.deleted_at IS NULL
+          AND b.created_at >= win.previous_start_at AND b.created_at < win.start_at) AS bookings_received,
+        (SELECT COUNT(*)::int FROM trip_rows t
+          WHERE t.created_at >= win.previous_start_at AND t.created_at < win.start_at) AS trips_started,
+        (SELECT COUNT(*)::int FROM trip_rows t
+          WHERE t.delivered_at >= win.previous_start_at AND t.delivered_at < win.start_at) AS deliveries_completed,
+        (SELECT COUNT(DISTINCT e.metric_entity_id)::int FROM clamp_action_events e
+          WHERE e.action = 'clamp' AND e.created_at >= win.previous_start_at AND e.created_at < win.start_at) AS containers_clamped,
+        (SELECT COUNT(DISTINCT e.metric_entity_id)::int FROM clamp_action_events e
+          WHERE e.action = 'unclamp' AND e.created_at >= win.previous_start_at AND e.created_at < win.start_at) AS containers_unclamped,
+        (SELECT COUNT(*)::int FROM trip_rows t
+          WHERE t.delivered_at >= win.previous_start_at AND t.delivered_at < win.start_at
+            AND t.eta IS NOT NULL AND t.delivered_at <= t.eta) AS eta_met,
+        (SELECT COUNT(*)::int FROM trip_rows t
+          WHERE t.delivered_at >= win.previous_start_at AND t.delivered_at < win.start_at
+            AND t.eta IS NOT NULL) AS eta_observed,
+        CASE WHEN (SELECT COUNT(*) FROM trip_rows t
+          WHERE t.delivered_at >= win.previous_start_at AND t.delivered_at < win.start_at AND t.eta IS NOT NULL) > 0
+          THEN ROUND(100.0 * (SELECT COUNT(*) FROM trip_rows t
+            WHERE t.delivered_at >= win.previous_start_at AND t.delivered_at < win.start_at
+              AND t.eta IS NOT NULL AND t.delivered_at <= t.eta)
+            / NULLIF((SELECT COUNT(*) FROM trip_rows t
+              WHERE t.delivered_at >= win.previous_start_at AND t.delivered_at < win.start_at AND t.eta IS NOT NULL), 0), 1)
+          ELSE NULL END AS eta_attainment_pct
+      FROM bounds win
     ),
     open_alerts AS (
       SELECT a.id, a.type, a.severity, a.title, a.message, a.entity_type, a.entity_id, a.created_at
@@ -845,6 +937,8 @@ router.get('/analytics', asyncHandler(async (req, res) => {
         'generated_at', to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
       ),
       'summary', (SELECT to_jsonb(s) FROM summary s),
+      'period_comparison', (SELECT to_jsonb(pc) FROM period_comparison pc),
+      'booking_cohort', (SELECT to_jsonb(bcm) FROM booking_cohort_metrics bcm),
       'daily', COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.day) FROM daily d), '[]'::jsonb),
       'operator_leaderboard', COALESCE((SELECT jsonb_agg(to_jsonb(oa) ORDER BY oa.rank) FROM operator_leaderboard oa), '[]'::jsonb),
       'transporter_leaderboard', COALESCE((SELECT jsonb_agg(to_jsonb(tl) ORDER BY tl.rank) FROM transporter_leaderboard tl), '[]'::jsonb),
