@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   Activity, AlertTriangle, BarChart3, CheckCircle2, Clock3, Gauge, PackageCheck,
   RefreshCw, ShieldAlert, Truck, Users,
@@ -300,7 +300,7 @@ function ServiceQuality({ data }: { data: CDSAnalyticsPayload }) {
         </div>
         <div className="cpa-v2__reliability">
           <div className="cpa-v2__reliability-value">{pct(adherence)}</div>
-          <div className="cpa-v2__reliability-gauge" style={{ '--cpa-value': Math.max(0, Math.min(100, adherence ?? 0)) + '%' } as CSSProperties}><span /></div>
+          <div className="cpa-v2__reliability-gauge" style={{ width: Math.max(0, Math.min(100, adherence ?? 0)) + '%' }}><span /></div>
           <div className="cpa-v2__reliability-foot"><span>{fmt(s.eta_met)} on or before ETA</span><strong>{fmt(s.eta_observed)} delivered with ETA</strong></div>
         </div>
         <div className="cpa-v2__stat-pair">
