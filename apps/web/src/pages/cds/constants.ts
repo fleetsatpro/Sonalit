@@ -14,7 +14,7 @@ export const CDS_VIEWS: CDSViewDef[] = [
   { id: 'locks', label: 'E-Lock Control', sub: 'DEVICE HEALTH · ASSIGNMENTS · SEAL EVENTS' },
   { id: 'transporters', label: 'Transport Partners', sub: 'CARRIER CAPACITY · SERVICE PROFILE' },
   { id: 'inbox', label: 'Activity & Custody', sub: 'FIELD EVENTS · LOCK EVENTS · TRIP TRANSITIONS' },
-  { id: 'analytics', label: 'Performance Intelligence', sub: 'OPERATIONAL TRENDS · EQUIPMENT · LOCKS' },
+  { id: 'analytics', label: 'Performance Analysis', sub: 'MEASURED THROUGHPUT · SERVICE RELIABILITY · ASSET INTEGRITY' },
   { id: 'reports', label: 'Operational Reports', sub: 'EVIDENCE-BASED EXPORTS' },
   { id: 'settings', label: 'Configuration', sub: 'TENANT PREFERENCES · FIELD ACCESS' },
 ];
