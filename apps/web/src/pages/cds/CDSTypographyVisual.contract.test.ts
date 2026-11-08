@@ -5,10 +5,13 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 const design = read('./CDSDesignSystem.css');
 const polish = read('./CDSOperationalPolish.css');
 const html = read('../../../index.html');
+const appShell = read('../../../app-shell.html');
 
 describe('CDS typography legibility contract', () => {
   it('loads the actual reading face as a variable font and applies it to the CDS shell', () => {
     expect(html).toContain('family=Inter:wght@400..900');
+    expect(appShell).toContain('family=Inter:wght@400..900');
+    expect(appShell).toContain('family=Syne:wght@400..800');
     expect(design).toContain("font-family: 'Inter', system-ui, -apple-system, sans-serif;");
     expect(design).toContain('font-weight: 550;');
     expect(design).toContain('-webkit-font-smoothing: auto;');
