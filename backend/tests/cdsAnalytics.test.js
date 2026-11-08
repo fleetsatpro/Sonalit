@@ -65,8 +65,9 @@ describe('GET /cds/analytics', () => {
     expect(captured[0].sql).toContain('battery_level < 25');
     expect(captured[0].sql).toContain("VALUES ('clamped'), ('cancelled'), ('completed'), ('yard'), ('in_progress')");
     expect(captured[0].sql).toContain("WHEN b.status = 'cancelled' THEN 'cancelled'");
-    expect(captured[0].sql).toContain("WHEN b.status IN ('delivered', 'completed', 'billed') OR EXISTS");
-    expect(captured[0].sql).toContain("t.delivered_at IS NOT NULL OR t.status IN ('delivered', 'completed')");
+    expect(captured[0].sql).toContain("WHEN b.status IN ('delivered', 'completed', 'billed') OR (");
+    expect(captured[0].sql).toContain("t.delivered_at IS NULL AND t.status NOT IN ('delivered', 'completed')");
+    expect(captured[0].sql).toContain("bc.status NOT IN ('delivered', 'completed')");
     expect(captured[0].sql).toContain("OR t.status = 'locked'");
     expect(captured[0].sql).toContain("WHEN b.status = 'in_progress' OR EXISTS");
     expect(captured[0].sql).toContain('booking_mix_classified');
