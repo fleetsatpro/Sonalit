@@ -168,6 +168,7 @@
 
 /* The map itself and its telemetry/severity colours remain untouched. */
 .cc-v3 .cc-map__hud {
+  font-size: 8px !important;
   border-color: rgba(216,180,106,.3) !important;
   background: rgba(12,11,8,.82) !important;
   color: #d6c49e !important;
@@ -184,7 +185,7 @@
   background: rgba(13,12,9,.76) !important;
 }
 
-.cc-v3 .cc-queue__body .d-console-queue > div[style*="margin-bottom: 8px"] {
+.cc-v3 .cc-queue__body .d-console-queue div[style*="margin-bottom: 8px"] {
   border-top: 1px solid rgba(216,180,106,.24) !important;
   border-right: 1px solid rgba(216,180,106,.2) !important;
   border-bottom: 1px solid rgba(216,180,106,.2) !important;
@@ -196,7 +197,7 @@
   transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease;
 }
 
-.cc-v3 .cc-queue__body .d-console-queue > div[style*="margin-bottom: 8px"]:hover {
+.cc-v3 .cc-queue__body .d-console-queue div[style*="margin-bottom: 8px"]:hover {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 0 18px rgba(216,180,106,.11);
   transform: translateY(-1px);
 }
