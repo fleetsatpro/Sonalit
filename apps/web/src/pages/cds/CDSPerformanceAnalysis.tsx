@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { CDSAnalyticsPayload, CDSAnalyticsSummary } from './types.js';
-import { LoadingState } from './CDSDashboard.js';
 import { useAcknowledgeAlert, useCDSAnalytics } from './hooks.js';
 import { useCDSStore } from './store.js';
 import './CDSPerformanceAnalysis.css';
@@ -550,12 +549,66 @@ function OverdueClamps({ data }: { data: CDSAnalyticsPayload }) {
   );
 }
 
+function SnapshotSignals({ data }: { data: CDSAnalyticsPayload }) {
+  const s = data.summary;
+  const signals = [
+    {
+      key: 'delays',
+      label: 'Delayed journeys',
+      value: s.delayed_trips,
+      note: 'Trips currently carrying delayed status',
+      tone: s.delayed_trips > 0 ? 'attention' : 'quiet',
+    },
+    {
+      key: 'locks',
+      label: 'Lock attention',
+      value: s.locks_needing_attention,
+      note: fmt(s.tampered_locks) + ' tamper · ' + fmt(s.stale_lock_heartbeats) + ' stale · ' + fmt(s.low_battery_locks) + ' low battery',
+      tone: s.locks_needing_attention > 0 ? 'attention' : 'quiet',
+    },
+    {
+      key: 'inspections',
+      label: 'Overdue inspections',
+      value: s.overdue_inspections,
+      note: 'Assets past their recorded inspection date',
+      tone: s.overdue_inspections > 0 ? 'attention' : 'quiet',
+    },
+    {
+      key: 'completeness',
+      label: 'Trip data gaps',
+      value: s.trips_with_data_gaps,
+      note: 'Active trips missing one or more required fields',
+      tone: s.trips_with_data_gaps > 0 ? 'attention' : 'quiet',
+    },
+  ];
+  return (
+    <section className="cpa-v2__signals" aria-label="Current operational posture">
+      <div className="cpa-v2__signals-head">
+        <div>
+          <div className="cpa-v2__kicker"><span>POSTURE</span> CURRENT-STATE EVIDENCE</div>
+          <h3>Operational signals</h3>
+        </div>
+        <span className="cpa-v2__signals-context">Snapshot measures · independent of reporting window</span>
+      </div>
+      <div className="cpa-v2__signals-grid">
+        {signals.map(signal => (
+          <article key={signal.key} className={'cpa-v2__signal is-' + signal.tone}>
+            <div className="cpa-v2__signal-top"><span>{signal.label}</span><i aria-hidden="true" /></div>
+            <strong>{fmt(signal.value)}</strong>
+            <small>{signal.note}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function AnalyticsView() {
   const [days, setDays] = useState<7 | 30 | 90 | 365>(30);
   const [section, setSection] = useState<'overview' | 'network' | 'fleet' | 'exceptions'>('overview');
   const { data, isLoading, isError, error, isFetching, refetch } = useCDSAnalytics(days);
 
-  if (isLoading) return <LoadingState />;
+  if (isLoading) return <div className="cds-performance-analysis-v2"><div className="cpa-v2__loading" role="status" aria-live="polite"><span className="cpa-v2__loading-orbit" aria-hidden="true"><i /></span><strong>Preparing the analysis workspace</strong><small>Retrieving the selected CDS reporting window</small></div></div>;
   if (!data || !data.summary) {
     const details = error && typeof error === 'object'
       ? error as { response?: { status?: unknown; data?: { error?: unknown } }; code?: unknown }
@@ -576,7 +629,6 @@ export function AnalyticsView() {
   const snapshotAge = Number.isFinite(generatedAt.getTime())
     ? Math.max(0, Math.floor((Date.now() - generatedAt.getTime()) / 60000))
     : null;
-  const stale = snapshotAge != null && snapshotAge > 5;
 
   const kpis = [
     { label: 'Bookings received', value: fmt(s.bookings_received), note: 'New bookings · selected period', comparison: comparison(s.bookings_received, previous?.bookings_received), color: 'gold', icon: PackageCheck },
@@ -598,7 +650,7 @@ export function AnalyticsView() {
           <p>Throughput, conversion, service reliability and asset exposure — grounded in recorded operations.</p>
           <div className="cpa-v2__hero-meta">
             <span><small>REPORTING PERIOD</small><strong>{dateLabel(data.meta.period_start)} — {dateLabel(data.meta.period_end)}</strong></span>
-            <span><small>SNAPSHOT</small><strong className={stale ? 'is-stale' : ''}>{snapshotAge == null ? 'Age unknown' : snapshotAge < 1 ? 'Just generated' : snapshotAge + ' min ago'}</strong></span>
+            <span><small>SNAPSHOT</small><strong>{snapshotAge == null ? 'Age unknown' : snapshotAge < 1 ? 'Just generated' : snapshotAge + ' min ago'}</strong></span>
             <span><small>DATA BASIS</small><strong>Persisted CDS records</strong></span>
           </div>
         </div>
@@ -628,6 +680,7 @@ export function AnalyticsView() {
         {kpis.map(kpi => <KpiTile key={kpi.label} {...kpi} />)}
       </section>
       <div className="cpa-v2__comparison-note"><span>PERIOD COMPARISON</span><strong>Current {days} days vs immediately preceding {days} days</strong><small>Volume changes are descriptive; a higher count is not automatically a better outcome.</small></div>
+      <SnapshotSignals data={data} />
 
       {section === 'overview' ? (
         <div id="cpa-panel-overview" className="cpa-v2__workspace" role="region" aria-label="Performance overview" tabIndex={0}>
