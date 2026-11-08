@@ -5,48 +5,109 @@ const read = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf
 const page = read('./pages.tsx');
 const dashboard = read('./CDSDashboard.tsx');
 const constants = read('./constants.ts');
+const component = read('./CDSPerformanceAnalysis.tsx');
 const visual = read('./CDSPerformanceAnalysis.css');
 
-describe('CDS Performance Analysis experience contract', () => {
-  it('renames the module consistently in navigation and the module heading', () => {
+describe('CDS Performance Analysis v2 contract', () => {
+  it('mounts the dedicated analysis workspace without leaving the legacy implementation active', () => {
     expect(constants).toContain("label: 'Performance Analysis'");
-    expect(constants).not.toContain("label: 'Performance Intelligence'");
     expect(dashboard).toContain('PERFORMANCE ANALYSIS / OPERATIONAL EVIDENCE');
-    expect(page).toContain('<h2 className="text-2xl sm:text-3xl xl:text-[36px] leading-tight font-semibold tracking-[-.035em] text-text-0">Performance Analysis</h2>');
+    expect(page).toContain("export { AnalyticsView } from './CDSPerformanceAnalysis.js';");
+    expect(component).toContain('export function AnalyticsView()');
   });
 
-  it('derives analytical signals from persisted daily, ETA, partner and operator records', () => {
-    for (const marker of ['peakBookingDay', 's.eta_observed', 'topPartner.containers_handled', 'topOperator.clamp_actions', 'data.operator_leaderboard']) {
-      expect(page).toContain(marker);
+  it('uses a spatial glass environment with restrained metallic edge treatment', () => {
+    for (const marker of [
+      '.cds-performance-analysis-v2',
+      '.cpa-v2__space',
+      'backdrop-filter:blur(22px)',
+      'rgba(168,207,239,.21)',
+      'cpa-v2-star-drift',
+      'cpa-v2-orbit',
+      '@media (prefers-reduced-motion:reduce)',
+    ]) expect(visual).toContain(marker);
+    expect(component).toContain('className="cpa-v2__space"');
+    expect(visual).not.toMatch(/(^|\n)\s*color:\s*#fff\s*;\s*background:\s*#fff/);
+  });
+
+  it('separates current-state operational posture from selected-period activity', () => {
+    expect(component).toContain('function SnapshotSignals');
+    expect(component).toContain('Snapshot measures · independent of reporting window');
+    for (const marker of ['s.delayed_trips', 's.locks_needing_attention', 's.overdue_inspections', 's.trips_with_data_gaps']) {
+      expect(component).toContain(marker);
     }
-    expect(page).toContain('networkEtaRate');
-    expect(page).toContain('topOperatorActions');
+    expect(component).toContain('className="cpa-v2__signals"');
+    expect(visual).toContain('.cpa-v2__signals-grid');
   });
 
-  it('supports interactive single-series and combined trend inspection', () => {
-    expect(page).toContain('setTrendMetric(option.id)');
-    expect(page).toContain('aria-label="Choose activity series"');
-    expect(page).toContain('visibleSeries.map');
-    expect(page).toContain('selectedTrendValues');
+  it('reports snapshot age as an observation and avoids an undocumented stale threshold', () => {
+    expect(component).toContain("snapshotAge == null ? 'Age unknown'");
+    expect(component).not.toContain('snapshotAge > 5');
+    expect(component).not.toContain('is-stale');
   });
 
-  it('limits Booking Mix to five mutually-exclusive operational booking stages', () => {
+  it('compares equivalent consecutive periods from explicit prior-period API metrics', () => {
+    expect(component).toContain('data.period_comparison');
+    expect(component).toContain('Current {days} days vs immediately preceding {days} days');
+    expect(component).toContain('No prior-period baseline');
+  });
+
+  it('uses a single event stream per throughput chart to avoid mixing unlike units', () => {
+    expect(component).toContain('type TrendMetric');
+    expect(component).toContain('setMetric(option.id)');
+    expect(component).toContain('selected.label');
+    expect(component).toContain('Different event streams are not treated as a conversion funnel');
+    expect(component).not.toContain('visibleSeries.map');
+  });
+
+  it('tracks a selected booking cohort through four distinct evidence milestones', () => {
+    for (const marker of [
+      'booking_cohort',
+      'bookings_with_clamp',
+      'bookings_with_trip',
+      'bookings_delivered',
+      'SAME BOOKING COHORT',
+      'Five exclusive stages for bookings created in this reporting window',
+    ]) expect(component).toContain(marker);
+  });
+
+  it('retains the five mandated mutually-exclusive Booking Mix stages', () => {
     for (const marker of [
       "status: 'clamped', label: 'Clamped'",
       "status: 'cancelled', label: 'Cancelled'",
       "status: 'completed', label: 'Completed'",
       "status: 'yard', label: 'Yard · not yet clamped'",
       "status: 'in_progress', label: 'In-progress'",
-      'bookingMixTotal',
-      'data.booking_pipeline.find(row => row.status === item.status)',
-    ]) expect(page).toContain(marker);
-    expect(page).toContain('Booking Mix');
-    expect(page).not.toContain('Demand pipeline');
+    ]) expect(component).toContain(marker);
   });
 
-  it('adds spatial card, signal, chart and section motion with reduced-motion support', () => {
-    for (const marker of ['@keyframes cpa-card-arrive', '@keyframes cpa-section-arrive', '@keyframes cpa-orbit', '.cpa-kpi:hover', '.cpa-signals', '.cpa-mix-track', '@media (prefers-reduced-motion:reduce)', 'animation:none!important']) {
-      expect(visual).toContain(marker);
-    }
+  it('exposes distributions, medians, tail latency, ETA variance and trip-level data completeness', () => {
+    for (const marker of [
+      'avg_eta_variance_hours',
+      'p90_eta_late_hours',
+      'p50_transit_hours',
+      'p90_transit_hours',
+      'p50_clamp_duration_hours',
+      'p90_clamp_duration_hours',
+      'trips_with_data_gaps',
+      'delivery_completion_pct',
+    ]) expect(component).toContain(marker);
+  });
+
+  it('does not manufacture service-grade thresholds without an agreed target', () => {
+    expect(component).not.toContain('adherence >= 90');
+    expect(component).not.toContain('adherence >= 75');
+    expect(component).not.toContain('BELOW THRESHOLD');
+    expect(component).toContain("adherence == null ? 'NO SAMPLE' : 'OBSERVED'");
+  });
+
+  it('labels inventory ratios, operator actions and ETA evidence without inventing productivity or SLA claims', () => {
+    for (const marker of [
+      'Registered-fleet share in use',
+      'Status-derived deployment share',
+      'not productivity rankings',
+      'contractual SLA cannot be inferred',
+      'not a time-based utilization rate',
+    ]) expect(component).toContain(marker);
   });
 });
