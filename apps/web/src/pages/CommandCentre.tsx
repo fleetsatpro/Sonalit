@@ -381,7 +381,7 @@ function MilestoneTimeline({
           tone='error'
         />
       )}
-      {!isLoading && !isError && items.length === 0 && (
+      {!isLoading && !isError && items.length === 0 && partialSources.length === 0 && (
         <PanelState
           title='No scheduled milestones'
           message='There are no recorded arrivals, checkpoints or shift changes in the next 24 hours.'
@@ -389,6 +389,9 @@ function MilestoneTimeline({
       )}
       {!isLoading && !isError && partialSources.length > 0 && (
         <div className='ccx-partial-note'>Partial schedule: {partialSources.join(', ')} did not return a verified result.</div>
+      )}
+      {!isLoading && !isError && items.length === 0 && partialSources.length > 0 && (
+        <PanelState title='Schedule not fully assessed' message='No milestone can be confirmed because one or more schedule sources did not return a verified result.' />
       )}
       {!isLoading && !isError && items.length > 0 && (
         <div className='ccx-timeline-list'>
@@ -615,7 +618,9 @@ export default function CommandCentre() {
     ? overviewQuery.isPending ? 'awaiting first response' : 'no successful response'
     : overviewQuery.isRefetchError
       ? 'refresh failed · last response ' + ageLabel(overviewAge) + ' ago'
-      : 'browser received snapshot ' + ageLabel(overviewAge) + ' ago';
+      : overview?.data_quality?.state === 'partial'
+        ? 'partial source set · ' + (overview.data_quality.failed_sources.join(', ') || 'source unavailable')
+        : 'browser received snapshot ' + ageLabel(overviewAge) + ' ago';
 
   const convoyRecords = convoysQuery.data?.data ?? [];
   const checkpointsReady = convoysQuery.data?.data_quality?.checkpoints_ready !== false;
