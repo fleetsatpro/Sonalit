@@ -479,6 +479,66 @@ function ServiceQuality({ data }: { data: CDSAnalyticsPayload }) {
   );
 }
 
+function PeriodComparisonChart({ data, days }: { data: CDSAnalyticsPayload; days: number }) {
+  const reducedMotion = useReducedMotionPreference();
+  const prior = data.period_comparison;
+  const metricValue = (value: number | null | undefined) =>
+    value == null || !Number.isFinite(Number(value)) ? null : Number(value);
+  const rows = [
+    { metric: 'Bookings', current: metricValue(data.summary.bookings_received), previous: metricValue(prior?.bookings_received) },
+    { metric: 'Clamped', current: metricValue(data.summary.containers_clamped), previous: metricValue(prior?.containers_clamped) },
+    { metric: 'Trips started', current: metricValue(data.summary.trips_started), previous: metricValue(prior?.trips_started) },
+    { metric: 'Delivered', current: metricValue(data.summary.deliveries_completed), previous: metricValue(prior?.deliveries_completed) },
+  ].filter((row): row is { metric: string; current: number; previous: number } =>
+    row.current != null && row.previous != null
+  );
+
+  return (
+    <GlassPanel className="cpa-v2__bar-panel cpa-v2__comparison-chart">
+      <div className="cpa-v2__panel-head">
+        <div>
+          <div className="cpa-v2__kicker"><span>02A</span> PERIOD-OVER-PERIOD / EVENT COUNTS</div>
+          <h3>Activity vs previous period</h3>
+          <p>Equal-length windows. Each event family is compared with its own prior-period count.</p>
+        </div>
+        <span className="cpa-v2__tag">CURRENT / PRIOR</span>
+      </div>
+      {rows.length ? (
+        <div className="cpa-v2__rechart cpa-v2__rechart--bar" role="img" aria-label="Grouped horizontal bar chart comparing current and previous period event counts">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} layout="vertical" barGap={5} barCategoryGap={23} margin={{ top: 7, right: 35, bottom: 3, left: 0 }}>
+              <defs>
+                <linearGradient id="cpa-v2-period-current" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#b89053" />
+                  <stop offset="55%" stopColor="#e7c47f" />
+                  <stop offset="100%" stopColor="#f5dfae" />
+                </linearGradient>
+                <linearGradient id="cpa-v2-period-prior" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#426c88" />
+                  <stop offset="100%" stopColor="#79a8c8" />
+                </linearGradient>
+              </defs>
+              <CartesianGrid horizontal={false} stroke="rgba(178,205,233,.1)" strokeDasharray="3 7" />
+              <XAxis type="number" domain={[0, 'dataMax']} allowDecimals={false} tickFormatter={value => fmt(Number(value))} tick={{ fill: 'rgba(169,194,218,.65)', fontSize: 9 }} axisLine={{ stroke: 'rgba(160,198,231,.14)' }} tickLine={false} />
+              <YAxis type="category" dataKey="metric" width={92} interval={0} tick={{ fill: 'rgba(201,216,233,.82)', fontSize: 9 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(142,185,237,.055)' }} />
+              <Bar dataKey="current" name="Current period" fill="url(#cpa-v2-period-current)" barSize={12} radius={[0, 6, 6, 0]} isAnimationActive={!reducedMotion} animationDuration={850} animationEasing="ease-out">
+                <LabelList dataKey="current" position="right" fill="#f4e5c5" fontSize={8} fontWeight={700} />
+              </Bar>
+              <Bar dataKey="previous" name="Previous period" fill="url(#cpa-v2-period-prior)" barSize={12} radius={[0, 6, 6, 0]} isAnimationActive={!reducedMotion} animationDuration={850} animationEasing="ease-out">
+                <LabelList dataKey="previous" position="right" fill="#b9d2e5" fontSize={8} fontWeight={700} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="cpa-v2__empty-chart"><BarChart3 size={22} /><strong>No comparable prior-period baseline</strong><span>The API did not return comparable values for this reporting window. No zero baseline has been substituted.</span></div>
+      )}
+      <div className="cpa-v2__chart-footnote">Counts remain distinct event families. This comparison does not imply that bookings, clamp events, trip starts and deliveries form a conversion funnel.</div>
+    </GlassPanel>
+  );
+}
+
 function CorridorActivityChart({ data }: { data: CDSAnalyticsPayload }) {
   const reducedMotion = useReducedMotionPreference();
   const rows = [...(data.lanes ?? [])]
@@ -922,9 +982,9 @@ export function AnalyticsView() {
           <div className="cpa-v2__analysis-grid cpa-v2__analysis-grid--hero-chart">
             <TrendChart daily={data.daily} days={days} />
           </div>
-          <div className="cpa-v2__chart-pair" aria-label="Distribution and corridor charts">
+          <div className="cpa-v2__chart-pair" aria-label="Booking distribution and period comparison charts">
             <BookingMix data={data} />
-            <CorridorActivityChart data={data} />
+            <PeriodComparisonChart data={data} days={days} />
           </div>
           <div className="cpa-v2__analysis-grid cpa-v2__analysis-grid--service">
             <BookingCohort data={data} />
@@ -935,6 +995,7 @@ export function AnalyticsView() {
       {section === 'network' ? (
         <div id="cpa-panel-network" className="cpa-v2__workspace" role="region" aria-label="Network performance" tabIndex={0}>
           <SectionHeading index="06–07" kicker="CARRIER / CORRIDOR PERFORMANCE" title="Network execution" />
+          <CorridorActivityChart data={data} />
           <LaneAnalysis data={data} />
           <PartnerAnalysis data={data} />
         </div>
