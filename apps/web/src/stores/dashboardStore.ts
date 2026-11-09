@@ -3,6 +3,13 @@ import { create } from 'zustand';
 export type ThreatLevel = 'secure' | 'elevated' | 'critical';
 
 export interface DashboardOverview {
+  data_quality?: {
+    state: 'complete' | 'partial';
+    critical_ready: boolean;
+    kpi_ready: boolean;
+    failed_sources: string[];
+    snapshot_at: string;
+  };
   threat: { level: ThreatLevel; alerts_open: number; incidents_active: number };
   kpi: {
     vehicles_live: number;
