@@ -100,7 +100,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
   const convoys = useDashboardStore((s) => s.convoys);
   const { setAlerts, removeAlert } = useDashboardStore.getState();
 
-  useQuery({
+  const alertsQuery = useQuery({
     queryKey: ['dashboard-alerts-ops'],
     queryFn: async () => { const r = await api.get<{ data: DashboardAlert[] }>('/dashboard/alerts?limit=10'); setAlerts(r.data.data ?? []); return r.data.data; },
     staleTime: 30000,
@@ -178,7 +178,8 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
       <div style={{ padding: '0 14px 10px' }}><Suspense fallback={null}><ResponseCrewPanel /></Suspense></div>
 
       <div style={{ flex: 1, padding: '0 14px' }}>
-        {items.length === 0 && !panic && !voiceNote && <div style={{ fontSize: 12, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', padding: '10px 2px' }}>All clear — awaiting new operational events.</div>}
+        {alertsQuery.isError && <div role='status' style={{ margin: '8px 0', padding: '9px 10px', border: '1px solid color-mix(in srgb, var(--d-warn) 38%, transparent)', borderRadius: 7, background: 'color-mix(in srgb, var(--d-warn) 8%, var(--d-well))', color: 'var(--d-warn)', fontSize: 11, lineHeight: 1.45 }}>Alert register unavailable. Previously received session events may still be visible; no all-clear state can be inferred.</div>}
+        {items.length === 0 && !panic && !voiceNote && <div style={{ fontSize: 12, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', padding: '10px 2px', lineHeight: 1.5 }}>{alertsQuery.isPending ? 'Loading the alert response window…' : alertsQuery.isError ? 'No verified alert register is available.' : 'No alert records were returned in the current response window. This is not a global all-clear.'}</div>}
         {items.map((it) => (
           <div key={it.id} style={{ padding: '11px 11px', marginBottom: 8, background: 'linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.015))', borderRadius: 10, border: '1px solid var(--d-rim2)', borderLeft: `4px solid rgb(${it.chip.hue})` }}>
             <button type='button' onClick={() => onSelect?.(it)} disabled={!onSelect} style={{ width: '100%', display: 'block', padding: 0, margin: 0, background: 'none', border: 0, color: 'inherit', textAlign: 'left', cursor: onSelect ? 'pointer' : 'default' }} aria-label={`Open ${it.title}`}>
