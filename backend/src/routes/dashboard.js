@@ -13,8 +13,16 @@ const logger = require('../utils/logger');
 
 router.use(authenticate, attachOrgDb);
 
-// Returns { rows: [] } on any DB error so individual query failures don't crash endpoints
-const safeQuery = (db, sql, params) => db(sql, params).catch(() => ({ rows: [] }));
+// Keep dashboard aggregation resilient without disguising a failed source as an empty register.
+// Consumers may still render partial results, but must be able to distinguish them from a verified empty result.
+const safeQuery = async (db, sql, params) => {
+  try {
+    const result = await db(sql, params);
+    return { ...result, ok: true };
+  } catch (_) {
+    return { rows: [], ok: false };
+  }
+};
 
 // ── §2.1 Overview ──────────────────────────────────────────────────────────
 router.get('/overview', asyncHandler(async (req, res) => {
@@ -87,14 +95,21 @@ router.get('/overview', asyncHandler(async (req, res) => {
     kmToday = parseFloat(kmR.rows[0]?.km) || 0;
   } catch (_) { /* defensive: keep dashboard load resilient to this query's failure */ }
 
-  const t = threatR.rows[0];
+  const failedSources = [
+    !threatR.ok && 'alerts',
+    !kpiR.ok && 'operational_metrics',
+    !nextR.ok && 'next_delivery',
+    !shiftR.ok && 'shift',
+    !panicR.ok && 'panic_events',
+  ].filter(Boolean);
+  const t = threatR.rows[0] || {};
   const sosOpen = parseInt(t.sos_open) || 0;
   const critOpen = parseInt(t.crit_open) || 0;
   const alertsOpen = parseInt(t.alerts_open) || 0;
   const panicOpen = parseInt(panicR.rows[0]?.panic_open) || 0;
   const threatLevel = panicOpen > 0 || sosOpen > 0 ? 'critical' : critOpen > 0 ? 'elevated' : 'secure';
 
-  const k = kpiR.rows[0];
+  const k = kpiR.rows[0] || {};
 
   // on_time_pct from recently delivered shipments
   let onTimePct = 100;
@@ -113,6 +128,13 @@ router.get('/overview', asyncHandler(async (req, res) => {
   const shiftRow = shiftR.rows[0];
 
   res.json({
+    data_quality: {
+      state: failedSources.length === 0 ? 'complete' : 'partial',
+      critical_ready: threatR.ok && panicR.ok,
+      kpi_ready: kpiR.ok,
+      failed_sources: failedSources,
+      snapshot_at: new Date().toISOString(),
+    },
     threat: { level: threatLevel, alerts_open: alertsOpen + panicOpen, incidents_active: parseInt(k.incidents_active)||0 },
     kpi: {
       vehicles_live: parseInt(k.vehicles_live)||0,
@@ -509,7 +531,7 @@ router.get('/alerts', asyncHandler(async (req, res) => {
       occurred_at: new Date(a.occurred_at).toISOString(),
       acknowledged: a.acknowledged,
     })) });
-  } catch (_) { res.json({ data: [] }); }
+  } catch (_) { res.status(503).json({ error: 'Alert register unavailable', data: [] }); }
 }));
 
 // ── §2.5 Convoys ───────────────────────────────────────────────────────────
@@ -544,7 +566,9 @@ router.get('/convoys', asyncHandler(async (req, res) => {
       cpByConvoy[cp.convoy_id].push(cp);
     }
 
-    res.json({ data: r.rows.map(c => ({
+    res.json({
+      data_quality: { checkpoints_ready: convoyIds.length === 0 || cpR.ok, snapshot_at: new Date().toISOString() },
+      data: r.rows.map(c => ({
       id: c.id,
       name: c.name || c.id,
       status: c.status,
@@ -558,8 +582,9 @@ router.get('/convoys', asyncHandler(async (req, res) => {
         status: cp.reached_at ? 'done' : 'pending',
         reached_at: cp.reached_at ? new Date(cp.reached_at).toISOString() : null,
       })),
-    })) });
-  } catch (_) { res.json({ data: [] }); }
+      }))
+    });
+  } catch (_) { res.status(503).json({ error: 'Convoy register unavailable', data: [] }); }
 }));
 
 // ── §2.6 Route Risk ────────────────────────────────────────────────────────
@@ -921,7 +946,16 @@ router.get('/timeline', asyncHandler(async (req, res) => {
     fraction: Math.max(0, Math.min(1, (new Date(e.time).getTime() - now) / (end - now))),
   })).sort((a, b) => a.fraction - b.fraction);
 
-  res.json({ data: events });
+  const failedSources = [
+    !arrivalsR.ok && 'arrivals',
+    !checkpointsR.ok && 'checkpoints',
+    !shiftsR.ok && 'shifts',
+  ].filter(Boolean);
+
+  res.json({
+    data: events,
+    data_quality: { state: failedSources.length === 0 ? 'complete' : 'partial', failed_sources: failedSources, snapshot_at: new Date().toISOString() },
+  });
 }));
 
 module.exports = router;
