@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, BellRing, Camera, CircleDot, Fuel, Gauge, MapPin, Mic, ShieldAlert, Siren, Truck, type LucideIcon } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
@@ -10,19 +10,20 @@ const ResponseCrewPanel = lazy(() => import('./ResponseCrewPanel.js'));
 
 const SEV_RANK: Record<string, number> = { critical: 0, high: 1, alert: 1, medium: 2, incident: 2, low: 3, convoy: 3 };
 
-interface Chip { label: string; hue: string }
+interface Chip { label: string; hue: string; Icon: LucideIcon }
 
 function chipFor(type: string, severity?: string): Chip {
   const t = type.toLowerCase();
-  if (t.includes('panic') || t.includes('sos')) return { label: 'SOS', hue: '255,59,92' };
-  if (t.includes('voice')) return { label: 'VOICE NOTE', hue: '55,230,255' };
-  if (t.includes('capture') || t.includes('photo')) return { label: 'CAPTURE', hue: '55,230,255' };
-  if (t.includes('geofence') || t.includes('corridor') || t.includes('deviation')) return { label: 'GEOFENCE', hue: '255,178,62' };
-  if (t.includes('brak') || t.includes('speed') || t.includes('driver') || t.includes('accel')) return { label: 'DRIVER', hue: '55,230,255' };
-  if (t.includes('fuel')) return { label: 'FUEL', hue: '255,178,62' };
-  if (t.includes('convoy')) return { label: 'CONVOY', hue: '34,227,154' };
-  if (severity === 'critical' || severity === 'high') return { label: 'ALERT', hue: '255,59,92' };
-  return { label: 'EVENT', hue: '255,178,62' };
+  if (t.includes('panic') || t.includes('sos')) return { label: 'SOS', hue: '255,59,92', Icon: Siren };
+  if (t.includes('voice')) return { label: 'VOICE NOTE', hue: '55,230,255', Icon: Mic };
+  if (t.includes('capture') || t.includes('photo')) return { label: 'CAPTURE', hue: '55,230,255', Icon: Camera };
+  if (t.includes('geofence') || t.includes('corridor') || t.includes('deviation')) return { label: 'GEOFENCE', hue: '255,178,62', Icon: MapPin };
+  if (t.includes('brak') || t.includes('speed') || t.includes('driver') || t.includes('accel')) return { label: 'DRIVER', hue: '55,230,255', Icon: Gauge };
+  if (t.includes('fuel')) return { label: 'FUEL', hue: '255,178,62', Icon: Fuel };
+  if (t.includes('convoy')) return { label: 'CONVOY', hue: '34,227,154', Icon: Truck };
+  if (t.includes('incident')) return { label: 'INCIDENT', hue: '255,59,92', Icon: ShieldAlert };
+  if (t.includes('alert') || severity === 'critical' || severity === 'high') return { label: 'ALERT', hue: '255,59,92', Icon: BellRing };
+  return { label: 'EVENT', hue: '255,178,62', Icon: CircleDot };
 }
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -57,6 +58,7 @@ function destinationForFeed(type: string): QueueDestination {
   if (value.includes('panic') || value.includes('sos')) return '/panic-center';
   if (value.includes('voice')) return '/guardian';
   if (value.includes('capture') || value.includes('photo')) return '/surveillance';
+  if (value.includes('geofence') || value.includes('corridor') || value.includes('deviation')) return '/alerts';
   if (value.includes('convoy')) return '/convoys';
   if (value.includes('incident')) return '/incidents';
   if (value.includes('crew') || value.includes('field')) return '/field-officers';
@@ -173,7 +175,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
           <div className='ccxq-panic-card' style={{ position: 'relative', padding: '10px 12px', background: 'rgba(255,59,92,.08)', border: '1px solid var(--d-fire)', borderRadius: 8, animation: 'd-crit 1.8s ease-in-out infinite' }}>
             <LockCorner pos='tl' /><LockCorner pos='tr' /><LockCorner pos='bl' /><LockCorner pos='br' />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '.12em', color: '#fff', background: 'var(--d-fire)', borderRadius: 4, padding: '1px 6px' }}>SOS</span>
+              <span className='ccxq-panic-badge'><Siren size={12} strokeWidth={2.1} aria-hidden='true' /> SOS</span>
               <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, color: 'var(--d-fire)', letterSpacing: '.06em' }}>PANIC ACTIVE</span>
               <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>{relTime(panic.triggered_at)}</span>
             </div>
@@ -187,7 +189,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
         <div className='ccxq-voice-wrap' style={{ padding: '0 14px 10px' }}>
           <button className='ccxq-voice-card' type='button' onClick={() => nav({ to: '/guardian' })} style={{ width: '100%', textAlign: 'left', padding: '9px 12px', background: 'rgba(55,230,255,.06)', border: '1px solid rgba(55,230,255,.4)', borderRadius: 8, cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <span style={{ fontSize: 8, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '.1em', color: '#37e6ff', border: '1px solid rgba(55,230,255,.5)', borderRadius: 4, padding: '1px 5px' }}>VOICE NOTE</span>
+              <span className='ccxq-voice-badge'><Mic size={12} strokeWidth={1.9} aria-hidden='true' /> VOICE NOTE</span>
               <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>{relTime(voiceNote.createdAt)}</span>
             </div>
             <div style={{ fontSize: 12, color: 'var(--d-t1)', lineHeight: 1.35 }}>{voiceNote.deviceName} → dispatch{voiceNote.durationMs ? ` · ${Math.round(voiceNote.durationMs / 1000)}s clip` : ''}</div>
@@ -204,7 +206,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
           <article key={it.id} className={'ccxq-record ccxq-record--' + (it.severity || 'unclassified')} style={{ borderLeftColor: `rgb(${it.chip.hue})` }}>
             <button type='button' className='ccxq-record__select' onClick={() => onSelect?.(it)} disabled={!onSelect} aria-label={`Open ${it.title}`}>
               <span className='ccxq-record__meta'>
-                <span className='ccxq-record__type'>{it.chip.label}</span>
+                <span className='ccxq-record__type'><it.chip.Icon size={12} strokeWidth={2} aria-hidden='true' /><span>{it.chip.label}</span></span>
                 <span className='ccxq-record__source'>{it.recordType === 'alert' ? 'ALERT REGISTER' : 'SESSION EVENT'}</span>
                 <time dateTime={it.at}>{relTime(it.at)}</time>
               </span>
