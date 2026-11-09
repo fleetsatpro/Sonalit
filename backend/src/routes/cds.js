@@ -1857,9 +1857,9 @@ router.get('/locks', asyncHandler(async (req, res) => {
     unverified: unverifiedHeartbeat,
   };
   const sortColumns = {
-    priority: "CASE WHEN " + tamper + " THEN 0 WHEN " + offline + " THEN 1 WHEN " + lowBattery +
-      " THEN 2 WHEN " + staleHeartbeat + " THEN 3 WHEN " + weakSignal + " THEN 4 WHEN " +
-      unverifiedHeartbeat + " THEN 5 WHEN t.status = 'maintenance' THEN 6 WHEN t.status = 'removed' THEN 7 ELSE 8 END",
+    priority: "CASE WHEN " + tamper + " THEN 0 WHEN " + offline + " THEN 1 WHEN " + unverifiedHeartbeat +
+      " THEN 2 WHEN " + staleHeartbeat + " THEN 3 WHEN " + lowBattery + " THEN 4 WHEN " + weakSignal +
+      " THEN 5 WHEN t.status = 'maintenance' THEN 6 WHEN t.status = 'removed' THEN 7 ELSE 8 END",
     battery: "CASE WHEN " + freshBattery + " THEN lock_telemetry.reported_battery_level ELSE NULL END",
     heartbeat: 'lock_telemetry.last_heartbeat_event_at',
     serial: 't.serial',

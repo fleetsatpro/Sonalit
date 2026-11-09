@@ -40,6 +40,33 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
     expect(calls[1].values).toEqual(['%SEC-00%']);
   });
 
+
+  test('default risk ordering follows the device health badge precedence', async () => {
+    const res = response();
+    let statement = '';
+    await routeLayer('/locks', 'get')({
+      query: { sortBy: 'priority', sortOrder: 'asc', limit: '25', offset: '0' },
+      user: { org_id: 'org-1' },
+      db: async sql => {
+        statement = sql;
+        return statement.startsWith('SELECT COUNT(*)') ? { rows: [{ count: '0' }] } : { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    const tamper = statement.indexOf('WHEN (COALESCE(t.tamper_detected');
+    const offline = statement.indexOf("WHEN (t.status = 'offline'");
+    const unverified = statement.indexOf('last_heartbeat_event_at IS NULL');
+    const stale = statement.indexOf('last_heartbeat_event_at < NOW()');
+    const lowBattery = statement.indexOf('reported_battery_level < 25');
+    const weakSignal = statement.indexOf("= 'weak'");
+    expect(tamper).toBeGreaterThan(-1);
+    expect(tamper).toBeLessThan(offline);
+    expect(offline).toBeLessThan(unverified);
+    expect(unverified).toBeLessThan(stale);
+    expect(stale).toBeLessThan(lowBattery);
+    expect(lowBattery).toBeLessThan(weakSignal);
+  });
+
   test('unrecognised lock sort keys cannot inject SQL fragments', async () => {
     const res = response();
     let statement = '';
