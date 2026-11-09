@@ -186,6 +186,9 @@ describe('CDS Performance Analysis v2 contract', () => {
       'SELECT A DAY',
       'aria-pressed={cell.day === currentDay?.day}',
       'level-missing',
+      'preference.addEventListener',
+      'p90BinKey',
+      'raw == null'
     ]) expect(advancedCharts).toContain(marker);
     expect(component).toContain('<Brush');
     expect(component).toContain('AVERAGE / DAY');
