@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { ArrowUpRight, BellRing, Camera, CircleDot, Fuel, Gauge, MapPin, Mic, ShieldAlert, Siren, Truck, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, BellRing, Camera, CircleDot, Fuel, Gauge, Mic, Route, ShieldAlert, Siren, Truck, type LucideIcon } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
