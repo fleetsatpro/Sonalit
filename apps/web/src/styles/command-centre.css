@@ -263,7 +263,7 @@
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 39px;
+  min-height: 44px;
   padding: 0 12px;
   border: 1px solid var(--ccx-edge);
   border-radius: 9px;
@@ -475,7 +475,7 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  min-height: 34px;
+  min-height: 44px;
   color: var(--ccx-gold);
   border: 1px solid var(--ccx-edge-strong);
   border-radius: 8px;
@@ -488,7 +488,7 @@
 }
 
 .ccx-head-link { padding: 0 9px; }
-.ccx-icon-link { width: 36px; }
+.ccx-icon-link { width: 44px; }
 
 .ccx-head-link:hover,
 .ccx-icon-link:hover {
@@ -805,7 +805,7 @@
 }
 
 .ccx-map-stage .d-hscroll button {
-  min-height: 36px !important;
+  min-height: 44px !important;
   border-radius: 8px !important;
   font-size: 11px !important;
   font-weight: 700 !important;
@@ -971,7 +971,7 @@
 }
 
 .ccx-response-content .d-console-queue button {
-  min-height: 34px;
+  min-height: 44px;
 }
 
 .ccx-response-content .d-console-queue button:focus-visible {
@@ -1058,6 +1058,7 @@
   align-items: center;
   gap: 5px;
   margin-left: auto;
+  min-height: 44px;
   padding: 7px 8px;
   color: var(--ccx-gold);
   border: 1px solid var(--ccx-edge-strong);
@@ -1304,9 +1305,9 @@
 .ccx-drawer-close {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   color: var(--ccx-copy);
   border: 1px solid var(--ccx-edge);
   border-radius: 10px;
@@ -1395,7 +1396,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 43px;
+  min-height: 44px;
   border-radius: 9px;
   font-size: 12px;
   font-weight: 800;
@@ -1565,7 +1566,7 @@
   }
   .ccx-refresh,
   .ccx-panic {
-    min-height: 42px;
+    min-height: 44px;
     padding: 0 10px;
     font-size: 11px !important;
   }
@@ -1665,7 +1666,7 @@
   justify-content: center;
   gap: 6px;
   min-width: 0;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 5px;
   color: var(--ccx-muted);
   border: 1px solid transparent;
@@ -1843,7 +1844,7 @@
 
 .ccxq-record__ack {
   align-self: flex-start;
-  min-height: 35px;
+  min-height: 44px;
   padding: 0 10px;
   color: var(--ccx-gold);
   border: 1px solid var(--ccx-edge-strong);
@@ -1928,3 +1929,10 @@
   .ccxq-record__source { display: none; }
 }
 
+
+
+.ccx-map-error button,
+.ccx-page-warning button {
+  min-height: 44px;
+  padding: 0 10px;
+}
