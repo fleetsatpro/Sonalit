@@ -41,6 +41,48 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
   });
 
 
+
+  test('health facets safely parse text-encoded battery, signal and solar telemetry', async () => {
+    const res = response();
+    const dataQueries = [];
+    await routeLayer('/locks', 'get')({
+      query: { health: 'attention', sortBy: 'priority', sortOrder: 'asc', limit: '25', offset: '0' },
+      user: { org_id: 'org-1' },
+      db: async sql => {
+        if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ count: '0' }] };
+        dataQueries.push(sql);
+        return { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(dataQueries[0]).toContain("BTRIM(COALESCE(lock_telemetry.reported_battery_level, '')) ~");
+    expect(dataQueries[0]).toContain('BTRIM(lock_telemetry.reported_battery_level)::numeric');
+    expect(dataQueries[0]).toContain("BTRIM(COALESCE(lock_telemetry.reported_signal_strength, '')) ~");
+    expect(dataQueries[0]).toContain('BTRIM(lock_telemetry.reported_signal_strength)::numeric');
+    expect(dataQueries[0]).toContain("= 'offline' OR (CASE WHEN");
+    expect(dataQueries[0]).toContain("= 'weak' OR ((CASE WHEN");
+    expect(dataQueries[0]).not.toContain('reported_battery_level < 25');
+  });
+
+  test('solar charging compares the event JSON value as text, not as a boolean column', async () => {
+    const res = response();
+    let statement = '';
+    await routeLayer('/locks', 'get')({
+      query: { health: 'charging', sortBy: 'battery', sortOrder: 'asc', limit: '25', offset: '0' },
+      user: { org_id: 'org-1' },
+      db: async sql => {
+        if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ count: '0' }] };
+        statement = sql;
+        return { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(statement).toContain("LOWER(COALESCE(lock_telemetry.reported_solar_charging, '')) = 'true'");
+    expect(statement).toContain('ORDER BY CASE WHEN');
+    expect(statement).toContain('reported_battery_level)::numeric');
+    expect(statement).not.toContain('reported_solar_charging IS TRUE');
+  });
+
   test('default risk ordering follows the device health badge precedence', async () => {
     const res = response();
     let statement = '';

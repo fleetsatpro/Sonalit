@@ -1837,22 +1837,29 @@ const LOCK_COLS = `t.*, c.number AS container_number, v.registration AS truck,
   lock_telemetry.reported_temperature, lock_telemetry.reported_temperature_at,
   lock_telemetry.reported_tamper_detected, lock_telemetry.reported_tamper_at`;
 router.get('/locks', asyncHandler(async (req, res) => {
+
   const freshBattery = "lock_telemetry.reported_battery_at >= NOW() - INTERVAL '15 minutes' AND lock_telemetry.reported_battery_at <= NOW() + INTERVAL '1 minute'";
   const freshSignal = "lock_telemetry.reported_signal_at >= NOW() - INTERVAL '15 minutes' AND lock_telemetry.reported_signal_at <= NOW() + INTERVAL '1 minute'";
   const freshSolar = "lock_telemetry.reported_solar_at >= NOW() - INTERVAL '15 minutes' AND lock_telemetry.reported_solar_at <= NOW() + INTERVAL '1 minute'";
   const activeHealthStatus = "t.status NOT IN ('removed', 'maintenance', 'offline')";
+  // Telemetry values originate in JSON ->> extraction and are text. Cast only
+  // after a strict numeric check so malformed device payloads cannot break the
+  // whole catalogue query.
+  const reportedBattery = "(CASE WHEN BTRIM(COALESCE(lock_telemetry.reported_battery_level, '')) ~ '^[+]?[0-9]+([.][0-9]+)?$' THEN BTRIM(lock_telemetry.reported_battery_level)::numeric ELSE NULL END)";
+  const reportedSignal = "(CASE WHEN BTRIM(COALESCE(lock_telemetry.reported_signal_strength, '')) ~ '^[+]?[0-9]+([.][0-9]+)?$' THEN BTRIM(lock_telemetry.reported_signal_strength)::numeric ELSE NULL END)";
   const staleHeartbeat = "(" + activeHealthStatus + " AND lock_telemetry.last_heartbeat_event_at < NOW() - INTERVAL '15 minutes')";
   const tamper = "(COALESCE(t.tamper_detected, FALSE) IS TRUE OR LOWER(COALESCE(lock_telemetry.reported_tamper_detected, '')) = 'true')";
   const unverifiedHeartbeat = "(" + activeHealthStatus + " AND (lock_telemetry.last_heartbeat_event_at IS NULL OR lock_telemetry.last_heartbeat_event_at > NOW() + INTERVAL '1 minute'))";
-  const offline = "(t.status = 'offline' OR (" + activeHealthStatus + " AND " + freshSignal + " AND LOWER(COALESCE(lock_telemetry.reported_signal_strength, '')) = 'offline'))";
-  const lowBattery = "(" + activeHealthStatus + " AND " + freshBattery + " AND lock_telemetry.reported_battery_level < 25)";
+  const offline = "(t.status = 'offline' OR (" + activeHealthStatus + " AND " + freshSignal + " AND (LOWER(COALESCE(lock_telemetry.reported_signal_strength, '')) = 'offline' OR " + reportedSignal + " = 0)))";
+  const lowBattery = "(" + activeHealthStatus + " AND " + freshBattery + " AND " + reportedBattery + " BETWEEN 0 AND 100 AND " + reportedBattery + " < 25)";
+  const weakSignal = "(" + activeHealthStatus + " AND " + freshSignal + " AND (LOWER(COALESCE(lock_telemetry.reported_signal_strength, '')) = 'weak' OR (" + reportedSignal + " > 0 AND " + reportedSignal + " < 40)))";
   const healthFilters = {
     attention: "(" + tamper + " OR (t.status NOT IN ('removed', 'maintenance') AND (" + [offline, staleHeartbeat, lowBattery, weakSignal, unverifiedHeartbeat].join(' OR ') + "))) ",
     tamper,
     offline,
     stale: staleHeartbeat,
     low: lowBattery,
-    charging: "(" + freshSolar + " AND lock_telemetry.reported_solar_charging IS TRUE)",
+    charging: "(" + freshSolar + " AND LOWER(COALESCE(lock_telemetry.reported_solar_charging, '')) = 'true')",
     maintenance: "t.status = 'maintenance'",
     unverified: unverifiedHeartbeat,
   };
@@ -1860,7 +1867,7 @@ router.get('/locks', asyncHandler(async (req, res) => {
     priority: "CASE WHEN " + tamper + " THEN 0 WHEN " + offline + " THEN 1 WHEN " + unverifiedHeartbeat +
       " THEN 2 WHEN " + staleHeartbeat + " THEN 3 WHEN " + lowBattery + " THEN 4 WHEN " + weakSignal +
       " THEN 5 WHEN t.status = 'maintenance' THEN 6 WHEN t.status = 'removed' THEN 7 ELSE 8 END",
-    battery: "CASE WHEN " + freshBattery + " THEN lock_telemetry.reported_battery_level ELSE NULL END",
+    battery: "CASE WHEN " + freshBattery + " AND " + reportedBattery + " BETWEEN 0 AND 100 THEN " + reportedBattery + " ELSE NULL END",
     heartbeat: 'lock_telemetry.last_heartbeat_event_at',
     serial: 't.serial',
   };
