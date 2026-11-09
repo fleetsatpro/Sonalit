@@ -110,4 +110,35 @@ describe('CDS Performance Analysis v2 contract', () => {
       'not a time-based utilization rate',
     ]) expect(component).toContain(marker);
   });
+  it('renders an interactive line, bar and pie chart suite from persisted analytics data', () => {
+    for (const marker of [
+      'ResponsiveContainer',
+      'LineChart',
+      '<Line',
+      'CorridorActivityChart',
+      'BarChart',
+      '<Bar',
+      'PieChart',
+      '<Pie',
+      'booking_pipeline',
+      'trips_started',
+      'containers_handled',
+      'Five mutually exclusive stages',
+    ]) expect(component).toContain(marker);
+    expect(component).toContain('isAnimationActive={!reducedMotion}');
+    expect(component).toContain('sort((a, b) => Number(b.trips_started) - Number(a.trips_started))');
+    expect(component).toContain('sort((a, b) => Number(b.containers_handled) - Number(a.containers_handled))');
+  });
+
+  it('styles data tooltips and respects reduced-motion preferences in chart rendering', () => {
+    expect(component).toContain("window.matchMedia('(prefers-reduced-motion: reduce)')");
+    for (const marker of [
+      '.cpa-v2__rechart',
+      '.cpa-v2__chart-tooltip',
+      '.cpa-v2__mix-chart-grid',
+      '.cpa-v2__mix-centre',
+    ]) expect(visual).toContain(marker);
+    expect(visual).toContain('@media (prefers-reduced-motion:reduce)');
+  });
+
 });
