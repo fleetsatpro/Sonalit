@@ -631,7 +631,7 @@ export default function CommandCentre() {
     : overviewQuery.isRefetchError
       ? 'refresh failed · last response ' + ageLabel(overviewAge) + ' ago'
       : overview?.data_quality?.state === 'partial'
-        ? 'partial source set · ' + (overview.data_quality.failed_sources.join(', ') || 'source unavailable')
+        ? 'partial source set · ' + (overview.data_quality.failed_sources.join(', ') || 'source unavailable') + ' · received ' + ageLabel(overviewAge) + ' ago'
         : 'browser received snapshot ' + ageLabel(overviewAge) + ' ago';
 
   const convoyRecords = convoysQuery.data?.data ?? [];
@@ -679,7 +679,7 @@ export default function CommandCentre() {
             </span>
             <span className={'ccx-connection__item ' + (connectivity.realtimeConnected ? 'ccx-connection__item--online' : 'ccx-connection__item--offline')}>
               <Radio size={14} />
-              <span>STREAM {connectivity.realtimeConnected ? 'CONNECTED' : 'DISCONNECTED'}</span>
+              <span>STREAM {connectivity.realtimeConnected ? 'CONNECTED' : 'NOT CONNECTED'}</span>
             </span>
           </div>
           <button type='button' className='ccx-refresh' onClick={refreshAll} aria-label='Refresh all command centre data' title='Refresh operating picture'>
