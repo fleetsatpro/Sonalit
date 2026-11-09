@@ -201,7 +201,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
         {alertsQuery.isError && <div className='ccxq-source-warning' role='status'>Alert register unavailable. Previously received session events may still be visible; no all-clear state can be inferred.</div>}
         {visibleItems.length === 0 && !panic && !voiceNote && <div className='ccxq-empty'>{items.length > 0 ? 'No records match this filter.' : alertsQuery.isPending ? 'Loading the alert response window…' : alertsQuery.isError ? 'No verified alert register is available.' : 'No alert records were returned in the current response window. This is not a global all-clear.'}</div>}
         {visibleItems.map((it) => (
-          <article key={it.id} className={'ccxq-record ccxq-record--' + (it.severity || 'unclassified')}>
+          <article key={it.id} className={'ccxq-record ccxq-record--' + (it.severity || 'unclassified')} style={{ borderLeftColor: `rgb(${it.chip.hue})` }}>
             <button type='button' className='ccxq-record__select' onClick={() => onSelect?.(it)} disabled={!onSelect} aria-label={`Open ${it.title}`}>
               <span className='ccxq-record__meta'>
                 <span className='ccxq-record__type'>{it.chip.label}</span>
