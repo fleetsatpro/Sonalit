@@ -187,6 +187,7 @@ function MovementRegister({
   convoys,
   isLoading,
   isError,
+  hasSnapshot,
   onRetry,
   onOpen,
   checkpointsReady,
@@ -194,6 +195,7 @@ function MovementRegister({
   convoys: CommandConvoy[];
   isLoading: boolean;
   isError: boolean;
+  hasSnapshot: boolean;
   onRetry: () => void;
   onOpen: () => void;
   checkpointsReady: boolean;
@@ -216,7 +218,7 @@ function MovementRegister({
             <span /><span /><span />
           </div>
         )}
-        {!isLoading && isError && (
+        {!isLoading && isError && !hasSnapshot && (
           <PanelState
             title='Movement register unavailable'
             message='The convoy endpoint did not return a usable response.'
@@ -225,13 +227,15 @@ function MovementRegister({
             tone='error'
           />
         )}
+        {!isLoading && isError && hasSnapshot && <div className='ccx-partial-note'>Latest refresh failed — showing the last received movement register.</div>}
         {!isLoading && !isError && convoys.length === 0 && (
           <PanelState
             title='No active movements'
             message='No active, in-transit or delayed convoy records were returned.'
           />
         )}
-        {!isLoading && !isError && convoys.map((convoy) => {
+        {!isLoading && isError && hasSnapshot && convoys.length === 0 && <PanelState title='Last received register was empty' message='The latest refresh failed. The last successful response contained no active convoy records.' />}
+        {!isLoading && (!isError || hasSnapshot) && convoys.map((convoy) => {
           const completed = convoy.checkpoints.filter((point) => point.status === 'done').length;
           const total = convoy.checkpoints.length;
           const tone = convoyTone(convoy.status);
@@ -275,6 +279,7 @@ function FleetSignal({
   vehicles,
   isLoading,
   isError,
+  hasSnapshot,
   updatedAt,
   now,
   onRetry,
@@ -283,6 +288,7 @@ function FleetSignal({
   vehicles: CommandVehicle[];
   isLoading: boolean;
   isError: boolean;
+  hasSnapshot: boolean;
   updatedAt: number;
   now: number;
   onRetry: () => void;
@@ -309,7 +315,7 @@ function FleetSignal({
         </button>
       </header>
       {isLoading && <div className='ccx-fleet-loading'><span /><span /><span /></div>}
-      {!isLoading && isError && (
+      {!isLoading && isError && !hasSnapshot && (
         <PanelState
           title='Position register unavailable'
           message='Vehicle signal data could not be loaded.'
@@ -318,7 +324,8 @@ function FleetSignal({
           tone='error'
         />
       )}
-      {!isLoading && !isError && (
+      {!isLoading && isError && hasSnapshot && <div className='ccx-partial-note'>Latest refresh failed — showing the last received position register.</div>}
+      {!isLoading && (!isError || hasSnapshot) && (
         <>
           <div className='ccx-signal-stack'>
             <div className='ccx-signal-row ccx-signal-row--fresh'>
@@ -339,7 +346,7 @@ function FleetSignal({
             <span>{updatedAt > 0 ? 'received ' + ageLabel(now - updatedAt) + ' ago' : 'no snapshot yet'}</span>
           </div>
           {vehicles.length === 0 && (
-            <p className='ccx-fleet-empty'>No vehicle records were returned for this organisation.</p>
+            <p className='ccx-fleet-empty'>{isError ? 'The last successful vehicle snapshot contained no records; refresh is currently unavailable.' : 'No vehicle records were returned for this organisation.'}</p>
           )}
         </>
       )}
@@ -351,6 +358,7 @@ function MilestoneTimeline({
   items,
   isLoading,
   isError,
+  hasSnapshot,
   onRetry,
   onOpen,
   partialSources,
@@ -358,6 +366,7 @@ function MilestoneTimeline({
   items: CommandMilestone[];
   isLoading: boolean;
   isError: boolean;
+  hasSnapshot: boolean;
   onRetry: () => void;
   onOpen: (type: string) => void;
   partialSources: string[];
@@ -372,7 +381,7 @@ function MilestoneTimeline({
         <span className='ccx-timeline-window'>NEXT 24H</span>
       </header>
       {isLoading && <div className='ccx-timeline-loading'><span /><span /><span /></div>}
-      {!isLoading && isError && (
+      {!isLoading && isError && !hasSnapshot && (
         <PanelState
           title='Timeline unavailable'
           message='Upcoming arrivals, checkpoints and shift changes could not be retrieved.'
@@ -387,13 +396,15 @@ function MilestoneTimeline({
           message='There are no recorded arrivals, checkpoints or shift changes in the next 24 hours.'
         />
       )}
-      {!isLoading && !isError && partialSources.length > 0 && (
+      {!isLoading && isError && hasSnapshot && <div className='ccx-partial-note'>Latest refresh failed — showing the last received schedule.</div>}
+      {!isLoading && (!isError || hasSnapshot) && partialSources.length > 0 && (
         <div className='ccx-partial-note'>Partial schedule: {partialSources.join(', ')} did not return a verified result.</div>
       )}
       {!isLoading && !isError && items.length === 0 && partialSources.length > 0 && (
         <PanelState title='Schedule not fully assessed' message='No milestone can be confirmed because one or more schedule sources did not return a verified result.' />
       )}
-      {!isLoading && !isError && items.length > 0 && (
+      {!isLoading && isError && hasSnapshot && items.length === 0 && <PanelState title='Last received schedule contained no milestones' message='The latest refresh failed. The previous successful response contained no milestone rows.' />}
+      {!isLoading && (!isError || hasSnapshot) && items.length > 0 && (
         <div className='ccx-timeline-list'>
           {items.slice(0, 6).map((item, index) => {
             const Icon = timelineIcon(item.type);
@@ -720,6 +731,7 @@ export default function CommandCentre() {
             convoys={convoyRecords}
             isLoading={convoysQuery.isPending}
             isError={convoysQuery.isError}
+            hasSnapshot={convoysQuery.data !== undefined}
             onRetry={() => void convoysQuery.refetch()}
             onOpen={() => void navigate({ to: '/convoys' as any })}
             checkpointsReady={checkpointsReady}
@@ -728,6 +740,7 @@ export default function CommandCentre() {
             vehicles={vehicleRecords}
             isLoading={vehiclesQuery.isPending}
             isError={vehiclesQuery.isError}
+            hasSnapshot={vehiclesQuery.data !== undefined}
             updatedAt={vehiclesQuery.dataUpdatedAt}
             now={now}
             onRetry={() => void vehiclesQuery.refetch()}
@@ -792,6 +805,7 @@ export default function CommandCentre() {
         items={milestones}
         isLoading={timelineQuery.isPending}
         isError={timelineQuery.isError}
+        hasSnapshot={timelineQuery.data !== undefined}
         onRetry={() => void timelineQuery.refetch()}
         onOpen={(type) => void navigate({ to: milestoneDestination(type) as any })}
         partialSources={timelineQuality?.state === 'partial' ? (timelineQuality.failed_sources ?? []) : []}
