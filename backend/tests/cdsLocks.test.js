@@ -48,8 +48,9 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
       query: { sortBy: 'priority', sortOrder: 'asc', limit: '25', offset: '0' },
       user: { org_id: 'org-1' },
       db: async sql => {
+        if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ count: '0' }] };
         statement = sql;
-        return statement.startsWith('SELECT COUNT(*)') ? { rows: [{ count: '0' }] } : { rows: [] };
+        return { rows: [] };
       },
     }, res, error => { if (error) throw error; });
 
@@ -74,10 +75,9 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
       query: { sortBy: 'serial; DROP TABLE cds_electronic_locks', sortOrder: 'asc', limit: '10', offset: '0' },
       user: { org_id: 'org-1' },
       db: async sql => {
+        if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ count: '0' }] };
         statement = sql;
-        return statement.startsWith('SELECT COUNT(*)')
-          ? { rows: [{ count: '0' }] }
-          : { rows: [] };
+        return { rows: [] };
       },
     }, res, error => { if (error) throw error; });
 
@@ -180,10 +180,9 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
       query: { sortBy: 'toString', sortOrder: 'asc', limit: '10', offset: '0' },
       user: { org_id: 'org-1' },
       db: async sql => {
+        if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ count: '0' }] };
         statement = sql;
-        return statement.startsWith('SELECT COUNT(*)')
-          ? { rows: [{ count: '0' }] }
-          : { rows: [] };
+        return { rows: [] };
       },
     }, res, error => { if (error) throw error; });
 
