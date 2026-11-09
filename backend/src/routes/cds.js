@@ -1249,7 +1249,9 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
     return res.json({ data: updated });
   }
 
-  const extra = to_status === 'delivered' ? ', delivered_at=NOW()' : '';
+  const extra = to_status === 'at_port'
+    ? ', arrived_at=COALESCE(arrived_at,NOW())'
+    : to_status === 'delivered' ? ', delivered_at=NOW()' : '';
   const result = await req.db(
     `UPDATE cds_trips SET status=$1, notes=COALESCE($2,notes)${extra}, updated_at=NOW() WHERE id=$3 RETURNING *`,
     [to_status, notes || null, req.params.id]
