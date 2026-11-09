@@ -6,10 +6,11 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
-  Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Line, Pie, PieChart,
+  Area, Bar, BarChart, Brush, CartesianGrid, Cell, ComposedChart, LabelList, Line, Pie, PieChart,
   ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import type { CDSAnalyticsPayload, CDSAnalyticsSummary } from './types.js';
+import { DailyActivityProfile } from './CDSPerformanceAnalysisAdvancedCharts.js';
 import { useAcknowledgeAlert, useCDSAnalytics } from './hooks.js';
 import { useCDSStore } from './store.js';
 import './CDSPerformanceAnalysis.css';
@@ -172,37 +173,20 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
   const [metric, setMetric] = useState<TrendMetric>('bookings_received');
   const reducedMotion = useReducedMotionPreference();
 
-  const buckets = useMemo<TrendBucket[]>(() => {
-    const span = days === 365 ? 7 : days === 90 ? 3 : 1;
-    const result: TrendBucket[] = [];
-    for (let index = 0; index < daily.length; index += span) {
-      const rows = daily.slice(index, index + span);
-      if (!rows.length) continue;
-      const bucket: TrendBucket = {
-        start: rows[0].day,
-        end: rows[rows.length - 1].day,
-        bookings_received: 0,
-        containers_clamped: 0,
-        containers_unclamped: 0,
-        trips_started: 0,
-        deliveries_completed: 0,
-      };
-      rows.forEach(row => {
-        bucket.bookings_received += Number(row.bookings_received || 0);
-        bucket.containers_clamped += Number(row.containers_clamped || 0);
-        bucket.containers_unclamped += Number(row.containers_unclamped || 0);
-        bucket.trips_started += Number(row.trips_started || 0);
-        bucket.deliveries_completed += Number(row.deliveries_completed || 0);
-      });
-      result.push(bucket);
-    }
-    return result;
-  }, [daily, days]);
+  const buckets = useMemo<TrendBucket[]>(() => daily.map(row => ({
+    start: row.day,
+    end: row.day,
+    bookings_received: Number(row.bookings_received ?? 0),
+    containers_clamped: Number(row.containers_clamped ?? 0),
+    containers_unclamped: Number(row.containers_unclamped ?? 0),
+    trips_started: Number(row.trips_started ?? 0),
+    deliveries_completed: Number(row.deliveries_completed ?? 0),
+  })), [daily]);
 
   const values = buckets.map(row => row[metric]);
-  const total = daily.reduce((sum, row) => sum + Number(row[metric] || 0), 0);
+  const total = daily.reduce((sum, row) => sum + Number(row[metric] ?? 0), 0);
   const averagePerBucket = buckets.length ? total / buckets.length : 0;
-  const activeDays = daily.filter(row => Number(row[metric] || 0) > 0).length;
+  const activeDays = daily.filter(row => Number(row[metric] ?? 0) > 0).length;
   const peakBucket = buckets.reduce<TrendBucket | null>(
     (peak, row) => !peak || row[metric] > peak[metric] ? row : peak,
     null,
@@ -237,9 +221,9 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
           <span>{peakBucket ? dateRangeLabel(peakBucket.start, peakBucket.end) : 'No peak recorded'}</span>
         </div>
         <div>
-          <small>AVERAGE / BUCKET</small>
+          <small>AVERAGE / DAY</small>
           <strong>{fmt(averagePerBucket)}</strong>
-          <span>Across {fmt(buckets.length)} observed buckets</span>
+          <span>Across {fmt(buckets.length)} observed calendar days</span>
         </div>
         <div>
           <small>ACTIVE DAYS</small>
@@ -335,13 +319,23 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
                 animationDuration={950}
                 animationEasing="ease-out"
               />
+              {buckets.length > 30 ? (
+                <Brush
+                  dataKey="start"
+                  height={18}
+                  travellerWidth={8}
+                  stroke="#c9ad76"
+                  fill="rgba(10,25,41,.86)"
+                  gap={1}
+                />
+              ) : null}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       ) : (
         <div className="cpa-v2__empty-chart"><BarChart3 size={22} /><strong>No activity recorded in this window</strong><span>The chart will populate from persisted CDS event timestamps when activity exists.</span></div>
       )}
-      <div className="cpa-v2__chart-footnote">Daily counts are grouped into 3-day or 7-day buckets for longer windows. Different event streams are not treated as a conversion funnel; unlike event counts remain in separate metric views.</div>
+      <div className="cpa-v2__chart-footnote">The plot preserves every recorded calendar day. Use the navigator beneath the axis to zoom into individual dates; zero-event days remain visible as observed dates.</div>
     </GlassPanel>
   );
 }
@@ -986,6 +980,7 @@ export function AnalyticsView() {
           <div className="cpa-v2__analysis-grid cpa-v2__analysis-grid--hero-chart">
             <TrendChart daily={data.daily} days={days} />
           </div>
+          <DailyActivityProfile daily={data.daily} />
           <div className="cpa-v2__chart-pair" aria-label="Booking distribution and period comparison charts">
             <BookingMix data={data} />
             <PeriodComparisonChart data={data} days={days} />
