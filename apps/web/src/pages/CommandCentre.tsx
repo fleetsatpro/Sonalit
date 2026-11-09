@@ -609,8 +609,9 @@ export default function CommandCentre() {
   const threat = overview?.threat.level ?? null;
   const criticalPictureReady = overview?.data_quality?.critical_ready !== false;
   const kpiPictureReady = overview?.data_quality?.kpi_ready !== false;
-  const posture = activePanic ? 'PANIC ACTIVE' : !overview || !criticalPictureReady ? 'UNASSESSED' : overviewStale ? 'STALE SNAPSHOT' : threat === 'critical' ? 'CRITICAL' : threat === 'elevated' ? 'ELEVATED' : 'SECURE';
-  const postureTone = activePanic || (criticalPictureReady && threat === 'critical') ? 'critical' : criticalPictureReady && threat === 'elevated' ? 'warning' : !overview || !criticalPictureReady || overviewStale || overviewQuery.isRefetchError ? 'unknown' : 'secure';
+  const confirmedCritical = threat === 'critical';
+  const posture = activePanic ? 'PANIC ACTIVE' : confirmedCritical ? 'CRITICAL' : !overview || !criticalPictureReady ? 'UNASSESSED' : overviewStale ? 'STALE SNAPSHOT' : threat === 'elevated' ? 'ELEVATED' : 'SECURE';
+  const postureTone = activePanic || confirmedCritical ? 'critical' : criticalPictureReady && threat === 'elevated' ? 'warning' : !overview || !criticalPictureReady || overviewStale || overviewQuery.isRefetchError ? 'unknown' : 'secure';
   const apiTone = !connectivity.apiReachable
     ? connectivity.state === 'OFFLINE' ? 'offline' : 'unknown'
     : connectivity.state === 'DEGRADED' ? 'degraded' : 'online';
