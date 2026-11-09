@@ -1936,3 +1936,88 @@
   min-height: 44px;
   padding: 0 10px;
 }
+
+
+/* Command glyph system — one stroke language, restrained metallic framing, no pictographic emoji. */
+.ccx-brand-mark svg,
+.ccx-metric__icon svg,
+.ccx-response-mark svg,
+.ccx-milestone__marker svg {
+  display: block;
+  stroke-width: 1.85;
+  filter: drop-shadow(0 1px 4px rgba(216,181,109,.14));
+}
+
+.ccx-metric {
+  transition: border-color .2s ease, background .2s ease, transform .2s ease, box-shadow .2s ease;
+}
+.ccx-metric:hover {
+  border-color: var(--ccx-edge-strong);
+  background: linear-gradient(145deg, rgba(216,181,109,.055), color-mix(in srgb, var(--d-carbon) 95%, transparent));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 10px 25px rgba(0,0,0,.12);
+}
+.ccx-metric__icon {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--ccx-gold) 34%, var(--ccx-edge));
+  background: linear-gradient(145deg, rgba(216,181,109,.13), color-mix(in srgb, var(--d-well) 92%, transparent));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 5px 16px rgba(0,0,0,.16);
+}
+.ccx-metric__icon::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(255,255,255,.045);
+  border-radius: inherit;
+  pointer-events: none;
+}
+.ccx-drawer-backdrop {
+  z-index: 2147483000;
+  pointer-events: auto;
+}
+.ccx-drawer {
+  isolation: isolate;
+  pointer-events: auto;
+}
+.ccxq-record__type {
+  gap: 5px;
+}
+.ccxq-record__type svg,
+.ccxq-panic-badge svg,
+.ccxq-voice-badge svg {
+  display: block;
+  flex: 0 0 auto;
+  stroke-width: 1.9;
+}
+.ccxq-record__type > span { line-height: 1; }
+.ccxq-panic-badge,
+.ccxq-voice-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 23px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-family: var(--d-font-mono, 'IBM Plex Mono', monospace);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  white-space: nowrap;
+}
+.ccxq-panic-badge {
+  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--d-fire) 75%, #fff);
+  background: linear-gradient(145deg, var(--d-fire), color-mix(in srgb, var(--d-fire) 72%, #750d24));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 0 14px color-mix(in srgb, var(--d-fire) 16%, transparent);
+}
+.ccxq-voice-badge {
+  color: var(--d-sig);
+  border: 1px solid color-mix(in srgb, var(--d-sig) 42%, var(--ccx-edge));
+  background: color-mix(in srgb, var(--d-sig) 8%, var(--d-well));
+}
+.ccxq-record__type svg { color: currentColor; }
+.ccxq-record__select:focus-visible {
+  outline: 2px solid var(--ccx-gold);
+  outline-offset: 4px;
+  border-radius: 5px;
+}
