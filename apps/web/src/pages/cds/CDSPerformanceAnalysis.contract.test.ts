@@ -67,7 +67,7 @@ describe('CDS Performance Analysis v2 contract', () => {
       'bookings_with_trip',
       'bookings_delivered',
       'SAME BOOKING COHORT',
-      'Five exclusive stages for bookings created in this reporting window',
+      'Five mutually exclusive stages for bookings created in this reporting window',
     ]) expect(component).toContain(marker);
   });
 
