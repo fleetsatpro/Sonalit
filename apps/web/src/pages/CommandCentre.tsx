@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -438,6 +439,8 @@ function RecordDrawer({ item, onClose }: { item: QueueItem; onClose: () => void 
 
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -463,6 +466,7 @@ function RecordDrawer({ item, onClose }: { item: QueueItem; onClose: () => void 
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
       previous?.focus();
     };
   }, [onClose]);
@@ -472,7 +476,7 @@ function RecordDrawer({ item, onClose }: { item: QueueItem; onClose: () => void 
     void navigate({ to: item.destination as any });
   };
 
-  return (
+  return createPortal(
     <div
       className='ccx-drawer-backdrop'
       role='presentation'
@@ -528,7 +532,8 @@ function RecordDrawer({ item, onClose }: { item: QueueItem; onClose: () => void 
           <button type='button' className='ccx-drawer-secondary' onClick={onClose}>RETURN TO COMMAND</button>
         </footer>
       </aside>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -651,7 +656,7 @@ export default function CommandCentre() {
   };
 
   return (
-    <main className='ccx-command'>
+    <div className='ccx-command'>
       <header className='ccx-header'>
         <div className='ccx-identity'>
           <span className='ccx-brand-mark'><Crosshair size={22} strokeWidth={1.7} /></span>
@@ -820,6 +825,6 @@ export default function CommandCentre() {
       )}
 
       {selected && <RecordDrawer item={selected} onClose={closeRecord} />}
-    </main>
+    </div>
   );
 }
