@@ -1,4 +1,4 @@
-const { detectSpatialEvents, sourceProviderFromReferences, providerCanReconcile } = require('../../src/services/spatial/spatialEvents');
+const { detectSpatialEvents, sourceProviderFromReferences, providerCanReconcile, severityFor } = require('../../src/services/spatial/spatialEvents');
 
 function vehicle(overrides) {
   return Object.assign({
@@ -104,21 +104,54 @@ describe('deterministic spatial events', () => {
     expect(events.some(e => e.eventType === 'CHECKPOINT_APPROACH')).toBe(true);
   });
 
-  test('turns weather hazards into an explicit contextual event', () => {
+  test('keeps ambient weather observations out of the operational alert event stream', () => {
     const events = detectSpatialEvents({
       mission: { convoyId: 'convoy-1' },
-      operational: { vehicles: [] },
+      operational: { vehicles: [vehicle()] },
       relations: [],
       environment: [{
         id: 'weather:1',
         observedAt: '2026-09-24T12:00:00.000Z',
-        attributes: { hazards: ['high_wind'], severity: 'high' },
-        provenance: { sourceReference: 'weather:1' },
+        attributes: { hazards: ['poor_visibility', 'thunderstorm'], severity: 'high' },
+        provenance: { sourceReference: 'open-meteo:weather:1' },
       }],
     });
-    const event = events.find(e => e.eventType === 'ENVIRONMENTAL_DETERIORATION');
+    expect(events.some(e => e.eventType === 'ENVIRONMENTAL_DETERIORATION')).toBe(false);
+  });
+
+  test('keeps telemetry and position-integrity anomalies at medium pending corroboration', () => {
+    expect(severityFor('STALE_TELEMETRY')).toBe('medium');
+    expect(severityFor('GPS_GAP')).toBe('medium');
+    expect(severityFor('POSITION_JUMP')).toBe('medium');
+    expect(severityFor('LONG_DWELL')).toBe('medium');
+    expect(severityFor('TRAFFIC_CONGESTION')).toBe('medium');
+    expect(severityFor('TRAFFIC_CLOSURE')).toBe('high');
+    expect(severityFor('NATURAL_HAZARD_NEAR_ROUTE')).toBe('high');
+  });
+
+  test('provider severity cannot promote congestion above its rule-defined level', () => {
+    const events = detectSpatialEvents({
+      mission: { convoyId: 'convoy-1' },
+      operational: { vehicles: [vehicle()] },
+      relations: [{
+        predicate: 'TRAFFIC_CONGESTION',
+        fromId: 'vehicle-1',
+        toId: 'tomtom:traffic-flow:segment-1',
+        fromType: 'vehicle',
+        toType: 'traffic_segment',
+        distanceM: 250,
+        confidence: 0.9,
+        operationalConfidence: 0.8,
+        severity: 'high',
+        actionable: true,
+        sourceReferences: ['tomtom-traffic-flow:segment-1'],
+        evidence: [{ metric: 'speed_ratio', value: 0.2 }],
+      }],
+      environment: [],
+    });
+    const event = events.find(e => e.eventType === 'TRAFFIC_CONGESTION');
     expect(event).toBeTruthy();
-    expect(event.evidence[0].value).toBe('high_wind');
+    expect(event.severity).toBe('medium');
   });
   test('does not turn unverified intelligence into an actionable security event', () => {
     const events = detectSpatialEvents({

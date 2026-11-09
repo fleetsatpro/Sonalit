@@ -104,7 +104,7 @@ function DispatchForm({ teams, onDispatch }: {
   return (
     <form onSubmit={handleSubmit} className="space-y-2">
       <div className="grid grid-cols-2 gap-2">
-        <select value={teamId} onChange={e => setTeamId(e.target.value)}
+        <select aria-label="Response team" value={teamId} onChange={e => setTeamId(e.target.value)}
           className="col-span-2 rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-white">
           <option value="">Select response team…</option>
           {available.map(t => (
@@ -113,7 +113,7 @@ function DispatchForm({ teams, onDispatch }: {
             </option>
           ))}
         </select>
-        <select value={priority} onChange={e => setPriority(e.target.value)}
+        <select aria-label="Dispatch priority" value={priority} onChange={e => setPriority(e.target.value)}
           className="rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-white">
           <option value="critical">Critical</option>
           <option value="high">High</option>

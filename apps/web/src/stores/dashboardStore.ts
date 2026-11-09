@@ -37,8 +37,11 @@ export interface DashboardAlert {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   type: string;
+  event_code?: string | null;
+  source?: string | null;
   title: string;
   summary: string;
+  priority_reason?: string | null;
   convoy_id: string | null;
   occurred_at: string;
   acknowledged: boolean;

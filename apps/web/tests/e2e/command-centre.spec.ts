@@ -166,6 +166,7 @@ async function stubCommandApis(page: Page, options: CommandFixtureOptions = {}) 
             type: 'cargo_integrity',
             title: 'High cargo integrity alert',
             summary: 'Seal inspection requires operator review.',
+            priority_reason: 'Seal evidence mismatch requires inspection before this load proceeds.',
             convoy_id: 'convoy-e2e-001',
             occurred_at: iso(-8 * 60_000),
             acknowledged: false,
@@ -205,6 +206,10 @@ test.describe('Command Centre operator workspace', () => {
     await expect(page.getByRole('heading', { name: 'Active movements' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Regional theatre' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Priority response' })).toBeVisible();
+    await expect(page.getByText('GPS reporting', { exact: true })).toBeVisible();
+    await expect(page.getByText('Active convoys', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Response team')).toBeVisible();
+    await expect(page.getByLabel('Dispatch priority')).toBeVisible();
     await expect(page.getByText('NORTH-01', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Nakuru checkpoint', { exact: true })).toBeVisible();
 
@@ -221,6 +226,8 @@ test.describe('Command Centre operator workspace', () => {
     await expect(record.getByText('Vehicle departed the approved movement corridor.')).toBeVisible();
     await record.getByRole('button', { name: 'Close record detail' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('button', { name: /ALL/ }).click();
+    await expect(page.getByText('Seal evidence mismatch requires inspection before this load proceeds.')).toBeVisible();
 
     const audit = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -255,6 +262,10 @@ test.describe('Command Centre operator workspace', () => {
     await expect(page.getByRole('button', { name: 'Refresh all command centre data' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Regional theatre' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Priority response' })).toBeVisible();
+    await expect(page.getByText('GPS reporting', { exact: true })).toBeVisible();
+    await expect(page.getByText('Active convoys', { exact: true })).toBeVisible();
+    await expect(page.getByText('Open incidents', { exact: true })).toBeVisible();
+    await expect(page.getByText('Open alerts', { exact: true })).toBeVisible();
 
     const dimensions = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,

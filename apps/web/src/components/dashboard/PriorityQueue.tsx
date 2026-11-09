@@ -17,7 +17,10 @@ function chipFor(type: string, severity?: string): Chip {
   if (t.includes('panic') || t.includes('sos')) return { label: 'SOS', hue: '255,59,92', Icon: Siren };
   if (t.includes('voice')) return { label: 'VOICE NOTE', hue: '55,230,255', Icon: Mic };
   if (t.includes('capture') || t.includes('photo')) return { label: 'CAPTURE', hue: '55,230,255', Icon: Camera };
-  if (t.includes('geofence') || t.includes('corridor') || t.includes('deviation')) return { label: 'GEOFENCE', hue: '255,178,62', Icon: MapPin };
+  if (t.includes('natural_hazard') || t.includes('hazard_near_route') || t.includes('risk_zone')) return { label: 'HAZARD', hue: '255,178,62', Icon: ShieldAlert };
+  if (t.includes('traffic_closure') || t.includes('traffic_congestion') || t.includes('traffic')) return { label: 'TRAFFIC', hue: '255,178,62', Icon: Route };
+  if (t.includes('stale_telemetry') || t.includes('gps_gap') || t.includes('position_jump')) return { label: 'GPS', hue: '55,230,255', Icon: Gauge };
+  if (t.includes('geofence') || t.includes('corridor') || t.includes('deviation')) return { label: 'ROUTE', hue: '255,178,62', Icon: Route };
   if (t.includes('brak') || t.includes('speed') || t.includes('driver') || t.includes('accel')) return { label: 'DRIVER', hue: '55,230,255', Icon: Gauge };
   if (t.includes('fuel')) return { label: 'FUEL', hue: '255,178,62', Icon: Fuel };
   if (t.includes('convoy')) return { label: 'CONVOY', hue: '34,227,154', Icon: Truck };
@@ -49,6 +52,7 @@ export interface QueueItem {
   source: string;
   destination: QueueDestination;
   severity?: string;
+  priorityReason?: string | null;
   recordType: 'alert' | 'event';
   ackId?: string;
 }
@@ -118,9 +122,11 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
   const items: QueueItem[] = [
     ...alerts.map((a): QueueItem => ({
       id: `a-${a.id}`,
-      chip: chipFor(a.type, a.severity),
+      chip: chipFor(a.event_code || a.type, a.severity),
       title: shortenIds(a.title),
       ...(a.summary && a.summary.trim() !== a.title.trim() ? { body: shortenIds(a.summary) } : {}),
+      ...(a.priority_reason ? { priorityReason: a.priority_reason } : {}),
+      source: a.source || 'Dashboard alert register',
       at: a.occurred_at,
       rank: SEV_RANK[a.severity] ?? 3,
       source: 'Dashboard alert register',
@@ -131,6 +137,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
     })),
     ...feedItems
       .filter((f) => !alerts.some((a) => a.id === f.id))
+      .filter((f) => !/ENVIRONMENTAL_DETERIORATION/i.test(String(f.type || '') + ' ' + String(f.message || '')))
       .map((f): QueueItem => ({
         id: `f-${f.id}`,
         chip: chipFor(f.type, f.severity),
@@ -212,6 +219,12 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
               </span>
               <span className='ccxq-record__title'>{it.title}</span>
               {it.body && <span className='ccxq-record__body'>{it.body}</span>}
+              {it.priorityReason && (
+                <span className='ccxq-record__priority'>
+                  <strong>WHY {(it.severity || 'PRIORITY').toUpperCase()}</strong>
+                  <span>{it.priorityReason}</span>
+                </span>
+              )}
               <span className='ccxq-record__footer'><span>{it.source}</span>{onSelect && <ArrowUpRight size={13} aria-hidden='true' />}</span>
             </button>
             {it.ackId && <button type='button' className='ccxq-record__ack' onClick={() => ackMut.mutate(it.ackId!)} disabled={ackMut.isPending}>{ackMut.isPending ? 'ACKNOWLEDGING…' : 'ACKNOWLEDGE'}</button>}

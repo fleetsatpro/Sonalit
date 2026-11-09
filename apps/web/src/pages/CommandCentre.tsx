@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   Siren,
   Truck,
+  RadioTower,
   Wifi,
   WifiOff,
   X,
@@ -174,7 +175,7 @@ function MetricReadout({
 }) {
   return (
     <div className={'ccx-metric ccx-metric--' + tone}>
-      <span className='ccx-metric__icon'><Icon size={17} strokeWidth={1.9} /></span>
+      <span className='ccx-metric__icon' aria-hidden='true'><Icon size={24} strokeWidth={2.25} /></span>
       <span className='ccx-metric__copy'>
         <small>{label}</small>
         <strong>{value}</strong>
@@ -516,6 +517,12 @@ function RecordDrawer({ item, onClose }: { item: QueueItem; onClose: () => void 
             <strong>{dateTimeLabel(item.at)}</strong>
           </div>
         </div>
+        {item.priorityReason && (
+          <div className='ccx-drawer-priority'>
+            <span className='ccx-eyebrow'>WHY {String(item.severity || 'PRIORITY').toUpperCase()}</span>
+            <p>{item.priorityReason}</p>
+          </div>
+        )}
         <div className='ccx-drawer-evidence'>
           <span className='ccx-eyebrow'>AVAILABLE CONTEXT</span>
           <p>{item.body || 'No additional operator note was attached to this record.'}</p>
@@ -703,29 +710,29 @@ export default function CommandCentre() {
 
       <section className='ccx-metrics' aria-label='Operational summary'>
         <MetricReadout
-          icon={Truck}
-          label='VEHICLES REPORTING'
+          icon={RadioTower}
+          label='GPS reporting'
           value={overview && kpiPictureReady ? overview.kpi.vehicles_live : '—'}
-          detail='GPS fixes received in the last 5 min'
+          detail='Last fix ≤ 5 min'
         />
         <MetricReadout
-          icon={Route}
-          label='ACTIVE CONVOYS'
+          icon={Truck}
+          label='Active convoys'
           value={overview && kpiPictureReady ? overview.kpi.convoys_active : '—'}
-          detail='Active movement records'
+          detail='Movements underway'
         />
         <MetricReadout
           icon={ShieldAlert}
-          label='OPEN INCIDENTS'
+          label='Open incidents'
           value={overview && kpiPictureReady ? overview.kpi.incidents_open : '—'}
-          detail='Incident records with open status'
+          detail='Unresolved cases'
           tone={overview?.kpi.incidents_open ? 'warning' : 'default'}
         />
         <MetricReadout
           icon={AlertOctagon}
-          label='OPEN ALERTS + PANIC'
+          label='Open alerts'
           value={overview && criticalPictureReady ? overview.threat.alerts_open : '—'}
-          detail='Unresolved alerts and panic events'
+          detail='Unresolved + panic events'
           tone={overview?.threat.alerts_open ? 'critical' : 'default'}
         />
       </section>
