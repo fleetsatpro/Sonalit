@@ -129,7 +129,6 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
       source: a.source || 'Dashboard alert register',
       at: a.occurred_at,
       rank: SEV_RANK[a.severity] ?? 3,
-      source: 'Dashboard alert register',
       destination: '/alerts',
       severity: a.severity,
       recordType: 'alert',
