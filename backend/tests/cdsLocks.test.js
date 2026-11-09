@@ -145,6 +145,26 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
     expect(calls[1].values).toEqual(['at_port', '%SEC-70%']);
   });
 
+
+  test('prototype property names are not accepted as sort or health allowlist entries', async () => {
+    const res = response();
+    let statement = '';
+    await routeLayer('/bookings', 'get')({
+      query: { sortBy: 'toString', sortOrder: 'asc', limit: '10', offset: '0' },
+      user: { org_id: 'org-1' },
+      db: async sql => {
+        statement = sql;
+        return statement.startsWith('SELECT COUNT(*)')
+          ? { rows: [{ count: '0' }] }
+          : { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(statement).toContain('ORDER BY t.created_at DESC NULLS LAST');
+    expect(statement).not.toContain('function toString');
+    expect(res.result.body.total).toBe(0);
+  });
+
   test('booking summary route is registered before the booking id route', () => {
     const paths = router.stack.filter(item => item.route).map(item => item.route.path);
     expect(paths.indexOf('/bookings/summary')).toBeLessThan(paths.indexOf('/bookings/:id'));

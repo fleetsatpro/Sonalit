@@ -2242,7 +2242,10 @@ router.get('/bookings', asyncHandler(async (req, res) => {
     updated_at: 't.updated_at',
     booking_number: 't.booking_number',
   };
-  const sortColumn = sortColumns[String(req.query.sortBy || '')] || 't.created_at';
+  const sortKey = String(req.query.sortBy || '');
+  const sortColumn = Object.prototype.hasOwnProperty.call(sortColumns, sortKey)
+    ? sortColumns[sortKey]
+    : 't.created_at';
   const sortOrder = String(req.query.sortOrder || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   params.push(limit, offset);
   const result = await req.db(
