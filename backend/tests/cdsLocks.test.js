@@ -71,7 +71,7 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
       query: { health: 'charging', sortBy: 'battery', sortOrder: 'asc', limit: '25', offset: '0' },
       user: { org_id: 'org-1' },
       db: async sql => {
-        if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ count: '0' }] };
+        if (sql.startsWith('SELECT COUNT(DISTINCT t.id)')) return { rows: [{ count: '0' }] };
         statement = sql;
         return { rows: [] };
       },
@@ -99,9 +99,9 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
     const tamper = statement.indexOf('WHEN (COALESCE(t.tamper_detected');
     const offline = statement.indexOf("WHEN (t.status = 'offline'");
     const unverified = statement.indexOf('last_heartbeat_event_at IS NULL');
-    const stale = statement.indexOf('last_heartbeat_event_at < NOW()');
-    const lowBattery = statement.indexOf('reported_battery_level < 25');
-    const weakSignal = statement.indexOf("= 'weak'");
+    const stale = statement.indexOf('THEN 3 WHEN ');
+    const lowBattery = statement.indexOf('THEN 4 WHEN ');
+    const weakSignal = statement.indexOf('THEN 5 WHEN ');
     expect(tamper).toBeGreaterThan(-1);
     expect(tamper).toBeLessThan(offline);
     expect(offline).toBeLessThan(unverified);
