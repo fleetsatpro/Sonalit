@@ -2076,3 +2076,84 @@
   font-weight: 600;
   line-height: 1.5;
 }
+
+
+/* Operator KPI glyphs: filled operational silhouettes, not boxed stock line icons. */
+.ccx-metric__icon {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: radial-gradient(circle, rgba(84,214,228,.13), rgba(84,214,228,0) 72%) !important;
+  box-shadow: none !important;
+}
+.ccx-metric__icon::before,
+.ccx-metric__icon::after {
+  content: none !important;
+  display: none !important;
+}
+.ccx-metric__icon .ccx-glyph {
+  display: block;
+  width: 50px;
+  height: 50px;
+  overflow: visible;
+  stroke-width: initial;
+  filter: drop-shadow(0 4px 7px rgba(0,0,0,.32)) drop-shadow(0 0 8px rgba(92,216,228,.13));
+}
+.ccx-metric--warning .ccx-metric__icon {
+  background: radial-gradient(circle, rgba(232,173,79,.14), rgba(232,173,79,0) 72%) !important;
+}
+.ccx-metric--critical .ccx-metric__icon {
+  background: radial-gradient(circle, rgba(241,74,103,.16), rgba(241,74,103,0) 72%) !important;
+}
+.ccx-metric__icon .ccx-glyph--convoy {
+  filter: drop-shadow(0 4px 7px rgba(0,0,0,.35)) drop-shadow(0 0 8px rgba(226,187,113,.16));
+}
+.ccx-metric__icon .ccx-glyph--incident {
+  filter: drop-shadow(0 4px 7px rgba(0,0,0,.35)) drop-shadow(0 0 8px rgba(230,171,82,.16));
+}
+.ccx-metric__icon .ccx-glyph--alert {
+  filter: drop-shadow(0 4px 7px rgba(0,0,0,.35)) drop-shadow(0 0 9px rgba(241,74,103,.2));
+}
+@media (max-width: 520px) {
+  .ccx-metric__icon {
+    width: 45px;
+    height: 45px;
+    flex-basis: 45px;
+  }
+  .ccx-metric__icon .ccx-glyph {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ccx-metric__icon .ccx-glyph {
+    animation: ccx-glyph-arrive .55s cubic-bezier(.18,.76,.24,1) both;
+  }
+  @keyframes ccx-glyph-arrive {
+    from { opacity: .62; transform: translateY(4px) scale(.91); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
+
+/* Classification labels use a clear category marker instead of a tiny generic bell. */
+.ccxq-record__type {
+  gap: 7px;
+  padding-inline: 9px;
+  border-radius: 4px;
+  letter-spacing: .075em;
+}
+.ccxq-record__type::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 1px;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}

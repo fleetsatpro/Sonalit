@@ -17,7 +17,6 @@ import {
   ShieldAlert,
   Siren,
   Truck,
-  RadioTower,
   Wifi,
   WifiOff,
   X,
@@ -160,14 +159,79 @@ function PanelState({
   );
 }
 
+type MetricGlyphKind = 'gps' | 'convoy' | 'incident' | 'alert';
+
+function MetricGlyph({ kind }: { kind: MetricGlyphKind }) {
+  const id = 'ccx-glyph-' + kind;
+  return (
+    <svg className={'ccx-glyph ccx-glyph--' + kind} viewBox='0 0 64 64' aria-hidden='true' focusable='false'>
+      <defs>
+        <linearGradient id={id + '-main'} x1='8' y1='7' x2='54' y2='57' gradientUnits='userSpaceOnUse'>
+          {kind === 'gps' && <><stop stopColor='#76F2FF' /><stop offset='1' stopColor='#1596B5' /></>}
+          {kind === 'convoy' && <><stop stopColor='#F8DB9C' /><stop offset='1' stopColor='#A8752D' /></>}
+          {kind === 'incident' && <><stop stopColor='#FFE0A0' /><stop offset='1' stopColor='#B7782D' /></>}
+          {kind === 'alert' && <><stop stopColor='#FF9CAC' /><stop offset='1' stopColor='#B5264D' /></>}
+        </linearGradient>
+      </defs>
+
+      {kind === 'gps' && (
+        <g>
+          <rect x='10' y='16' width='12' height='31' rx='2' fill={'url(#' + id + '-main)'} />
+          <rect x='42' y='16' width='12' height='31' rx='2' fill={'url(#' + id + '-main)'} />
+          <path d='M13 22h6M13 29h6M13 36h6M13 43h6M45 22h6M45 29h6M45 36h6M45 43h6' stroke='#08202A' strokeOpacity='.55' strokeWidth='2' strokeLinecap='round' />
+          <path d='M23 25 32 17l9 8v14l-9 8-9-8z' fill={'url(#' + id + '-main)'} stroke='#D9FBFF' strokeOpacity='.8' strokeWidth='1.4' />
+          <circle cx='32' cy='32' r='5.4' fill='#071923' stroke='#B8F7FF' strokeWidth='2.2' />
+          <path d='M38 14q8-7 15 0M41 8q11-10 19 0' fill='none' stroke='#65E9F7' strokeWidth='3' strokeLinecap='round' />
+          <path d='m32 39 0 10m-5-5 5 5 5-5' fill='none' stroke='#F8DB9C' strokeWidth='2.6' strokeLinecap='round' strokeLinejoin='round' />
+        </g>
+      )}
+
+      {kind === 'convoy' && (
+        <g>
+          <path d='M5 14h30v21H5z' fill={'url(#' + id + '-main)'} />
+          <path d='M35 21h13l10 10v4H35z' fill={'url(#' + id + '-main)'} />
+          <path d='M38 24h8l6 6H38z' fill='#14202B' fillOpacity='.88' />
+          <path d='M9 19h21v11H9z' fill='#15212B' fillOpacity='.85' />
+          <path d='M5 37h52v5H5z' fill='#D2A65E' />
+          <circle cx='17' cy='43' r='5.5' fill='#0B1420' stroke='#F5D99F' strokeWidth='2.6' />
+          <circle cx='45' cy='43' r='5.5' fill='#0B1420' stroke='#F5D99F' strokeWidth='2.6' />
+          <path d='M13 52h38' stroke='#65E7D1' strokeWidth='3' strokeLinecap='round' />
+          <path d='m8 9 9-5 9 5M45 9l7-4 7 4' fill='none' stroke='#65E7D1' strokeWidth='2.5' strokeLinecap='round' strokeLinejoin='round' />
+        </g>
+      )}
+
+      {kind === 'incident' && (
+        <g>
+          <path d='M32 5 53 13v15c0 14-8.8 23-21 30C19.8 51 11 42 11 28V13z' fill={'url(#' + id + '-main)'} stroke='#FFE6B4' strokeOpacity='.8' strokeWidth='1.7' />
+          <path d='M32 13 46 18v10c0 10-5.6 17-14 23-8.4-6-14-13-14-23V18z' fill='#221B15' fillOpacity='.63' />
+          <path d='M32 21v15' stroke='#FFF6E5' strokeWidth='4.5' strokeLinecap='round' />
+          <circle cx='32' cy='43' r='2.8' fill='#FFF6E5' />
+          <path d='m8 15 5 3m43-3-5 3' stroke='#F7D18B' strokeWidth='2.8' strokeLinecap='round' />
+        </g>
+      )}
+
+      {kind === 'alert' && (
+        <g>
+          <path d='M18 39v-7c0-8 5.8-14 14-14s14 6 14 14v7z' fill={'url(#' + id + '-main)'} stroke='#FFD7DF' strokeWidth='1.6' />
+          <path d='M14 40h36v6H14z' fill='#E85B76' />
+          <path d='M10 48h44v6H10z' fill='#7E203D' />
+          <path d='M32 4v8M9 14l6 6m40-6-6 6M4 31h8m40 0h8' stroke='#FF8DA1' strokeWidth='3.4' strokeLinecap='round' />
+          <path d='M24 27q8-7 16 0' fill='none' stroke='#FFF2F4' strokeWidth='2.5' strokeLinecap='round' />
+          <circle cx='32' cy='32' r='3.4' fill='#FFF2F4' />
+        </g>
+      )}
+    </svg>
+  );
+}
+
 function MetricReadout({
-  icon: Icon,
+  symbol,
   label,
   value,
   detail,
   tone = 'default',
 }: {
-  icon: React.ElementType;
+  symbol: MetricGlyphKind;
   label: string;
   value: string | number;
   detail: string;
@@ -175,7 +239,7 @@ function MetricReadout({
 }) {
   return (
     <div className={'ccx-metric ccx-metric--' + tone}>
-      <span className='ccx-metric__icon' aria-hidden='true'><Icon size={24} strokeWidth={2.25} /></span>
+      <span className='ccx-metric__icon' aria-hidden='true'><MetricGlyph kind={symbol} /></span>
       <span className='ccx-metric__copy'>
         <small>{label}</small>
         <strong>{value}</strong>
@@ -710,26 +774,26 @@ export default function CommandCentre() {
 
       <section className='ccx-metrics' aria-label='Operational summary'>
         <MetricReadout
-          icon={RadioTower}
+          symbol='gps'
           label='GPS reporting'
           value={overview && kpiPictureReady ? overview.kpi.vehicles_live : '—'}
           detail='Last fix ≤ 5 min'
         />
         <MetricReadout
-          icon={Truck}
+          symbol='convoy'
           label='Active convoys'
           value={overview && kpiPictureReady ? overview.kpi.convoys_active : '—'}
           detail='Movements underway'
         />
         <MetricReadout
-          icon={ShieldAlert}
+          symbol='incident'
           label='Open incidents'
           value={overview && kpiPictureReady ? overview.kpi.incidents_open : '—'}
           detail='Unresolved cases'
           tone={overview?.kpi.incidents_open ? 'warning' : 'default'}
         />
         <MetricReadout
-          icon={AlertOctagon}
+          symbol='alert'
           label='Open alerts'
           value={overview && criticalPictureReady ? overview.threat.alerts_open : '—'}
           detail='Unresolved + panic events'

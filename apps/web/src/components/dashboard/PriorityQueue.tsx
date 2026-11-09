@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { ArrowUpRight, BellRing, Camera, CircleDot, Fuel, Gauge, Mic, Route, ShieldAlert, Siren, Truck, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, Mic, Siren } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
@@ -10,23 +10,38 @@ const ResponseCrewPanel = lazy(() => import('./ResponseCrewPanel.js'));
 
 const SEV_RANK: Record<string, number> = { critical: 0, high: 1, alert: 1, medium: 2, incident: 2, low: 3, convoy: 3 };
 
-interface Chip { label: string; hue: string; Icon: LucideIcon }
+interface Chip { label: string; hue: string }
 
 function chipFor(type: string, severity?: string): Chip {
   const t = type.toLowerCase();
-  if (t.includes('panic') || t.includes('sos')) return { label: 'SOS', hue: '255,59,92', Icon: Siren };
-  if (t.includes('voice')) return { label: 'VOICE NOTE', hue: '55,230,255', Icon: Mic };
-  if (t.includes('capture') || t.includes('photo')) return { label: 'CAPTURE', hue: '55,230,255', Icon: Camera };
-  if (t.includes('natural_hazard') || t.includes('hazard_near_route') || t.includes('risk_zone')) return { label: 'HAZARD', hue: '255,178,62', Icon: ShieldAlert };
-  if (t.includes('traffic_closure') || t.includes('traffic_congestion') || t.includes('traffic')) return { label: 'TRAFFIC', hue: '255,178,62', Icon: Route };
-  if (t.includes('stale_telemetry') || t.includes('gps_gap') || t.includes('position_jump')) return { label: 'GPS', hue: '55,230,255', Icon: Gauge };
-  if (t.includes('geofence') || t.includes('corridor') || t.includes('deviation')) return { label: 'ROUTE', hue: '255,178,62', Icon: Route };
-  if (t.includes('brak') || t.includes('speed') || t.includes('driver') || t.includes('accel')) return { label: 'DRIVER', hue: '55,230,255', Icon: Gauge };
-  if (t.includes('fuel')) return { label: 'FUEL', hue: '255,178,62', Icon: Fuel };
-  if (t.includes('convoy')) return { label: 'CONVOY', hue: '34,227,154', Icon: Truck };
-  if (t.includes('incident')) return { label: 'INCIDENT', hue: '255,59,92', Icon: ShieldAlert };
-  if (t.includes('alert') || severity === 'critical' || severity === 'high') return { label: 'ALERT', hue: '255,59,92', Icon: BellRing };
-  return { label: 'EVENT', hue: '255,178,62', Icon: CircleDot };
+  if (t.includes('panic') || t.includes('sos')) return { label: 'SOS', hue: '255,59,92' };
+  if (t.includes('voice')) return { label: 'VOICE NOTE', hue: '55,230,255' };
+  if (t.includes('capture') || t.includes('photo')) return { label: 'CAPTURE', hue: '55,230,255' };
+  if (t.includes('natural_hazard') || t.includes('hazard_near_route') || t.includes('risk_zone')) return { label: 'HAZARD', hue: '255,178,62' };
+  if (t.includes('traffic_closure') || t.includes('traffic_congestion') || t.includes('traffic')) return { label: 'TRAFFIC', hue: '255,178,62' };
+  if (t.includes('stale_telemetry') || t.includes('gps_gap') || t.includes('position_jump')) return { label: 'GPS', hue: '55,230,255' };
+  if (t.includes('geofence') || t.includes('corridor') || t.includes('deviation')) return { label: 'ROUTE', hue: '255,178,62' };
+  if (t.includes('brak') || t.includes('speed') || t.includes('driver') || t.includes('accel')) return { label: 'DRIVER', hue: '55,230,255' };
+  if (t.includes('fuel')) return { label: 'FUEL', hue: '255,178,62' };
+  if (t.includes('convoy')) return { label: 'CONVOY', hue: '34,227,154' };
+  if (t.includes('incident')) return { label: 'INCIDENT', hue: '255,59,92' };
+  if (t.includes('alert') || severity === 'critical' || severity === 'high') return { label: 'ALERT', hue: '255,59,92' };
+  return { label: 'EVENT', hue: '255,178,62' };
+}
+
+function isAmbientWeatherRecord(record: {
+  type?: unknown;
+  event_code?: unknown;
+  title?: unknown;
+  message?: unknown;
+}) {
+  const identity = [record.type, record.event_code, record.title, record.message]
+    .filter((value) => value !== undefined && value !== null)
+    .map(String)
+    .join(' ');
+  return /ENVIRONMENTAL[_\s.-]+DETERIORATION/i.test(identity)
+    || /^\s*Spatial\s+environmental\s+deterioration\s*:/i.test(identity)
+    || /\[spatial-event:ENVIRONMENTAL[_\s.-]+DETERIORATION:/i.test(identity);
 }
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -119,8 +134,9 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
     onSuccess: (_, id) => { removeAlert(id); qc.invalidateQueries({ queryKey: ['alerts-unread-count'] }); },
   });
 
+  const operationalAlerts = alerts.filter((alert) => !isAmbientWeatherRecord(alert));
   const items: QueueItem[] = [
-    ...alerts.map((a): QueueItem => ({
+    ...operationalAlerts.map((a): QueueItem => ({
       id: `a-${a.id}`,
       chip: chipFor(a.event_code || a.type, a.severity),
       title: shortenIds(a.title),
@@ -135,8 +151,8 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
       ...(!a.acknowledged ? { ackId: a.id } : {}),
     })),
     ...feedItems
-      .filter((f) => !alerts.some((a) => a.id === f.id))
-      .filter((f) => !/ENVIRONMENTAL_DETERIORATION/i.test(String(f.type || '') + ' ' + String(f.message || '')))
+      .filter((f) => !operationalAlerts.some((a) => a.id === f.id))
+      .filter((f) => !isAmbientWeatherRecord(f))
       .map((f): QueueItem => ({
         id: `f-${f.id}`,
         chip: chipFor(f.type, f.severity),
@@ -212,7 +228,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
           <article key={it.id} className={'ccxq-record ccxq-record--' + (it.severity || 'unclassified')} style={{ borderLeftColor: `rgb(${it.chip.hue})` }}>
             <button type='button' className='ccxq-record__select' onClick={() => onSelect?.(it)} disabled={!onSelect} aria-label={`Open ${it.title}`}>
               <span className='ccxq-record__meta'>
-                <span className='ccxq-record__type'><it.chip.Icon size={12} strokeWidth={2} aria-hidden='true' /><span>{it.chip.label}</span></span>
+                <span className='ccxq-record__type'><span>{it.chip.label}</span></span>
                 <span className='ccxq-record__source'>{it.recordType === 'alert' ? 'ALERT REGISTER' : 'SESSION EVENT'}</span>
                 <time dateTime={it.at}>{relTime(it.at)}</time>
               </span>

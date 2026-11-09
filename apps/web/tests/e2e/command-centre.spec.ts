@@ -181,6 +181,18 @@ async function stubCommandApis(page: Page, options: CommandFixtureOptions = {}) 
             occurred_at: iso(-12 * 60_000),
             acknowledged: true,
           },
+          {
+            id: 'alert-e2e-weather-legacy',
+            severity: 'high',
+            type: 'weather_hazard',
+            event_code: 'ENVIRONMENTAL_DETERIORATION',
+            source: 'Dashboard alert register',
+            title: 'Spatial environmental deterioration: weather_hazard=poor_visibility [spatial-event:ENVIRONMENTAL_DETERIORATION:open-meteo:weather:-12.089,27.515]',
+            summary: 'Ambient weather context only; no route-impact relation.',
+            convoy_id: 'convoy-e2e-001',
+            occurred_at: iso(-10 * 24 * 60 * 60_000),
+            acknowledged: false,
+          },
         ],
       });
     }
@@ -206,6 +218,7 @@ test.describe('Command Centre operator workspace', () => {
     await expect(page.getByRole('heading', { name: 'Active movements' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Regional theatre' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Priority response' })).toBeVisible();
+    await expect(page.getByText(/Spatial environmental deterioration/i)).toHaveCount(0);
     await expect(page.getByText('GPS reporting', { exact: true })).toBeVisible();
     await expect(page.getByText('Active convoys', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Response team')).toBeVisible();
@@ -262,6 +275,7 @@ test.describe('Command Centre operator workspace', () => {
     await expect(page.getByRole('button', { name: 'Refresh all command centre data' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Regional theatre' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Priority response' })).toBeVisible();
+    await expect(page.getByText(/Spatial environmental deterioration/i)).toHaveCount(0);
     await expect(page.getByText('GPS reporting', { exact: true })).toBeVisible();
     await expect(page.getByText('Active convoys', { exact: true })).toBeVisible();
     await expect(page.getByText('Open incidents', { exact: true })).toBeVisible();
