@@ -14,6 +14,7 @@ describe('CDS fleet-scale register contract', () => {
     expect(pages).toContain('cds-lock-register__table');
     expect(pages).toContain('Export selected');
     expect(pages).toContain('setPage(value => Math.min(totalPages, value + 1))');
+    expect(pages).toContain('if (data && page > totalPages) setPage(totalPages);');
     expect(pages).toContain('aria-label="Select all devices on this page"');
     expect(hooks).toContain("offset: (page - 1) * limit");
     expect(hooks).toContain("health: filters.health");
@@ -27,7 +28,7 @@ describe('CDS fleet-scale register contract', () => {
     expect(pages).toContain('LockEventHistory');
     expect(pages).toContain('LockBatteryTrend');
     expect(pages).not.toContain('className="cds-lock-grid"');
-    expect(pages).toContain('NO BATTERY-LIFE ESTIMATE INFERRED');
+    expect(pages).toContain('Battery history trace');
   });
 
   it('serves tenant-wide booking health independently from the current result page', () => {
@@ -39,6 +40,18 @@ describe('CDS fleet-scale register contract', () => {
     expect(backend).toContain("router.get('/bookings/summary'");
     expect(backend).toContain('WHERE t.org_id = $1 AND t.deleted_at IS NULL');
     expect(backend).toContain("req.query.health === 'exceptions'");
+  });
+
+  it('uses the recorded port-arrival timestamp and a searchable, paginated release queue', () => {
+    expect(pages).toContain("row['arrived_at']");
+    expect(pages).toContain("row['lock_serial']");
+    expect(pages).toContain("row['vehicleReg'] ?? row['vehicle_reg']");
+    expect(pages).toContain("row['driverName'] ?? row['driver_name']");
+    expect(pages).toContain("status: 'at_port'");
+    expect(pages).toContain('Port Clearance');
+    expect(hooks).toContain("cdsApi.get('/trips', { params })");
+    expect(hooks).toContain("offset: (page - 1) * limit");
+    expect(backend).toContain("'co.number', 'el.serial', 've.registration', 'tr.company_name'");
   });
 
   it('keeps catalogue and booking health usable on small screens with reduced-motion support', () => {

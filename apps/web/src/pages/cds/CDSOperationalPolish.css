@@ -1947,3 +1947,54 @@
   .cds-lock-register__table tbody tr,
   .cds-lock-register__details { transition: none !important; }
 }
+
+
+/* Port Clearance — a searchable release queue, not a bare arrival list. */
+.cds-port-desk { max-width: 1660px; margin: 0 auto; padding: 18px clamp(12px,1.5vw,22px) 28px; }
+.cds-port-desk__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 0 0 15px; border-bottom: 1px solid rgba(194,160,98,.2); }
+.cds-port-desk__head > div > span { color: #c4a46b; font: 750 8px var(--font-mono,ui-monospace,monospace); letter-spacing: .16em; }
+.cds-port-desk__head h1 { margin-top: 5px; color: #f1f5fb; font-size: 24px; font-weight: 760; letter-spacing: -.04em; }
+.cds-port-desk__head p { margin-top: 4px; color: #91a4bb; font-size: 10px; line-height: 1.5; }
+.cds-port-desk__head > button { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 11px; border: 1px solid rgba(201,169,102,.28); border-radius: 7px; color: #e3cca0; background: rgba(201,169,102,.065); font-size: 9px; font-weight: 720; white-space: nowrap; }
+.cds-port-desk__head > button:disabled { opacity: .45; }
+.cds-port-desk__error { margin-top: 10px; padding: 9px 11px; border: 1px solid rgba(231,171,92,.2); border-radius: 7px; color: #e6c38a; background: rgba(120,78,27,.1); font-size: 9px; }
+.cds-port-desk__metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin: 11px 0; }
+.cds-port-desk__metrics > div { display: grid; min-width: 0; gap: 3px; min-height: 66px; padding: 9px 12px; border: 1px solid rgba(190,157,95,.19); border-radius: 8px; background: linear-gradient(145deg,rgba(20,32,48,.92),rgba(7,15,27,.97)); box-shadow: inset 0 1px rgba(255,240,202,.035),0 7px 18px rgba(0,0,0,.11); }
+.cds-port-desk__metrics span { color: #b99a5d; font: 750 7px var(--font-mono,ui-monospace,monospace); letter-spacing: .14em; }
+.cds-port-desk__metrics strong { overflow: hidden; color: #f0f4fb; font: 760 19px var(--font-mono,ui-monospace,monospace); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.cds-port-desk__metrics small { color: #869bb4; font-size: 8px; }
+.cds-port-desk__register { overflow: hidden; border: 1px solid rgba(190,157,95,.2); border-radius: 10px; background: linear-gradient(145deg,rgba(12,23,39,.97),rgba(6,14,26,.985)); box-shadow: inset 0 1px rgba(255,240,202,.025),0 14px 30px rgba(0,0,0,.13); }
+.cds-port-desk__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px; border-bottom: 1px solid rgba(169,187,210,.08); }
+.cds-port-desk__toolbar > label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 150px; min-height: 37px; padding: 0 10px; border: 1px solid rgba(144,172,204,.15); border-radius: 7px; color: #8ea7c3; background: rgba(5,13,24,.7); }
+.cds-port-desk__toolbar > label:focus-within { border-color: rgba(202,170,107,.5); }
+.cds-port-desk__toolbar input { flex: 1; min-width: 0; border: 0; outline: 0; color: #e9f1fb; background: transparent; font-size: 10px; }
+.cds-port-desk__toolbar input::placeholder { color: #6f849b; }
+.cds-port-desk__toolbar label button { color: #c1d0df; font-size: 17px; }
+.cds-port-desk__toolbar > div { display: grid; justify-items: end; gap: 3px; flex: none; }
+.cds-port-desk__toolbar > div b { color: #e8d4a8; font: 750 8px var(--font-mono,ui-monospace,monospace); letter-spacing: .07em; }
+.cds-port-desk__toolbar > div span { color: #8195ad; font-size: 8px; }
+.cds-port-desk__table { min-width: 0; }
+.cds-port-desk__table table { min-width: 1120px; }
+.cds-port-desk__table thead th { color: #93a7bf; border-bottom: 1px solid rgba(192,158,98,.18); font-weight: 750; }
+.cds-port-desk__table tbody tr { transition: background .15s ease; }
+.cds-port-desk__table tbody tr:hover { background: rgba(205,169,99,.045); }
+.cds-port-desk__table tbody td { border-top-color: rgba(133,158,188,.08); }
+.cds-port-desk__table tbody td:last-child { white-space: nowrap; }
+.cds-port-desk__table tbody td:last-child button { min-width: 82px; }
+.cds-port-desk__pagination { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-top: 1px solid rgba(169,187,210,.08); color: #8ba0b8; font-size: 8px; }
+.cds-port-desk__pagination > div { display: flex; align-items: center; gap: 7px; }
+.cds-port-desk__pagination > div > span { margin-right: 4px; color: #b9c7d8; font: 700 8px var(--font-mono,ui-monospace,monospace); }
+.cds-port-desk__pagination button { display: inline-flex; align-items: center; justify-content: center; width: 27px; height: 27px; border: 1px solid rgba(141,166,196,.16); border-radius: 5px; color: #c4d4e5; background: rgba(255,255,255,.025); }
+.cds-port-desk__pagination button:disabled { opacity: .28; cursor: not-allowed; }
+@media (max-width: 960px) { .cds-port-desk__metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 600px) {
+  .cds-port-desk { padding: 12px 10px 22px; }
+  .cds-port-desk__head { align-items: flex-start; flex-direction: column; }
+  .cds-port-desk__head > button { align-self: flex-end; }
+  .cds-port-desk__toolbar { align-items: stretch; flex-direction: column; }
+  .cds-port-desk__toolbar > div { justify-items: start; }
+  .cds-port-desk__pagination { flex-wrap: wrap; }
+  .cds-port-desk__pagination > span { width: 100%; }
+  .cds-port-desk__pagination > div { margin-left: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .cds-port-desk__table tbody tr { transition: none !important; } }

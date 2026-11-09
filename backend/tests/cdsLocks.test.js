@@ -33,6 +33,7 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
     expect(calls).toHaveLength(2);
     expect(calls[0].sql).toContain('FROM cds_electronic_locks t');
     expect(calls[0].sql).toContain('t.tamper_detected');
+    expect(calls[0].sql).toContain("LOWER(COALESCE(lock_telemetry.reported_tamper_detected, '')) = 'true'");
     expect(calls[0].sql).toContain('t.serial ASC NULLS LAST');
     expect(calls[0].sql).toContain('LIMIT $2 OFFSET $3');
     expect(calls[0].values).toEqual(['%SEC-00%', 25, 25]);
@@ -120,6 +121,28 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
     expect(calls[0].sql).toContain('ORDER BY t.booking_number ASC NULLS LAST');
     expect(calls[0].values).toEqual([['dispatched', 'in_transit', 'at_port'], '%SON-10%', 25, 50]);
     expect(calls[1].values).toEqual([['dispatched', 'in_transit', 'at_port'], '%SON-10%']);
+  });
+
+  test('port queue can find a container, attached lock, truck or transporter using database search', async () => {
+    const res = response();
+    const calls = [];
+    await routeLayer('/trips', 'get')({
+      query: { status: 'at_port', search: 'SEC-70', limit: '25', offset: '25' },
+      user: { org_id: 'org-1' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        return calls.length === 1 ? { rows: [{ id: 'trip-1', status: 'at_port' }] } : { rows: [{ count: '26' }] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.body.total).toBe(26);
+    expect(calls[0].sql).toContain('co.number ILIKE $2');
+    expect(calls[0].sql).toContain('el.serial ILIKE $2');
+    expect(calls[0].sql).toContain('ve.registration ILIKE $2');
+    expect(calls[0].sql).toContain('tr.company_name ILIKE $2');
+    expect(calls[0].sql).toContain('LIMIT $3 OFFSET $4');
+    expect(calls[0].values).toEqual(['at_port', '%SEC-70%', 25, 25]);
+    expect(calls[1].values).toEqual(['at_port', '%SEC-70%']);
   });
 
   test('booking summary route is registered before the booking id route', () => {

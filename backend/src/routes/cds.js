@@ -296,7 +296,9 @@ async function listRows(req, res, table, {
   // fixed SQL allowlists. Request values select a named expression; they never
   // become SQL identifiers or fragments.
   const health = String(req.query.health || '');
-  if (health && healthFilters[health]) filters.push('(' + healthFilters[health] + ')');
+  if (health && Object.prototype.hasOwnProperty.call(healthFilters, health)) {
+    filters.push('(' + healthFilters[health] + ')');
+  }
   // Only callers that provide a fixed column allowlist can enable field filters.
   Object.entries(fieldFilters).forEach(([key, column]) => {
     const value = req.query[key];
@@ -311,7 +313,9 @@ async function listRows(req, res, table, {
   });
   const where = filters.length ? filters.join(' AND ') : 'TRUE';
   const sortKey = String(req.query.sortBy || '');
-  const sortColumn = sortColumns[sortKey] || 't.created_at';
+  const sortColumn = Object.prototype.hasOwnProperty.call(sortColumns, sortKey)
+    ? sortColumns[sortKey]
+    : 't.created_at';
   const sortOrder = String(req.query.sortOrder || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   params.push(limit, offset);
   const result = await req.db(
@@ -1012,7 +1016,7 @@ const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_
 router.get('/trips', asyncHandler(async (req, res) => {
   await listRows(req, res, 'cds_trips', {
     joins: TRIP_JOINS, selectCols: TRIP_COLS,
-    searchCols: ['t.trip_number', 'cu.company_name', 'dr.name'],
+    searchCols: ['t.trip_number', 'cu.company_name', 'dr.name', 'co.number', 'el.serial', 've.registration', 'tr.company_name'],
   });
 }));
 
@@ -1834,12 +1838,12 @@ router.get('/locks', asyncHandler(async (req, res) => {
   const freshBattery = "lock_telemetry.reported_battery_at >= NOW() - INTERVAL '15 minutes' AND lock_telemetry.reported_battery_at <= NOW() + INTERVAL '1 minute'";
   const freshSignal = "lock_telemetry.reported_signal_at >= NOW() - INTERVAL '15 minutes' AND lock_telemetry.reported_signal_at <= NOW() + INTERVAL '1 minute'";
   const freshSolar = "lock_telemetry.reported_solar_at >= NOW() - INTERVAL '15 minutes' AND lock_telemetry.reported_solar_at <= NOW() + INTERVAL '1 minute'";
-  const staleHeartbeat = "lock_telemetry.last_heartbeat_event_at < NOW() - INTERVAL '15 minutes'";
-  const unverifiedHeartbeat = "(lock_telemetry.last_heartbeat_event_at IS NULL OR lock_telemetry.last_heartbeat_event_at > NOW() + INTERVAL '1 minute')";
-  const tamper = "(COALESCE(t.tamper_detected, FALSE) IS TRUE OR COALESCE(lock_telemetry.reported_tamper_detected, FALSE) IS TRUE)";
-  const offline = "(t.status = 'offline' OR (" + freshSignal + " AND LOWER(COALESCE(lock_telemetry.reported_signal_strength, '')) = 'offline'))";
-  const lowBattery = "(" + freshBattery + " AND lock_telemetry.reported_battery_level < 25)";
-  const weakSignal = "(" + freshSignal + " AND LOWER(COALESCE(lock_telemetry.reported_signal_strength, '')) = 'weak')";
+  const activeHealthStatus = "t.status NOT IN ('removed', 'maintenance', 'offline')";
+  const staleHeartbeat = "(" + activeHealthStatus + " AND lock_telemetry.last_heartbeat_event_at < NOW() - INTERVAL '15 minutes')";
+  const tamper = "(COALESCE(t.tamper_detected, FALSE) IS TRUE OR LOWER(COALESCE(lock_telemetry.reported_tamper_detected, '')) = 'true')";
+  const unverifiedHeartbeat = "(" + activeHealthStatus + " AND (lock_telemetry.last_heartbeat_event_at IS NULL OR lock_telemetry.last_heartbeat_event_at > NOW() + INTERVAL '1 minute'))";
+  const offline = "(t.status = 'offline' OR (" + activeHealthStatus + " AND " + freshSignal + " AND LOWER(COALESCE(lock_telemetry.reported_signal_strength, '')) = 'offline'))";
+  const lowBattery = "(" + activeHealthStatus + " AND " + freshBattery + " AND lock_telemetry.reported_battery_level < 25)";
   const healthFilters = {
     attention: "(" + tamper + " OR (t.status NOT IN ('removed', 'maintenance') AND (" + [offline, staleHeartbeat, lowBattery, weakSignal, unverifiedHeartbeat].join(' OR ') + "))) ",
     tamper,
@@ -1851,9 +1855,9 @@ router.get('/locks', asyncHandler(async (req, res) => {
     unverified: unverifiedHeartbeat,
   };
   const sortColumns = {
-    priority: "CASE WHEN " + tamper + " THEN 0 WHEN " + offline + " THEN 1 WHEN " + unverifiedHeartbeat +
-      " THEN 2 WHEN " + staleHeartbeat + " THEN 3 WHEN " + lowBattery + " THEN 4 WHEN " + weakSignal +
-      " THEN 5 WHEN t.status = 'maintenance' THEN 6 WHEN t.status = 'removed' THEN 7 ELSE 8 END",
+    priority: "CASE WHEN " + tamper + " THEN 0 WHEN " + offline + " THEN 1 WHEN " + lowBattery +
+      " THEN 2 WHEN " + staleHeartbeat + " THEN 3 WHEN " + weakSignal + " THEN 4 WHEN " +
+      unverifiedHeartbeat + " THEN 5 WHEN t.status = 'maintenance' THEN 6 WHEN t.status = 'removed' THEN 7 ELSE 8 END",
     battery: "CASE WHEN " + freshBattery + " THEN lock_telemetry.reported_battery_level ELSE NULL END",
     heartbeat: 'lock_telemetry.last_heartbeat_event_at',
     serial: 't.serial',
@@ -2194,7 +2198,7 @@ router.get('/bookings/summary', asyncHandler(async (req, res) => {
        COUNT(*) FILTER (WHERE COALESCE(t.status, '') NOT IN (
          'created','draft','pending','approved','assigned','vehicle_assigned','driver_assigned',
          'awaiting_lock','locked','installed','dispatched','in_transit','transit','checkpoint',
-         'delayed','at_port','delivered','completed','billed','archived','cancelled'
+         'delayed','at_port','delivered','completed','billed','archived','cancelled','failed'
        ))::int AS other
      FROM cds_bookings t
      WHERE t.org_id = $1 AND t.deleted_at IS NULL`,

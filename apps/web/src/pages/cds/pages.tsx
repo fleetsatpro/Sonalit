@@ -3,9 +3,9 @@ import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, Ale
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
-import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
+import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useDashboardKPIs, useLocks, useLockEvents, useTrips, useBookings, useBookingHealthSummary, useActivity, useReports, useGenerateReport, useUnclampTrip } from './hooks.js';
+import { useLocks, useLockEvents, useTrips, useBookings, useBookingHealthSummary, useActivity, useReports, useGenerateReport, useUnclampTrip } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
@@ -312,8 +312,8 @@ export function LocksView() {
   const allPageSelected = rows.length > 0 && rows.every(row => selectedIds.has(lockText(row['id'], lockText(row['serial']))));
 
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
+    if (data && page > totalPages) setPage(totalPages);
+  }, [data, page, totalPages]);
 
   const changeFilter = (next: string) => {
     setFilter(next);
@@ -551,55 +551,160 @@ export function LocksView() {
 }
 
 export function PortView() {
-  const { data, isLoading } = useTrips({ status: 'at_port' });
+  const [queryInput, setQueryInput] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+  const { data, isLoading, isError, isFetching, refetch } = useTrips({
+    status: 'at_port',
+    page,
+    pageSize,
+    ...(query ? { query } : {}),
+  });
   const { openDrawer, addToast } = useCDSStore();
-  // This button used to call addToast('Unclamp initiated…') and nothing else:
-  // no request was ever sent. The controller saw the confirmation, the lock
-  // stayed installed, the trip stayed open, and the port crew was left holding
-  // a container the desk believed was released.
   const unclamp = useUnclampTrip();
-  if (isLoading) return <LoadingState />;
   const rows = (data?.data ?? []) as Row[];
+  const total = Number(data?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const first = total === 0 ? 0 : ((page - 1) * pageSize) + 1;
+  const last = Math.min(page * pageSize, total);
+  const linkedLocks = rows.filter(row => Boolean(row['lock_id'])).length;
+  const missingArrival = rows.filter(row => !row['arrived_at']).length;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(queryInput.trim()), 260);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
+
+  useEffect(() => {
+    if (data && page > totalPages) setPage(totalPages);
+  }, [data, page, totalPages]);
+
+  const text = (value: unknown) => value == null || value === '' ? '—' : String(value);
+  const dateTime = (value: unknown, missing = 'Not recorded') => {
+    if (!value) return missing;
+    const date = new Date(String(value));
+    return Number.isNaN(date.getTime())
+      ? 'Time unavailable'
+      : date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+  const dwell = (value: unknown) => {
+    if (!value) return '—';
+    const timestamp = new Date(String(value)).getTime();
+    if (!Number.isFinite(timestamp)) return 'TIME UNKNOWN';
+    const hours = (Date.now() - timestamp) / 3_600_000;
+    if (hours < -1 / 60) return 'FUTURE TIMESTAMP';
+    if (hours < 1) return Math.max(0, Math.floor(hours * 60)) + 'm';
+    return hours.toFixed(1) + 'h';
+  };
+  const openTrip = (row: Row) => {
+    openDrawer('Port clearance — ' + text(row['container_number'] ?? row['trip_number']), (
+      <>
+        <DrawerField label="Trip" value={text(row['trip_number'] ?? row['reference'])} />
+        <DrawerField label="Container" value={text(row['container_number'])} />
+        <DrawerField label="E-Lock" value={text(row['lock_serial'], row['lock_id'] ? 'Serial not reported' : 'No lock linked')} />
+        <DrawerField label="Driver" value={text(row['driverName'] ?? row['driver_name'])} />
+        <DrawerField label="Vehicle" value={text(row['vehicleReg'] ?? row['vehicle_reg'])} />
+        <DrawerField label="Transport partner" value={text(row['transporter_name'])} />
+        <DrawerField label="Terminal" value={text(row['destination'])} />
+        <DrawerField label="Port arrival" value={dateTime(row['arrived_at'], 'Arrival not recorded')} />
+        <DrawerField label="ETA" value={dateTime(row['eta'])} />
+        <DrawerField label="Status" value={<StatusBadge status={text(row['status'])} />} />
+      </>
+    ));
+  };
+
+  if (isLoading && !data) return <LoadingState />;
 
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <DataTable
-        columns={[
-          { id: 'container', header: 'Container', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['container_number'])}</span> },
-          { id: 'truck', header: 'Truck', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['vehicle_reg'])}</span> },
-          { id: 'dest', header: 'Terminal', accessor: (r: Row) => s(r['destination']) },
-          { id: 'arrived', header: 'Arrived', accessor: (r: Row) => r['delivered_at'] ? new Date(s(r['delivered_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—' },
-          { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
-          { id: 'action', header: '', accessor: (r: Row) => (
-            <Button
-              size="sm"
-              disabled={unclamp.isPending}
-              onClick={(e) => {
-                e.stopPropagation();
-                unclamp.mutate({ id: s(r['id']) }, {
-                  onSuccess: () => addToast(`Lock removed on ${s(r['container_number'])}`),
-                  onError: () => addToast(`Could not unclamp ${s(r['container_number'])} — try again`),
-                });
-              }}
-            >
-              {unclamp.isPending ? 'Unclamping…' : 'Unclamp'}
-            </Button>
-          )},
-        ]}
-        data={rows}
-        keyExtractor={(r: Row) => s(r['id'])}
-        searchable
-        searchPlaceholder="Search port queue…"
-        onRowClick={(r: Row) => openDrawer(`Port — ${s(r['container_number'])}`, (
-          <>
-            <DrawerField label="Container" value={s(r['container_number'])} />
-            <DrawerField label="Truck" value={s(r['vehicle_reg'])} />
-            <DrawerField label="Driver" value={s(r['driver_name'])} />
-            <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
-            <DrawerField label="Destination" value={s(r['destination'])} />
-          </>
-        ))}
-      />
+    <div className="cds-port-desk">
+      <header className="cds-port-desk__head">
+        <div>
+          <span>PORT OPERATIONS / RELEASE CONTROL</span>
+          <h1>Port Clearance</h1>
+          <p>Arrivals awaiting lock removal, with the container, device and transport assignment kept together.</p>
+        </div>
+        <button type="button" onClick={() => { void refetch(); }} disabled={isFetching}>
+          <RefreshCw size={14} className={isFetching ? 'cds-lock-refreshing' : ''} /> {isFetching ? 'Refreshing' : 'Refresh queue'}
+        </button>
+      </header>
+
+      {isError && <div role="alert" className="cds-port-desk__error">The arrival queue could not be refreshed. Previously loaded records remain visible.</div>}
+
+      <section className="cds-port-desk__metrics" aria-label="Port clearance queue">
+        <div><span>AT-PORT QUEUE</span><strong>{total.toLocaleString()}</strong><small>matches across the organisation</small></div>
+        <div><span>VISIBLE WINDOW</span><strong>{first.toLocaleString()}–{last.toLocaleString()}</strong><small>{rows.length} records on this page</small></div>
+        <div><span>LOCKS LINKED</span><strong>{linkedLocks.toLocaleString()}</strong><small>current page only</small></div>
+        <div><span>ARRIVAL TIME GAPS</span><strong>{missingArrival.toLocaleString()}</strong><small>current page only</small></div>
+      </section>
+
+      <section className="cds-port-desk__register">
+        <div className="cds-port-desk__toolbar">
+          <label>
+            <Search size={15} aria-hidden="true" />
+            <input value={queryInput} onChange={event => setQueryInput(event.target.value)} placeholder="Search container, trip, lock, transporter, driver or vehicle…" aria-label="Search port clearance queue" />
+            {queryInput && <button type="button" onClick={() => setQueryInput('')} aria-label="Clear search">×</button>}
+          </label>
+          <div><b>{total.toLocaleString()} ARRIVALS</b><span>Newest port arrival records first</span></div>
+        </div>
+
+        <div className="cds-port-desk__table">
+          <DataTable
+            columns={[
+              { id: 'container', header: 'Container', accessor: (row: Row) => <span className="font-mono font-bold text-xs text-white">{text(row['container_number'])}</span> },
+              { id: 'trip', header: 'Trip', accessor: (row: Row) => <span className="font-mono text-[10px] text-[#c8d8eb]">{text(row['trip_number'] ?? row['reference'])}</span> },
+              { id: 'lock', header: 'E-Lock', accessor: (row: Row) => <span className="font-mono text-[10px] text-[#e5cf9f]">{text(row['lock_serial'], row['lock_id'] ? 'Serial not reported' : 'No lock linked')}</span> },
+              { id: 'assignment', header: 'Driver / Vehicle', accessor: (row: Row) => (
+                <div className="grid gap-1 min-w-[120px]">
+                  <strong className="text-[10px] text-white">{text(row['driverName'] ?? row['driver_name'])}</strong>
+                  <small className="font-mono text-[9px] text-white/45">{text(row['vehicleReg'] ?? row['vehicle_reg'])}</small>
+                </div>
+              )},
+              { id: 'partner', header: 'Transport partner', accessor: (row: Row) => <span className="text-[10px] text-[#b7c7da]">{text(row['transporter_name'])}</span> },
+              { id: 'terminal', header: 'Terminal', accessor: (row: Row) => <span className="text-[10px] text-[#c7d4e3]">{text(row['destination'])}</span> },
+              { id: 'arrival', header: 'Port arrival', accessor: (row: Row) => <span className="text-[10px] text-[#c5d4e5]">{dateTime(row['arrived_at'], 'Arrival not recorded')}</span> },
+              { id: 'dwell', header: 'Dwell', accessor: (row: Row) => <span className="font-mono text-[10px] text-[#e4c98e]">{dwell(row['arrived_at'])}</span> },
+              { id: 'status', header: 'Status', accessor: (row: Row) => <StatusBadge status={text(row['status'])} /> },
+              { id: 'action', header: '', accessor: (row: Row) => {
+                const canUnclamp = Boolean(row['lock_id']);
+                return (
+                  <Button
+                    size="sm"
+                    disabled={!canUnclamp || unclamp.isPending}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      unclamp.mutate({ id: text(row['id']) }, {
+                        onSuccess: () => addToast('Lock removed on ' + text(row['container_number'])),
+                        onError: () => addToast('Could not unclamp ' + text(row['container_number']) + ' — try again'),
+                      });
+                    }}
+                  >
+                    {unclamp.isPending ? 'Unclamping…' : canUnclamp ? 'Unclamp' : 'No lock linked'}
+                  </Button>
+                );
+              }},
+            ]}
+            data={rows}
+            keyExtractor={(row: Row) => text(row['id'])}
+            pageSize={pageSize}
+            onRowClick={openTrip}
+            emptyMessage={isError ? 'Port arrival records could not be loaded.' : 'No trips are currently awaiting port clearance.'}
+          />
+        </div>
+
+        <footer className="cds-port-desk__pagination">
+          <span>{first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()} arrivals</span>
+          <div>
+            <span>Page {page} / {totalPages}</span>
+            <button type="button" disabled={page <= 1 || isFetching} onClick={() => setPage(value => Math.max(1, value - 1))} aria-label="Previous port page"><ChevronLeft size={15} /></button>
+            <button type="button" disabled={page >= totalPages || isFetching} onClick={() => setPage(value => Math.min(totalPages, value + 1))} aria-label="Next port page"><ChevronRight size={15} /></button>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 }
@@ -684,8 +789,8 @@ export function PulseView() {
   const last = Math.min(page * pageSize, total);
 
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
+    if (data && page > totalPages) setPage(totalPages);
+  }, [data, page, totalPages]);
 
   const changeFilter = (next: typeof filter) => {
     setFilter(next);

@@ -84,21 +84,24 @@ export function useLiveTracking() {
 }
 
 export function useTrips(filters?: SearchFilters) {
+  const page = Math.max(1, Math.floor(filters?.page ?? 1));
+  const limit = Math.max(1, Math.min(200, Math.floor(filters?.pageSize ?? 50)));
+  const params = {
+    limit,
+    offset: (page - 1) * limit,
+    ...(filters?.status ? { status: filters.status } : {}),
+    ...(filters?.query ? { search: filters.query } : {}),
+  };
   return useQuery<ApiList>({
-    queryKey: ['cds', 'trips', filters],
+    queryKey: ['cds', 'trips', params],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/trips', { params: filters });
+      const { data } = await cdsApi.get('/trips', { params });
       return data;
     },
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
-// Every open trip with its last known GPS fix, for Live Operations. A trip stays
-// here until it is delivered, completed or archived — the panel it feeds used to
-// ask for status=dispatched alone and so reported zero active trips while
-// vehicles were at a checkpoint, running late, or sitting at the port.
-// Ten seconds: this is the one board an operator watches a lorry move on.
 export function useLiveTrips() {
   return useQuery<{ data: LiveTrip[] }>({
     queryKey: ['cds', 'trips', 'live'],

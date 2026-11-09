@@ -7267,6 +7267,16 @@
           }
         }
       }
+    },
+    "/api/v1/cds/bookings/summary": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_summary",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
