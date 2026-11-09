@@ -141,16 +141,35 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
       })),
   ].sort((x, y) => x.rank - y.rank || new Date(y.at).getTime() - new Date(x.at).getTime());
 
+  const [filter, setFilter] = React.useState<'all' | 'critical' | 'high' | 'other'>('all');
+  const visibleItems = items.filter((item) => filter === 'all'
+    || (filter === 'critical' && item.severity === 'critical')
+    || (filter === 'high' && item.severity === 'high')
+    || (filter === 'other' && item.severity !== 'critical' && item.severity !== 'high'));
+  const filterCounts = {
+    all: items.length,
+    critical: items.filter((item) => item.severity === 'critical').length,
+    high: items.filter((item) => item.severity === 'high').length,
+    other: items.filter((item) => item.severity !== 'critical' && item.severity !== 'high').length,
+  };
+
   const nextDelivery = overview?.next_delivery ?? null;
   const focusConvoy = nextDelivery ? convoys.find((c) => c.id === nextDelivery.convoy_id) ?? null : convoys[0] ?? null;
 
   return (
     <aside className='d-console-queue' style={{ background: 'var(--d-carbon)', borderLeft: '1px solid var(--d-rim2)', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none', minHeight: 0 }}>
       <SectionHeader count={items.length + (panic ? 1 : 0)}>PRIORITY QUEUE</SectionHeader>
+      <nav className='ccxq-filters' aria-label='Filter priority response records'>
+        {(['all', 'critical', 'high', 'other'] as const).map((key) => (
+          <button key={key} type='button' className={filter === key ? 'ccxq-filter is-active' : 'ccxq-filter'} aria-pressed={filter === key} onClick={() => setFilter(key)}>
+            <span>{key === 'other' ? 'OTHER' : key.toUpperCase()}</span><b>{filterCounts[key]}</b>
+          </button>
+        ))}
+      </nav>
 
       {panic && (
-        <div style={{ padding: '0 14px 10px' }}>
-          <div style={{ position: 'relative', padding: '10px 12px', background: 'rgba(255,59,92,.08)', border: '1px solid var(--d-fire)', borderRadius: 8, animation: 'd-crit 1.8s ease-in-out infinite' }}>
+        <div className='ccxq-panic-wrap' style={{ padding: '0 14px 10px' }}>
+          <div className='ccxq-panic-card' style={{ position: 'relative', padding: '10px 12px', background: 'rgba(255,59,92,.08)', border: '1px solid var(--d-fire)', borderRadius: 8, animation: 'd-crit 1.8s ease-in-out infinite' }}>
             <LockCorner pos='tl' /><LockCorner pos='tr' /><LockCorner pos='bl' /><LockCorner pos='br' />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '.12em', color: '#fff', background: 'var(--d-fire)', borderRadius: 4, padding: '1px 6px' }}>SOS</span>
@@ -164,8 +183,8 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
       )}
 
       {voiceNote && (
-        <div style={{ padding: '0 14px 10px' }}>
-          <button type='button' onClick={() => nav({ to: '/guardian' })} style={{ width: '100%', textAlign: 'left', padding: '9px 12px', background: 'rgba(55,230,255,.06)', border: '1px solid rgba(55,230,255,.4)', borderRadius: 8, cursor: 'pointer' }}>
+        <div className='ccxq-voice-wrap' style={{ padding: '0 14px 10px' }}>
+          <button className='ccxq-voice-card' type='button' onClick={() => nav({ to: '/guardian' })} style={{ width: '100%', textAlign: 'left', padding: '9px 12px', background: 'rgba(55,230,255,.06)', border: '1px solid rgba(55,230,255,.4)', borderRadius: 8, cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
               <span style={{ fontSize: 8, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '.1em', color: '#37e6ff', border: '1px solid rgba(55,230,255,.5)', borderRadius: 4, padding: '1px 5px' }}>VOICE NOTE</span>
               <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>{relTime(voiceNote.createdAt)}</span>
@@ -177,26 +196,23 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDeli
 
       <div style={{ padding: '0 14px 10px' }}><Suspense fallback={null}><ResponseCrewPanel /></Suspense></div>
 
-      <div style={{ flex: 1, padding: '0 14px' }}>
-        {alertsQuery.isError && <div role='status' style={{ margin: '8px 0', padding: '9px 10px', border: '1px solid color-mix(in srgb, var(--d-warn) 38%, transparent)', borderRadius: 7, background: 'color-mix(in srgb, var(--d-warn) 8%, var(--d-well))', color: 'var(--d-warn)', fontSize: 11, lineHeight: 1.45 }}>Alert register unavailable. Previously received session events may still be visible; no all-clear state can be inferred.</div>}
-        {items.length === 0 && !panic && !voiceNote && <div style={{ fontSize: 12, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', padding: '10px 2px', lineHeight: 1.5 }}>{alertsQuery.isPending ? 'Loading the alert response window…' : alertsQuery.isError ? 'No verified alert register is available.' : 'No alert records were returned in the current response window. This is not a global all-clear.'}</div>}
-        {items.map((it) => (
-          <div key={it.id} style={{ padding: '11px 11px', marginBottom: 8, background: 'linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.015))', borderRadius: 10, border: '1px solid var(--d-rim2)', borderLeft: `4px solid rgb(${it.chip.hue})` }}>
-            <button type='button' onClick={() => onSelect?.(it)} disabled={!onSelect} style={{ width: '100%', display: 'block', padding: 0, margin: 0, background: 'none', border: 0, color: 'inherit', textAlign: 'left', cursor: onSelect ? 'pointer' : 'default' }} aria-label={`Open ${it.title}`}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.1em', color: `rgb(${it.chip.hue})`, border: `1px solid rgba(${it.chip.hue},.5)`, borderRadius: 5, padding: '2px 6px', flexShrink: 0 }}>{it.chip.label}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--d-t3)', flexShrink: 0 }}>{relTime(it.at)}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--d-t1)', lineHeight: 1.3 }}>{it.title}</div>
-                  {it.body && <div style={{ fontSize: 12, color: 'var(--d-t2)', lineHeight: 1.4, marginTop: 4 }}>{it.body}</div>}
-                </div>
-                {onSelect && <span aria-hidden='true' style={{ color: `rgb(${it.chip.hue})`, fontSize: 18, lineHeight: 1 }}>›</span>}
-              </div>
+      <div className='ccxq-record-list'>
+        {alertsQuery.isError && <div className='ccxq-source-warning' role='status'>Alert register unavailable. Previously received session events may still be visible; no all-clear state can be inferred.</div>}
+        {visibleItems.length === 0 && !panic && !voiceNote && <div className='ccxq-empty'>{items.length > 0 ? 'No records match this filter.' : alertsQuery.isPending ? 'Loading the alert response window…' : alertsQuery.isError ? 'No verified alert register is available.' : 'No alert records were returned in the current response window. This is not a global all-clear.'}</div>}
+        {visibleItems.map((it) => (
+          <article key={it.id} className={'ccxq-record ccxq-record--' + (it.severity || 'unclassified')}>
+            <button type='button' className='ccxq-record__select' onClick={() => onSelect?.(it)} disabled={!onSelect} aria-label={`Open ${it.title}`}>
+              <span className='ccxq-record__meta'>
+                <span className='ccxq-record__type'>{it.chip.label}</span>
+                <span className='ccxq-record__source'>{it.recordType === 'alert' ? 'ALERT REGISTER' : 'SESSION EVENT'}</span>
+                <time dateTime={it.at}>{relTime(it.at)}</time>
+              </span>
+              <span className='ccxq-record__title'>{it.title}</span>
+              {it.body && <span className='ccxq-record__body'>{it.body}</span>}
+              <span className='ccxq-record__footer'><span>{it.source}</span>{onSelect && <ArrowUpRight size={13} aria-hidden='true' />}</span>
             </button>
-            {it.ackId && <button type='button' onClick={() => ackMut.mutate(it.ackId!)} disabled={ackMut.isPending} style={{ marginTop: 8, border: '1px solid var(--d-rim2)', borderRadius: 5, background: 'transparent', color: 'var(--d-t2)', fontSize: 10, padding: '4px 10px', fontWeight: 700, letterSpacing: '.08em', cursor: ackMut.isPending ? 'wait' : 'pointer' }}>{ackMut.isPending ? 'ACK…' : 'ACKNOWLEDGE'}</button>}
-          </div>
+            {it.ackId && <button type='button' className='ccxq-record__ack' onClick={() => ackMut.mutate(it.ackId!)} disabled={ackMut.isPending}>{ackMut.isPending ? 'ACKNOWLEDGING…' : 'ACKNOWLEDGE'}</button>}
+          </article>
         ))}
       </div>
 
