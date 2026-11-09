@@ -550,6 +550,7 @@ router.get('/convoys', asyncHandler(async (req, res) => {
 
     const convoyIds = r.rows.map(c => c.id);
     let checkpoints = [];
+    let checkpointsReady = true;
     if (convoyIds.length > 0) {
       const ph = convoyIds.map((_, i) => `$${i+2}`).join(',');
       const cpR = await safeQuery(req.db, `
@@ -558,6 +559,7 @@ router.get('/convoys', asyncHandler(async (req, res) => {
         WHERE cc.convoy_id IN (${ph})
         ORDER BY cc.convoy_id`, [orgId, ...convoyIds]);
       checkpoints = cpR.rows;
+      checkpointsReady = cpR.ok;
     }
 
     const cpByConvoy = {};
@@ -567,7 +569,7 @@ router.get('/convoys', asyncHandler(async (req, res) => {
     }
 
     res.json({
-      data_quality: { checkpoints_ready: convoyIds.length === 0 || cpR.ok, snapshot_at: new Date().toISOString() },
+      data_quality: { checkpoints_ready: checkpointsReady, snapshot_at: new Date().toISOString() },
       data: r.rows.map(c => ({
       id: c.id,
       name: c.name || c.id,
