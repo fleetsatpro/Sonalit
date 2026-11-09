@@ -264,52 +264,66 @@ function isValidIso6346ContainerNumber(containerNumber) {
 }
 
 function paginate(query) {
-  const limit = Math.min(200, parseInt(query.limit) || 50);
-  const offset = parseInt(query.offset) || 0;
+  const limit = Math.min(200, Math.max(1, parseInt(query.limit) || 50));
+  const offset = Math.max(0, parseInt(query.offset) || 0);
   return { limit, offset };
 }
 
-async function listRows(req, res, table, { joins = '', selectCols = '*', searchCols = [], extraFilters = [], fieldFilters = {}, softDelete = true } = {}) {
+async function listRows(req, res, table, {
+  joins = '', selectCols = '*', searchCols = [], extraFilters = [],
+  fieldFilters = {}, healthFilters = {}, sortColumns = {}, softDelete = true,
+} = {}) {
   const { limit, offset } = paginate(req.query);
   const filters = softDelete ? ['t.deleted_at IS NULL', ...extraFilters] : [...extraFilters];
   const params = [];
   // A comma-separated status means "any of these". Operational views rarely
-  // care about one status: "active trip" spans locked → dispatched → at_port,
-  // and forcing a single value made a clamped container invisible everywhere
-  // that asked for 'dispatched'. A bare value still matches exactly as before.
+  // care about one status: "active trip" spans locked → dispatched → at_port.
   if (req.query.status) {
     const wanted = String(req.query.status).split(',').map(v => v.trim()).filter(Boolean);
     if (wanted.length > 1) {
       params.push(wanted);
-      filters.push(`t.status = ANY($${params.length}::text[])`);
+      filters.push('t.status = ANY($' + params.length + '::text[])');
     } else if (wanted.length === 1) {
       params.push(wanted[0]);
-      filters.push(`t.status=$${params.length}`);
+      filters.push('t.status=$' + params.length);
     }
   }
   if (req.query.search && searchCols.length) {
-    params.push(`%${req.query.search}%`);
-    filters.push('(' + searchCols.map(column => column + ' ILIKE ' + String.fromCharCode(36) + params.length).join(' OR ') + ')');
+    params.push('%' + req.query.search + '%');
+    filters.push('(' + searchCols.map(column => column + ' ILIKE $' + params.length).join(' OR ') + ')');
+  }
+  // Health predicates and sort expressions are supplied only by the route as
+  // fixed SQL allowlists. Request values select a named expression; they never
+  // become SQL identifiers or fragments.
+  const health = String(req.query.health || '');
+  if (health && Object.prototype.hasOwnProperty.call(healthFilters, health)) {
+    filters.push('(' + healthFilters[health] + ')');
   }
   // Only callers that provide a fixed column allowlist can enable field filters.
-  // Values remain parameterised; request input is never interpolated as SQL.
   Object.entries(fieldFilters).forEach(([key, column]) => {
     const value = req.query[key];
     if (typeof value === 'string' && value.trim()) {
       params.push(value.trim());
-      filters.push(column + '=' + String.fromCharCode(36) + params.length);
+      filters.push(column + '=$' + params.length);
     }
   });
   Object.entries(req.query).forEach(([k, v]) => {
-    if (['status', 'search', 'limit', 'offset'].includes(k)) return;
-    if (k.endsWith('_id')) { params.push(v); filters.push(`t.${k}=$${params.length}`); }
+    if (['status', 'search', 'health', 'limit', 'offset', 'sortBy', 'sortOrder'].includes(k)) return;
+    if (k.endsWith('_id')) { params.push(v); filters.push('t.' + k + '=$' + params.length); }
   });
   const where = filters.length ? filters.join(' AND ') : 'TRUE';
+  const sortKey = String(req.query.sortBy || '');
+  const sortColumn = Object.prototype.hasOwnProperty.call(sortColumns, sortKey)
+    ? sortColumns[sortKey]
+    : 't.created_at';
+  const sortOrder = String(req.query.sortOrder || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   params.push(limit, offset);
   const result = await req.db(
-    `SELECT ${selectCols} FROM ${table} t ${joins} WHERE ${where} ORDER BY t.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+    'SELECT ' + selectCols + ' FROM ' + table + ' t ' + joins + ' WHERE ' + where +
+    ' ORDER BY ' + sortColumn + ' ' + sortOrder + ' NULLS LAST, t.created_at DESC' +
+    ' LIMIT $' + (params.length - 1) + ' OFFSET $' + params.length, params
   );
-  const total = await req.db(`SELECT COUNT(*) FROM ${table} t ${joins} WHERE ${where}`, params.slice(0, -2));
+  const total = await req.db('SELECT COUNT(*) FROM ' + table + ' t ' + joins + ' WHERE ' + where, params.slice(0, -2));
   res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
 }
 
@@ -1002,7 +1016,7 @@ const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_
 router.get('/trips', asyncHandler(async (req, res) => {
   await listRows(req, res, 'cds_trips', {
     joins: TRIP_JOINS, selectCols: TRIP_COLS,
-    searchCols: ['t.trip_number', 'cu.company_name', 'dr.name'],
+    searchCols: ['t.trip_number', 'cu.company_name', 'dr.name', 'co.number', 'el.serial', 've.registration', 'tr.company_name'],
   });
 }));
 
@@ -1235,7 +1249,9 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
     return res.json({ data: updated });
   }
 
-  const extra = to_status === 'delivered' ? ', delivered_at=NOW()' : '';
+  const extra = to_status === 'at_port'
+    ? ', arrived_at=COALESCE(arrived_at,NOW())'
+    : to_status === 'delivered' ? ', delivered_at=NOW()' : '';
   const result = await req.db(
     `UPDATE cds_trips SET status=$1, notes=COALESCE($2,notes)${extra}, updated_at=NOW() WHERE id=$3 RETURNING *`,
     [to_status, notes || null, req.params.id]
@@ -1821,10 +1837,46 @@ const LOCK_COLS = `t.*, c.number AS container_number, v.registration AS truck,
   lock_telemetry.reported_temperature, lock_telemetry.reported_temperature_at,
   lock_telemetry.reported_tamper_detected, lock_telemetry.reported_tamper_at`;
 router.get('/locks', asyncHandler(async (req, res) => {
+
+  const freshBattery = "lock_telemetry.reported_battery_at >= NOW() - INTERVAL '15 minutes' AND lock_telemetry.reported_battery_at <= NOW() + INTERVAL '1 minute'";
+  const freshSignal = "lock_telemetry.reported_signal_at >= NOW() - INTERVAL '15 minutes' AND lock_telemetry.reported_signal_at <= NOW() + INTERVAL '1 minute'";
+  const freshSolar = "lock_telemetry.reported_solar_at >= NOW() - INTERVAL '15 minutes' AND lock_telemetry.reported_solar_at <= NOW() + INTERVAL '1 minute'";
+  const activeHealthStatus = "t.status NOT IN ('removed', 'maintenance', 'offline')";
+  // Telemetry values originate in JSON ->> extraction and are text. Cast only
+  // after a strict numeric check so malformed device payloads cannot break the
+  // whole catalogue query.
+  const reportedBattery = "(CASE WHEN BTRIM(COALESCE(lock_telemetry.reported_battery_level, '')) ~ '^[+]?[0-9]+([.][0-9]+)?$' THEN BTRIM(lock_telemetry.reported_battery_level)::numeric ELSE NULL END)";
+  const reportedSignal = "(CASE WHEN BTRIM(COALESCE(lock_telemetry.reported_signal_strength, '')) ~ '^[+]?[0-9]+([.][0-9]+)?$' THEN BTRIM(lock_telemetry.reported_signal_strength)::numeric ELSE NULL END)";
+  const staleHeartbeat = "(" + activeHealthStatus + " AND lock_telemetry.last_heartbeat_event_at < NOW() - INTERVAL '15 minutes')";
+  const tamper = "(COALESCE(t.tamper_detected, FALSE) IS TRUE OR LOWER(COALESCE(lock_telemetry.reported_tamper_detected, '')) = 'true')";
+  const unverifiedHeartbeat = "(" + activeHealthStatus + " AND (lock_telemetry.last_heartbeat_event_at IS NULL OR lock_telemetry.last_heartbeat_event_at > NOW() + INTERVAL '1 minute'))";
+  const offline = "(t.status = 'offline' OR (" + activeHealthStatus + " AND " + freshSignal + " AND (LOWER(COALESCE(lock_telemetry.reported_signal_strength, '')) = 'offline' OR " + reportedSignal + " = 0)))";
+  const lowBattery = "(" + activeHealthStatus + " AND " + freshBattery + " AND " + reportedBattery + " BETWEEN 0 AND 100 AND " + reportedBattery + " < 25)";
+  const weakSignal = "(" + activeHealthStatus + " AND " + freshSignal + " AND (LOWER(COALESCE(lock_telemetry.reported_signal_strength, '')) = 'weak' OR (" + reportedSignal + " > 0 AND " + reportedSignal + " < 40)))";
+  const healthFilters = {
+    attention: "(" + tamper + " OR (t.status NOT IN ('removed', 'maintenance') AND (" + [offline, staleHeartbeat, lowBattery, weakSignal, unverifiedHeartbeat].join(' OR ') + "))) ",
+    tamper,
+    offline,
+    stale: staleHeartbeat,
+    low: lowBattery,
+    charging: "(" + freshSolar + " AND LOWER(COALESCE(lock_telemetry.reported_solar_charging, '')) = 'true')",
+    maintenance: "t.status = 'maintenance'",
+    unverified: unverifiedHeartbeat,
+  };
+  const sortColumns = {
+    priority: "CASE WHEN " + tamper + " THEN 0 WHEN " + offline + " THEN 1 WHEN " + unverifiedHeartbeat +
+      " THEN 2 WHEN " + staleHeartbeat + " THEN 3 WHEN " + lowBattery + " THEN 4 WHEN " + weakSignal +
+      " THEN 5 WHEN t.status = 'maintenance' THEN 6 WHEN t.status = 'removed' THEN 7 ELSE 8 END",
+    battery: "CASE WHEN " + freshBattery + " AND " + reportedBattery + " BETWEEN 0 AND 100 THEN " + reportedBattery + " ELSE NULL END",
+    heartbeat: 'lock_telemetry.last_heartbeat_event_at',
+    serial: 't.serial',
+  };
   await listRows(req, res, 'cds_electronic_locks', {
     joins: LOCK_JOINS,
     selectCols: LOCK_COLS,
-    searchCols: ['t.serial', 't.provider', 'c.number', 'v.registration'],
+    searchCols: ['t.serial', 't.provider', 't.firmware_version', 't.location', 't.status', 'c.number', 'v.registration'],
+    healthFilters,
+    sortColumns,
   });
 }));
 router.get('/locks/:id', asyncHandler(async (req, res) => {
@@ -2131,45 +2183,98 @@ router.get('/bookings/pipeline', asyncHandler(async (req, res) => {
   res.json({ data: result.rows });
 }));
 
+router.get('/bookings/summary', asyncHandler(async (req, res) => {
+  const result = await req.db(
+    `SELECT
+       COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE t.status IN (
+         'created','draft','pending','approved','assigned','vehicle_assigned','driver_assigned',
+         'awaiting_lock','locked','installed','dispatched','in_transit','transit','checkpoint','delayed','at_port'
+       ))::int AS active,
+       COUNT(*) FILTER (WHERE t.status IN ('dispatched','in_transit','transit','checkpoint'))::int AS in_transit,
+       COUNT(*) FILTER (WHERE t.status IN ('delayed','cancelled','failed')
+         OR (t.status IN (
+           'created','draft','pending','approved','assigned','vehicle_assigned','driver_assigned',
+           'awaiting_lock','locked','installed','dispatched','in_transit','transit','checkpoint','at_port'
+         ) AND (t.updated_at IS NULL OR t.updated_at < NOW() - INTERVAL '48 hours')))::int AS exceptions,
+       COUNT(*) FILTER (WHERE t.status IN ('delivered','completed','billed','archived'))::int AS completed,
+       COUNT(*) FILTER (WHERE t.status IN ('created','draft','pending','approved'))::int AS pending,
+       COUNT(*) FILTER (WHERE t.status IN ('assigned','vehicle_assigned','driver_assigned','awaiting_lock','locked','installed'))::int AS assigned,
+       COUNT(*) FILTER (WHERE t.status = 'at_port')::int AS at_port,
+       COUNT(*) FILTER (WHERE t.status = 'delayed')::int AS delayed,
+       COUNT(*) FILTER (WHERE t.status = 'delivered')::int AS delivered,
+       COUNT(*) FILTER (WHERE t.status = 'cancelled')::int AS cancelled,
+       COUNT(*) FILTER (WHERE COALESCE(t.status, '') NOT IN (
+         'created','draft','pending','approved','assigned','vehicle_assigned','driver_assigned',
+         'awaiting_lock','locked','installed','dispatched','in_transit','transit','checkpoint',
+         'delayed','at_port','delivered','completed','billed','archived','cancelled','failed'
+       ))::int AS other
+     FROM cds_bookings t
+     WHERE t.org_id = $1 AND t.deleted_at IS NULL`,
+    [req.user.org_id]
+  );
+  res.json({ data: result.rows[0] ?? {} });
+}));
+
 router.get('/bookings', asyncHandler(async (req, res) => {
   const { limit, offset } = paginate(req.query);
   const filters = ['t.deleted_at IS NULL'];
   const params = [];
-  if (req.query.status) { params.push(req.query.status); filters.push(`t.status=$${params.length}`); }
+  if (req.query.status) {
+    const wanted = String(req.query.status).split(',').map(value => value.trim()).filter(Boolean);
+    if (wanted.length > 1) {
+      params.push(wanted);
+      filters.push('t.status = ANY($' + params.length + '::text[])');
+    } else if (wanted.length === 1) {
+      params.push(wanted[0]);
+      filters.push('t.status = $' + params.length);
+    }
+  }
+  if (req.query.health === 'exceptions') {
+    filters.push("(t.status IN ('delayed','cancelled','failed') OR (t.status IN (" +
+      "'created','draft','pending','approved','assigned','vehicle_assigned','driver_assigned'," +
+      "'awaiting_lock','locked','installed','dispatched','in_transit','transit','checkpoint','at_port'" +
+      ") AND (t.updated_at IS NULL OR t.updated_at < NOW() - INTERVAL '48 hours')))");
+  } else if (req.query.health === 'stale') {
+    filters.push("(t.status IN (" +
+      "'created','draft','pending','approved','assigned','vehicle_assigned','driver_assigned'," +
+      "'awaiting_lock','locked','installed','dispatched','in_transit','transit','checkpoint','at_port'" +
+      ") AND (t.updated_at IS NULL OR t.updated_at < NOW() - INTERVAL '48 hours'))");
+  }
   if (req.query.search) {
-    params.push(`%${req.query.search}%`);
-    filters.push(`(t.booking_number ILIKE $${params.length} OR cu.company_name ILIKE $${params.length})`);
+    params.push('%' + req.query.search + '%');
+    filters.push('(t.booking_number ILIKE $' + params.length + ' OR cu.company_name ILIKE $' + params.length + ')');
   }
   const where = filters.join(' AND ');
+  const sortColumns = {
+    created_at: 't.created_at',
+    updated_at: 't.updated_at',
+    booking_number: 't.booking_number',
+  };
+  const sortKey = String(req.query.sortBy || '');
+  const sortColumn = Object.prototype.hasOwnProperty.call(sortColumns, sortKey)
+    ? sortColumns[sortKey]
+    : 't.created_at';
+  const sortOrder = String(req.query.sortOrder || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   params.push(limit, offset);
   const result = await req.db(
-    `SELECT t.*, cu.company_name AS customer_name,
-       COUNT(bc.id)::int AS container_count,
-       COUNT(bc.id) FILTER (WHERE bc.status='delivered')::int AS delivered_count
-     FROM cds_bookings t
-     LEFT JOIN cds_customers cu ON cu.id=t.customer_id
-     LEFT JOIN cds_booking_containers bc ON bc.booking_id=t.id AND bc.deleted_at IS NULL
-     WHERE ${where}
-     GROUP BY t.id, cu.company_name
-     ORDER BY t.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+    'SELECT t.*, cu.company_name AS customer_name,' +
+      " COUNT(bc.id)::int AS container_count," +
+      " COUNT(bc.id) FILTER (WHERE bc.status='delivered')::int AS delivered_count" +
+      ' FROM cds_bookings t' +
+      ' LEFT JOIN cds_customers cu ON cu.id=t.customer_id' +
+      ' LEFT JOIN cds_booking_containers bc ON bc.booking_id=t.id AND bc.deleted_at IS NULL' +
+      ' WHERE ' + where +
+      ' GROUP BY t.id, cu.company_name' +
+      ' ORDER BY ' + sortColumn + ' ' + sortOrder + ' NULLS LAST, t.created_at DESC' +
+      ' LIMIT $' + (params.length - 1) + ' OFFSET $' + params.length, params
   );
   const total = await req.db(
-    `SELECT COUNT(DISTINCT t.id) FROM cds_bookings t
-     LEFT JOIN cds_customers cu ON cu.id=t.customer_id
-     WHERE ${where}`, params.slice(0, -2)
+    'SELECT COUNT(DISTINCT t.id) FROM cds_bookings t LEFT JOIN cds_customers cu ON cu.id=t.customer_id WHERE ' + where,
+    params.slice(0, -2)
   );
   res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
 }));
-// Container manifest — the yard's working view: one row per container rather
-// than per booking, flattened across booking, trip, transporter, vehicle,
-// driver and lock so the whole sheet comes back in a single round trip.
-//
-// Each of the four assignment columns COALESCEs the container's own value over
-// the trip-derived one. A container sits clamped in the yard with a driver
-// written against it long before a trip exists; once dispatched, the trip is
-// the better source. This reads correctly in both states.
-//
-// Declared before /bookings/:id so Express doesn't match "manifest" as an :id.
 router.get('/bookings/manifest', asyncHandler(async (req, res) => {
   const limit = Math.min(2000, parseInt(req.query.limit) || 200);
   const offset = parseInt(req.query.offset) || 0;

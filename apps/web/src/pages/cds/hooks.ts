@@ -5,7 +5,7 @@ import { withOfflineFallback } from '../field/fieldCache.js';
 import cdsApi from './api.js';
 
 import type { LiveTrip } from './LiveFleetMap.js';
-import type { SearchFilters, Report } from './types.js';
+import type { BookingHealthSummary, SearchFilters, Report } from './types.js';
 
 interface ApiList { data: Record<string, unknown>[]; total: number }
 
@@ -84,21 +84,24 @@ export function useLiveTracking() {
 }
 
 export function useTrips(filters?: SearchFilters) {
+  const page = Math.max(1, Math.floor(filters?.page ?? 1));
+  const limit = Math.max(1, Math.min(200, Math.floor(filters?.pageSize ?? 50)));
+  const params = {
+    limit,
+    offset: (page - 1) * limit,
+    ...(filters?.status ? { status: filters.status } : {}),
+    ...(filters?.query ? { search: filters.query } : {}),
+  };
   return useQuery<ApiList>({
-    queryKey: ['cds', 'trips', filters],
+    queryKey: ['cds', 'trips', params],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/trips', { params: filters });
+      const { data } = await cdsApi.get('/trips', { params });
       return data;
     },
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
-// Every open trip with its last known GPS fix, for Live Operations. A trip stays
-// here until it is delivered, completed or archived — the panel it feeds used to
-// ask for status=dispatched alone and so reported zero active trips while
-// vehicles were at a checkpoint, running late, or sitting at the port.
-// Ten seconds: this is the one board an operator watches a lorry move on.
 export function useLiveTrips() {
   return useQuery<{ data: LiveTrip[] }>({
     queryKey: ['cds', 'trips', 'live'],
@@ -254,10 +257,21 @@ export function useCreateContainer() {
 }
 
 export function useLocks(filters?: SearchFilters) {
+  const page = Math.max(1, Math.floor(filters?.page ?? 1));
+  const limit = Math.max(1, Math.min(200, Math.floor(filters?.pageSize ?? 50)));
+  const params = {
+    limit,
+    offset: (page - 1) * limit,
+    ...(filters?.status ? { status: filters.status } : {}),
+    ...(filters?.query ? { search: filters.query } : {}),
+    ...(filters?.health ? { health: filters.health } : {}),
+    ...(filters?.sortBy ? { sortBy: filters.sortBy } : {}),
+    ...(filters?.sortOrder ? { sortOrder: filters.sortOrder } : {}),
+  };
   return useQuery<ApiList>({
-    queryKey: ['cds', 'locks', filters],
+    queryKey: ['cds', 'locks', params],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/locks', { params: { limit: 200, ...filters } });
+      const { data } = await cdsApi.get('/locks', { params });
       return data;
     },
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
@@ -320,10 +334,32 @@ export function useCustomers(filters?: SearchFilters) {
 }
 
 export function useBookings(filters?: SearchFilters) {
+  const page = Math.max(1, Math.floor(filters?.page ?? 1));
+  const limit = Math.max(1, Math.min(200, Math.floor(filters?.pageSize ?? 50)));
+  const params = {
+    limit,
+    offset: (page - 1) * limit,
+    ...(filters?.status ? { status: filters.status } : {}),
+    ...(filters?.query ? { search: filters.query } : {}),
+    ...(filters?.health ? { health: filters.health } : {}),
+    ...(filters?.sortBy ? { sortBy: filters.sortBy } : {}),
+    ...(filters?.sortOrder ? { sortOrder: filters.sortOrder } : {}),
+  };
   return useQuery<ApiList>({
-    queryKey: ['cds', 'bookings', filters],
+    queryKey: ['cds', 'bookings', params],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/bookings', { params: filters });
+      const { data } = await cdsApi.get('/bookings', { params });
+      return data;
+    },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
+  });
+}
+
+export function useBookingHealthSummary() {
+  return useQuery<{ data: BookingHealthSummary }>({
+    queryKey: ['cds', 'booking-health-summary'],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/bookings/summary');
       return data;
     },
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
