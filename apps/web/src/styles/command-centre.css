@@ -643,7 +643,7 @@
   flex: 0 0 auto;
   color: var(--ccx-muted);
   font-family: var(--d-font-mono, 'IBM Plex Mono', monospace);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: .03em;
 }
@@ -714,7 +714,7 @@
   border-top: 1px solid var(--ccx-edge);
   color: var(--ccx-muted);
   font-family: var(--d-font-mono, 'IBM Plex Mono', monospace);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -765,7 +765,7 @@
 
 .ccx-map-freshness strong {
   color: var(--d-warn);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -817,7 +817,7 @@
 }
 
 .ccx-map-stage > div > div:first-child > div:last-child > div span {
-  font-size: 10px !important;
+  font-size: 11px !important;
 }
 
 .ccx-map-loading {
@@ -861,7 +861,7 @@
   border: 1px solid color-mix(in srgb, var(--d-warn) 40%, transparent);
   border-radius: 6px;
   background: transparent;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -898,7 +898,7 @@
   margin-left: auto;
   color: var(--ccx-muted);
   font-family: var(--d-font-mono, 'IBM Plex Mono', monospace);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .ccx-response-panel {
@@ -1063,7 +1063,7 @@
   border: 1px solid var(--ccx-edge-strong);
   border-radius: 7px;
   background: transparent;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -1209,7 +1209,7 @@
 .ccx-milestone__body small {
   color: var(--ccx-muted);
   font-family: var(--d-font-mono, 'IBM Plex Mono', monospace);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: .055em;
 }
@@ -1335,7 +1335,7 @@
 .ccx-drawer-grid small {
   color: var(--ccx-muted);
   font-family: var(--d-font-mono, 'IBM Plex Mono', monospace);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: .08em;
 }
@@ -1503,7 +1503,7 @@
     border-right: 0;
   }
   .ccx-connection__item {
-    font-size: 10px;
+    font-size: 11px;
   }
   .ccx-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1567,7 +1567,7 @@
   .ccx-panic {
     min-height: 42px;
     padding: 0 10px;
-    font-size: 10px !important;
+    font-size: 11px !important;
   }
   .ccx-connection {
     width: 100%;
@@ -1584,10 +1584,10 @@
     flex-basis: 31px;
   }
   .ccx-metric__copy small {
-    font-size: 10px;
+    font-size: 11px;
   }
   .ccx-metric__copy em {
-    font-size: 10px;
+    font-size: 11px;
   }
   .ccx-map-meta {
     align-items: flex-start;
@@ -1777,7 +1777,7 @@
   border-radius: 5px;
   background: var(--d-well);
   font-family: var(--d-font-mono, 'IBM Plex Mono', monospace);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: .05em;
   white-space: nowrap;
@@ -1792,7 +1792,7 @@
   overflow: hidden;
   color: var(--ccx-muted);
   font-family: var(--d-font-mono, 'IBM Plex Mono', monospace);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: .025em;
   text-overflow: ellipsis;
@@ -1834,7 +1834,7 @@
   color: var(--ccx-muted);
   border-top: 1px solid var(--ccx-edge);
   font-family: var(--d-font-mono, 'IBM Plex Mono', monospace);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   line-height: 1.35;
 }
