@@ -216,7 +216,7 @@ function TrendChart({ daily }: { daily: CDSAnalyticsPayload['daily'] }) {
           <span>{selected.label.toLowerCase()} events</span>
         </div>
         <div>
-          <small>PEAK BUCKET</small>
+          <small>PEAK DAY</small>
           <strong>{peakBucket ? fmt(peakBucket[metric]) : '—'}</strong>
           <span>{peakBucket ? dateRangeLabel(peakBucket.start, peakBucket.end) : 'No peak recorded'}</span>
         </div>
