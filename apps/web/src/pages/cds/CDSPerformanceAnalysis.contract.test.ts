@@ -113,7 +113,8 @@ describe('CDS Performance Analysis v2 contract', () => {
   it('renders an interactive line, bar and pie chart suite from persisted analytics data', () => {
     for (const marker of [
       'ResponsiveContainer',
-      'LineChart',
+      'ComposedChart',
+      '<Area',
       '<Line',
       'CorridorActivityChart',
       'BarChart',
@@ -136,6 +137,9 @@ describe('CDS Performance Analysis v2 contract', () => {
       'AVERAGE / BUCKET',
       'ACTIVE DAYS',
       'ReferenceLine',
+      'ReferenceDot',
+      'throughput-area',
+      'ComposedChart',
       'LabelList',
       'dateRangeLabel(peakBucket.start, peakBucket.end)',
       'averagePerBucket',
