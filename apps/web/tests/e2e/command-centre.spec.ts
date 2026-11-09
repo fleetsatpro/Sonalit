@@ -212,6 +212,7 @@ test.describe('Command Centre operator workspace', () => {
     await expect(page.getByText('Critical perimeter deviation')).toBeVisible();
     await expect(page.getByText('High cargo integrity alert')).toHaveCount(0);
     await expect(page.getByText('Medium vehicle speed observation')).toHaveCount(0);
+    await expect(page.locator('.ccxq-record__type svg')).toHaveCount(1);
 
     await page.getByRole('button', { name: 'Open Critical perimeter deviation' }).click();
     const record = page.getByRole('dialog', { name: 'Critical perimeter deviation' });
