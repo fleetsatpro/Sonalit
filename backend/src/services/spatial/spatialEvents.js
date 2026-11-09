@@ -52,7 +52,8 @@ function shouldCreateSpatialAlert(event) {
   if (!event) return false;
   if (event.eventType === 'ENVIRONMENTAL_DETERIORATION') return false;
   if (NON_ALERTING_EVENT_TYPES.has(String(event.eventType || ''))) return false;
-  return String(event.severity || 'low').toLowerCase() !== 'low';
+  // Match the persisted event default: an omitted severity is MEDIUM, not LOW.
+  return String(event.severity || 'medium').toLowerCase() !== 'low';
 }
 
 
