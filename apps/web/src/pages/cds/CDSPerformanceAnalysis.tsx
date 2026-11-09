@@ -6,8 +6,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
-  Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart,
-  ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, Pie, PieChart,
+  ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import type { CDSAnalyticsPayload, CDSAnalyticsSummary } from './types.js';
 import { useAcknowledgeAlert, useCDSAnalytics } from './hooks.js';
@@ -42,6 +42,11 @@ const pct = (value: number | null | undefined) => value == null || !Number.isFin
 const dateLabel = (value: string) => {
   const date = new Date(value + (value.length === 10 ? 'T12:00:00' : ''));
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+const dateRangeLabel = (start: string, end: string) => {
+  const first = dateLabel(start);
+  const last = dateLabel(end);
+  return first === last ? first : first + ' — ' + last;
 };
 const signedHours = (value: number | null | undefined) => {
   if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -123,14 +128,21 @@ function ProgressLine({ label, value, denominator, color, suffix }: {
   );
 }
 
-type ChartTooltipItem = { name?: string; value?: unknown; color?: string };
+type ChartTooltipItem = {
+  name?: string; value?: unknown; color?: string;
+  payload?: { start?: string; end?: string };
+};
 function ChartTooltip({ active, payload, label }: {
   active?: boolean; payload?: ChartTooltipItem[]; label?: string | number;
 }) {
   if (!active || !payload?.length) return null;
+  const firstRow = payload[0]?.payload;
+  const title = firstRow?.start && firstRow?.end
+    ? dateRangeLabel(firstRow.start, firstRow.end)
+    : label;
   return (
     <div className="cpa-v2__chart-tooltip">
-      {label != null ? <strong className="cpa-v2__chart-tooltip-title">{String(label)}</strong> : null}
+      {title != null ? <strong className="cpa-v2__chart-tooltip-title">{String(title)}</strong> : null}
       {payload.filter(item => item.value != null).map((item, index) => (
         <div className="cpa-v2__chart-tooltip-row" key={String(item.name ?? index)}>
           <i style={{ background: item.color ?? '#8eb9ed' }} />
@@ -188,6 +200,12 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
 
   const values = buckets.map(row => row[metric]);
   const total = daily.reduce((sum, row) => sum + Number(row[metric] || 0), 0);
+  const averagePerBucket = buckets.length ? total / buckets.length : 0;
+  const activeDays = daily.filter(row => Number(row[metric] || 0) > 0).length;
+  const peakBucket = buckets.reduce<TrendBucket | null>(
+    (peak, row) => !peak || row[metric] > peak[metric] ? row : peak,
+    null,
+  );
   const selected = trendOptions.find(option => option.id === metric) ?? trendOptions[0];
 
   return (
@@ -206,9 +224,27 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
           ))}
         </div>
       </div>
-      <div className="cpa-v2__chart-topline">
-        <div><strong>{fmt(total)}</strong><span>{selected.label.toLowerCase()} in selected window</span></div>
-        <div className="cpa-v2__chart-unit">EVENT COUNT · {days} DAYS</div>
+      <div className="cpa-v2__chart-intelligence" aria-label={selected.label + ' trend summary'}>
+        <div className="cpa-v2__chart-intel-primary">
+          <small>WINDOW TOTAL</small>
+          <strong>{fmt(total)}</strong>
+          <span>{selected.label.toLowerCase()} events</span>
+        </div>
+        <div>
+          <small>PEAK BUCKET</small>
+          <strong>{peakBucket ? fmt(peakBucket[metric]) : '—'}</strong>
+          <span>{peakBucket ? dateRangeLabel(peakBucket.start, peakBucket.end) : 'No peak recorded'}</span>
+        </div>
+        <div>
+          <small>AVERAGE / BUCKET</small>
+          <strong>{fmt(averagePerBucket)}</strong>
+          <span>Across {fmt(buckets.length)} observed buckets</span>
+        </div>
+        <div>
+          <small>ACTIVE DAYS</small>
+          <strong>{fmt(activeDays)}</strong>
+          <span>Days with at least one event</span>
+        </div>
       </div>
       {buckets.length && values.some(value => value > 0) ? (
         <div className="cpa-v2__rechart cpa-v2__rechart--line" role="img" aria-label={selected.label + ' line chart across the selected reporting period'}>
@@ -245,6 +281,16 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
                 cursor={{ stroke: 'rgba(210,226,243,.36)', strokeDasharray: '3 5' }}
                 labelFormatter={value => dateLabel(String(value))}
               />
+              {total > 0 ? (
+                <ReferenceLine
+                  y={averagePerBucket}
+                  stroke="#e5c17c"
+                  strokeOpacity={0.72}
+                  strokeDasharray="5 6"
+                  ifOverflow="extendDomain"
+                  label={{ value: 'MEAN / BUCKET', position: 'insideTopRight', fill: '#e5c17c', fontSize: 8, fontWeight: 700 }}
+                />
+              ) : null}
               <Line
                 type="linear"
                 dataKey={metric}
@@ -253,10 +299,10 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
                 strokeWidth={2.8}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                dot={false}
+                dot={{ r: 2.4, fill: selected.color, stroke: '#071525', strokeWidth: 1.3 }}
                 activeDot={{ r: 5.5, stroke: '#071525', strokeWidth: 2, fill: selected.color }}
                 isAnimationActive={!reducedMotion}
-                animationDuration={850}
+                animationDuration={950}
                 animationEasing="ease-out"
               />
             </LineChart>
@@ -434,7 +480,9 @@ function CorridorActivityChart({ data }: { data: CDSAnalyticsPayload }) {
               <XAxis type="number" domain={[0, 'dataMax']} allowDecimals={false} tick={{ fill: 'rgba(169,194,218,.65)', fontSize: 9 }} axisLine={{ stroke: 'rgba(160,198,231,.14)' }} tickLine={false} />
               <YAxis type="category" dataKey="corridor" width={148} interval={0} tickFormatter={value => String(value).length > 23 ? String(value).slice(0, 20) + '…' : String(value)} tick={{ fill: 'rgba(189,208,228,.78)', fontSize: 9 }} axisLine={false} tickLine={false} />
               <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(142,185,237,.07)' }} />
-              <Bar dataKey="trips_started" name="Trips started" fill="url(#cpa-v2-corridor-fill)" barSize={19} radius={[0, 7, 7, 0]} isAnimationActive={!reducedMotion} animationDuration={820} animationEasing="ease-out" />
+              <Bar dataKey="trips_started" name="Trips started" fill="url(#cpa-v2-corridor-fill)" barSize={22} radius={[0, 8, 8, 0]} isAnimationActive={!reducedMotion} animationDuration={920} animationEasing="ease-out">
+                <LabelList dataKey="trips_started" position="right" fill="#eaf2fb" fontSize={9} fontWeight={700} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -501,7 +549,9 @@ function PartnerVolumeChart({ partners }: {
               <XAxis type="number" domain={[0, 'dataMax']} allowDecimals={false} tick={{ fill: 'rgba(169,194,218,.62)', fontSize: 9 }} axisLine={{ stroke: 'rgba(160,198,231,.12)' }} tickLine={false} />
               <YAxis type="category" dataKey="partner" width={134} interval={0} tickFormatter={value => String(value).length > 19 ? String(value).slice(0, 16) + '…' : String(value)} tick={{ fill: 'rgba(189,208,228,.73)', fontSize: 8 }} axisLine={false} tickLine={false} />
               <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(178,154,255,.06)' }} />
-              <Bar dataKey="containers_handled" name="Containers handled" fill="url(#cpa-v2-partner-fill)" barSize={15} radius={[0, 6, 6, 0]} isAnimationActive={!reducedMotion} animationDuration={780} animationEasing="ease-out" />
+              <Bar dataKey="containers_handled" name="Containers handled" fill="url(#cpa-v2-partner-fill)" barSize={18} radius={[0, 7, 7, 0]} isAnimationActive={!reducedMotion} animationDuration={880} animationEasing="ease-out">
+                <LabelList dataKey="containers_handled" position="right" fill="#eaf2fb" fontSize={9} fontWeight={700} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -839,12 +889,15 @@ export function AnalyticsView() {
 
       {section === 'overview' ? (
         <div id="cpa-panel-overview" className="cpa-v2__workspace" role="region" aria-label="Performance overview" tabIndex={0}>
-          <div className="cpa-v2__flow-grid" id="cds-cohort">
-            <BookingCohort data={data} />
-            <BookingMix data={data} />
-          </div>
-          <div className="cpa-v2__analysis-grid">
+          <div className="cpa-v2__analysis-grid cpa-v2__analysis-grid--hero-chart">
             <TrendChart daily={data.daily} days={days} />
+          </div>
+          <div className="cpa-v2__chart-pair" aria-label="Distribution and corridor charts">
+            <BookingMix data={data} />
+            <CorridorActivityChart data={data} />
+          </div>
+          <div className="cpa-v2__analysis-grid cpa-v2__analysis-grid--service">
+            <BookingCohort data={data} />
             <ServiceQuality data={data} />
           </div>
         </div>
@@ -852,7 +905,6 @@ export function AnalyticsView() {
       {section === 'network' ? (
         <div id="cpa-panel-network" className="cpa-v2__workspace" role="region" aria-label="Network performance" tabIndex={0}>
           <SectionHeading index="06–07" kicker="CARRIER / CORRIDOR PERFORMANCE" title="Network execution" />
-          <CorridorActivityChart data={data} />
           <LaneAnalysis data={data} />
           <PartnerAnalysis data={data} />
         </div>
