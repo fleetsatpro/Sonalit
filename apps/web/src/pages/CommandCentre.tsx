@@ -67,6 +67,7 @@ type CommandMilestone = {
 };
 
 type MapSnapshot = {
+  data_quality?: { state?: 'complete' | 'partial'; failed_sources?: string[]; snapshot_at?: string };
   vehicles?: unknown[];
   convoys?: unknown[];
   alert_zones?: unknown[];
@@ -757,6 +758,7 @@ export default function CommandCentre() {
             <span><i className='ccx-map-key ccx-map-key--warning' /> Warning / alert states</span>
             <span><i className='ccx-map-key ccx-map-key--panic' /> Panic</span>
             <span className='ccx-map-foot__note'>Map and vehicle streams have independent refresh states</span>
+            {mapQuery.data?.data_quality?.state === 'partial' && <span className='ccx-map-data-warning'>PARTIAL MAP DATA · {(mapQuery.data.data_quality.failed_sources ?? []).join(', ') || 'one or more layers unavailable'}</span>}
           </div>
         </section>
 
