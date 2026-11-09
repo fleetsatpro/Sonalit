@@ -71,7 +71,7 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
       query: { health: 'charging', sortBy: 'battery', sortOrder: 'asc', limit: '25', offset: '0' },
       user: { org_id: 'org-1' },
       db: async sql => {
-        if (sql.startsWith('SELECT COUNT(DISTINCT t.id)')) return { rows: [{ count: '0' }] };
+        if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ count: '0' }] };
         statement = sql;
         return { rows: [] };
       },
@@ -222,7 +222,7 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
       query: { sortBy: 'toString', sortOrder: 'asc', limit: '10', offset: '0' },
       user: { org_id: 'org-1' },
       db: async sql => {
-        if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ count: '0' }] };
+        if (sql.startsWith('SELECT COUNT(DISTINCT t.id)')) return { rows: [{ count: '0' }] };
         statement = sql;
         return { rows: [] };
       },
