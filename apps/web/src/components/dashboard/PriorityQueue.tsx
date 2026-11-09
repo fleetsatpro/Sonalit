@@ -35,6 +35,8 @@ function relTime(iso: string): string {
   return `${Math.floor(sec / 86400)}d`;
 }
 
+export type QueueDestination = '/alerts' | '/panic-center' | '/guardian' | '/surveillance' | '/convoys' | '/incidents' | '/field-officers' | '/fleet';
+
 export interface QueueItem {
   id: string;
   chip: Chip;
@@ -42,7 +44,23 @@ export interface QueueItem {
   body?: string;
   at: string;
   rank: number;
+  source: string;
+  destination: QueueDestination;
+  severity?: string;
+  recordType: 'alert' | 'event';
   ackId?: string;
+}
+
+function destinationForFeed(type: string): QueueDestination {
+  const value = type.toLowerCase();
+  if (value.includes('panic') || value.includes('sos')) return '/panic-center';
+  if (value.includes('voice')) return '/guardian';
+  if (value.includes('capture') || value.includes('photo')) return '/surveillance';
+  if (value.includes('convoy')) return '/convoys';
+  if (value.includes('incident')) return '/incidents';
+  if (value.includes('crew') || value.includes('field')) return '/field-officers';
+  if (value.includes('alert')) return '/alerts';
+  return '/fleet';
 }
 
 function LockCorner({ pos }: { pos: 'tl' | 'tr' | 'bl' | 'br' }) {
@@ -66,9 +84,12 @@ function SectionHeader({ children, count }: { children: React.ReactNode; count?:
   );
 }
 
-interface PriorityQueueProps { onSelect?: (item: QueueItem) => void }
+interface PriorityQueueProps {
+  onSelect?: (item: QueueItem) => void;
+  showNextDelivery?: boolean;
+}
 
-const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQueueProps) {
+const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDelivery = true }: PriorityQueueProps) {
   const nav = useNavigate();
   const qc = useQueryClient();
   const alerts = useDashboardStore((s) => s.alerts);
@@ -99,6 +120,10 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
       ...(a.summary && a.summary.trim() !== a.title.trim() ? { body: shortenIds(a.summary) } : {}),
       at: a.occurred_at,
       rank: SEV_RANK[a.severity] ?? 3,
+      source: 'Dashboard alert register',
+      destination: '/alerts',
+      severity: a.severity,
+      recordType: 'alert',
       ...(!a.acknowledged ? { ackId: a.id } : {}),
     })),
     ...feedItems
@@ -109,6 +134,10 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
         title: shortenIds(f.message),
         at: f.timestamp,
         rank: SEV_RANK[f.severity ?? f.type] ?? 3,
+        source: 'Realtime session event',
+        destination: destinationForFeed(f.type),
+        severity: f.severity,
+        recordType: 'event',
       })),
   ].sort((x, y) => x.rank - y.rank || new Date(y.at).getTime() - new Date(x.at).getTime());
 
@@ -170,7 +199,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
         ))}
       </div>
 
-      {(nextDelivery || focusConvoy) && (
+      {showNextDelivery && (nextDelivery || focusConvoy) && (
         <div style={{ borderTop: '1px solid var(--d-rim2)', padding: '10px 14px 14px', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{ width: 3, height: 12, background: '#37e6ff', borderRadius: 2, flexShrink: 0 }} />
