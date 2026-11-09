@@ -621,7 +621,7 @@ export default function CommandCentre() {
   const criticalPictureReady = overview?.data_quality?.critical_ready !== false;
   const kpiPictureReady = overview?.data_quality?.kpi_ready !== false;
   const confirmedCritical = threat === 'critical';
-  const posture = activePanic ? 'PANIC ACTIVE' : confirmedCritical ? 'CRITICAL' : !overview || !criticalPictureReady ? 'UNASSESSED' : overviewStale ? 'STALE SNAPSHOT' : threat === 'elevated' ? 'ELEVATED' : 'SECURE';
+  const posture = activePanic ? 'PANIC ACTIVE' : confirmedCritical ? 'CRITICAL' : !overview || !criticalPictureReady ? 'UNASSESSED' : overviewStale || overviewQuery.isRefetchError ? 'STALE SNAPSHOT' : threat === 'elevated' ? 'ELEVATED' : 'SECURE';
   const postureTone = activePanic || confirmedCritical ? 'critical' : criticalPictureReady && threat === 'elevated' ? 'warning' : !overview || !criticalPictureReady || overviewStale || overviewQuery.isRefetchError ? 'unknown' : 'secure';
   const apiTone = !connectivity.apiReachable
     ? connectivity.state === 'OFFLINE' ? 'offline' : 'unknown'
@@ -755,7 +755,7 @@ export default function CommandCentre() {
               <h2>Regional theatre</h2>
             </div>
             <div className='ccx-map-freshness' aria-live='polite'>
-              <span className={'ccx-map-freshness__dot ' + (mapQuery.data ? 'is-present' : 'is-missing')} />
+              <span className={'ccx-map-freshness__dot ' + (mapQuery.data && !mapQuery.isRefetchError && now - mapQuery.dataUpdatedAt < 120_000 ? 'is-present' : 'is-missing')} />
               <span>{mapQuery.dataUpdatedAt > 0 ? 'Map snapshot ' + ageLabel(now - mapQuery.dataUpdatedAt) + ' ago' : mapQuery.isPending ? 'Waiting for map data' : 'No map snapshot'}</span>
               {mapQuery.isRefetchError && <strong>REFRESH FAILED</strong>}
             </div>
