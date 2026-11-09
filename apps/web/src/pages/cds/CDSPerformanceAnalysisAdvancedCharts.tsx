@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -22,7 +22,9 @@ export const dailyMetricOptions: Array<{ id: DailyMetric; label: string; color: 
 ];
 
 const valueOf = (row: DailyRows[number], metric: DailyMetric): number | null => {
-  const value = Number(row[metric]);
+  const raw = row[metric];
+  if (raw == null) return null;
+  const value = Number(raw);
   return Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
 };
 
@@ -110,11 +112,22 @@ export function buildActivityCalendar(daily: DailyRows, metric: DailyMetric): Ac
 
   const weeks: ActivityCalendarWeek[] = Array.from({ length: weekCount }, (_, index) => {
     const start = new Date(gridStart.getTime() + index * 7 * DAY_MS);
-    const firstDay = new Date(start.getTime() + (index === 0 ? mondayOffset : 0) * DAY_MS);
-    const monthDate = firstDay.toLocaleDateString([], { month: 'short', timeZone: 'UTC' });
+    const startMs = start.getTime();
+    const monthAnchor = ordered.find(row => {
+      const dateMs = utcDate(row.day).getTime();
+      return dateMs >= startMs && dateMs < startMs + 7 * DAY_MS && row.day.slice(8, 10) === '01';
+    });
+    const firstObserved = ordered.find(row => {
+      const dateMs = utcDate(row.day).getTime();
+      return dateMs >= startMs && dateMs < startMs + 7 * DAY_MS;
+    });
+    const monthDate = (monthAnchor?.day ?? (index === 0 ? firstObserved?.day : undefined));
+    const monthLabel = monthDate
+      ? utcDate(monthDate).toLocaleDateString([], { month: 'short', timeZone: 'UTC' })
+      : '';
     return {
       start: isoDay(start),
-      monthLabel: start.getUTCDate() <= 7 || index === 0 ? monthDate : '',
+      monthLabel,
       cells: Array.from({ length: 7 }, () => null),
     };
   });
@@ -161,9 +174,19 @@ function HistogramTooltip({ active, payload, label }: {
 export function DailyActivityProfile({ daily }: { daily: DailyRows }) {
   const [metric, setMetric] = useState<DailyMetric>('bookings_received');
   const [selectedDay, setSelectedDay] = useState(() => daily[daily.length - 1]?.day ?? '');
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(preference.matches);
+    update();
+    preference.addEventListener('change', update);
+    return () => preference.removeEventListener('change', update);
+  }, []);
   const histogram = useMemo(() => buildDailyHistogram(daily, metric), [daily, metric]);
   const weeks = useMemo(() => buildActivityCalendar(daily, metric), [daily, metric]);
   const selectedMetric = dailyMetricOptions.find(option => option.id === metric) ?? dailyMetricOptions[0];
+  const p90BinKey = histogram.bins.find(bin => histogram.p90 != null && histogram.p90 >= bin.min && histogram.p90 <= bin.max)?.key;
   const currentDay = daily.find(row => row.day === selectedDay) ?? daily[daily.length - 1] ?? null;
   const currentValue = currentDay ? valueOf(currentDay, metric) : null;
   const weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -222,11 +245,11 @@ export function DailyActivityProfile({ daily }: { daily: DailyRows }) {
                     axisLine={false} tickLine={false} />
                   <Tooltip content={<HistogramTooltip />} cursor={{ fill: 'rgba(142,185,237,.06)' }} />
                   <Bar dataKey="days" name="Calendar days" radius={[5, 5, 1, 1]} maxBarSize={42}
-                    isAnimationActive animationDuration={620} animationEasing="ease-out">
-                    {histogram.bins.map((bin, index) => (
-                      <Cell key={bin.key} fill={index === histogram.bins.length - 1
+                    isAnimationActive={!reducedMotion} animationDuration={620} animationEasing="ease-out">
+                    {histogram.bins.map(bin => (
+                      <Cell key={bin.key} fill={bin.key === p90BinKey
                         ? 'url(#cpa-v2-histogram-fill)'
-                        : selectedMetric.color} fillOpacity={index === histogram.bins.length - 1 ? 1 : .72} />
+                        : selectedMetric.color} fillOpacity={bin.key === p90BinKey ? 1 : .72} />
                     ))}
                     <LabelList dataKey="days" position="top" fill="#dce9f6" fontSize={8} />
                   </Bar>
