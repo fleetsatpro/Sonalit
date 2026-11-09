@@ -835,3 +835,265 @@
 @media (max-width:720px) {
   .cpa-v2__comparison-legend {padding-right:13px;padding-left:13px}
 }
+
+
+/* Day-level analyst layer: frequency distribution plus a keyboard-operable calendar heatmap. */
+.cpa-v2__activity-profile {
+  margin:14px 0;
+  border-color:rgba(195,171,119,.2);
+  background:
+    radial-gradient(ellipse at 92% 0%,rgba(191,159,96,.075),transparent 42%),
+    radial-gradient(ellipse at 0% 100%,rgba(75,155,190,.055),transparent 50%),
+    linear-gradient(145deg,rgba(15,32,50,.86),rgba(7,18,31,.91));
+  box-shadow:inset 0 1px rgba(255,255,255,.055),0 15px 36px rgba(0,0,0,.17);
+}
+.cpa-v2__profile-head {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:18px;
+  padding:17px 18px 14px;
+  border-bottom:1px solid rgba(157,190,218,.09);
+}
+.cpa-v2__profile-head h3 {
+  margin:5px 0 4px;
+  color:#eef5fc;
+  font:750 17px/1.2 'Space Grotesk',sans-serif;
+  letter-spacing:-.025em;
+}
+.cpa-v2__profile-head p {
+  margin:0;
+  color:rgba(162,188,212,.69);
+  font-size:9px;
+  line-height:1.5;
+}
+.cpa-v2__profile-metric {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:5px;
+  max-width:490px;
+}
+.cpa-v2__profile-metric button {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:28px;
+  padding:0 8px;
+  border:1px solid rgba(155,190,220,.13);
+  border-radius:6px;
+  background:rgba(10,24,39,.56);
+  color:rgba(174,198,221,.72);
+  font-size:8px;
+  font-weight:650;
+  transition:background .18s ease,border-color .18s ease,color .18s ease,transform .18s ease;
+}
+.cpa-v2__profile-metric button i {
+  width:6px;height:6px;border-radius:50%;
+  box-shadow:0 0 8px currentColor;
+}
+.cpa-v2__profile-metric button:hover {transform:translateY(-1px);border-color:rgba(219,190,133,.3);color:#edf5fc}
+.cpa-v2__profile-metric button[aria-pressed="true"] {
+  border-color:rgba(216,184,121,.42);
+  background:linear-gradient(135deg,rgba(137,107,61,.22),rgba(23,43,60,.76));
+  color:#f4dfb7;
+  box-shadow:inset 0 1px rgba(255,255,255,.05),0 0 16px rgba(193,158,94,.055);
+}
+.cpa-v2__rhythm-grid {
+  display:grid;
+  grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);
+  gap:12px;
+  padding:12px;
+}
+.cpa-v2__profile-card {
+  min-width:0;
+  padding:12px;
+  border:1px solid rgba(151,190,222,.105);
+  border-radius:9px;
+  background:linear-gradient(145deg,rgba(18,38,58,.65),rgba(8,21,35,.63));
+  box-shadow:inset 0 1px rgba(255,255,255,.035);
+}
+.cpa-v2__profile-card-head {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  min-height:30px;
+}
+.cpa-v2__profile-card-head>div {display:flex;min-width:0;flex-direction:column;gap:4px}
+.cpa-v2__profile-card-head small {
+  color:rgba(161,188,213,.61);
+  font:700 7px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.13em;
+}
+.cpa-v2__profile-card-head strong {color:#edf4fc;font-size:10px;font-weight:700}
+.cpa-v2__profile-card-head>span {
+  padding-top:1px;
+  color:rgba(162,188,212,.6);
+  font:650 7px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.06em;
+  text-align:right;
+  text-transform:uppercase;
+}
+.cpa-v2__distribution-stats {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px;
+  margin:10px 0 0;
+}
+.cpa-v2__distribution-stats>div {
+  display:flex;min-width:0;flex-direction:column;gap:4px;
+  padding:8px 9px;
+  border:1px solid rgba(152,188,218,.095);
+  border-radius:6px;
+  background:rgba(8,22,37,.49);
+}
+.cpa-v2__distribution-stats small {
+  overflow:hidden;
+  color:rgba(161,188,213,.58);
+  font:700 6px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.08em;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.cpa-v2__distribution-stats strong {
+  color:#f1f6fc;
+  font:800 17px/1 'Space Grotesk',sans-serif;
+  font-variant-numeric:tabular-nums;
+}
+.cpa-v2__rechart--histogram {height:218px;padding:12px 6px 0 0}
+.cpa-v2__rechart--histogram .recharts-label-list text {
+  fill:#dce9f6;
+  font:700 8px 'IBM Plex Mono',ui-monospace,monospace;
+}
+.cpa-v2__profile-foot {
+  min-height:26px;
+  padding:8px 2px 0;
+  color:rgba(146,174,199,.55);
+  font-size:7px;
+  line-height:1.5;
+}
+.cpa-v2__calendar-wrap {
+  display:grid;
+  grid-template-columns:33px minmax(0,1fr);
+  gap:7px;
+  margin-top:12px;
+}
+.cpa-v2__weekday-labels {
+  display:grid;
+  grid-template-rows:repeat(7,12px);
+  gap:4px;
+  padding-top:0;
+}
+.cpa-v2__weekday-labels span {
+  display:flex;align-items:center;
+  color:rgba(148,177,202,.57);
+  font:650 6px 'IBM Plex Mono',ui-monospace,monospace;
+}
+.cpa-v2__calendar-scroll {
+  min-width:0;
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding-bottom:5px;
+  scrollbar-color:rgba(165,143,101,.35) rgba(10,24,39,.45);
+  scrollbar-width:thin;
+}
+.cpa-v2__calendar-months {
+  display:grid;
+  grid-template-rows:12px;
+  gap:0;
+  min-width:max-content;
+  margin-bottom:5px;
+}
+.cpa-v2__calendar-months span {
+  color:rgba(174,197,219,.66);
+  font:650 7px 'IBM Plex Mono',ui-monospace,monospace;
+  white-space:nowrap;
+}
+.cpa-v2__calendar-grid {
+  display:grid;
+  grid-template-rows:repeat(7,12px);
+  grid-auto-flow:column;
+  grid-auto-columns:12px;
+  gap:4px;
+  width:max-content;
+}
+.cpa-v2__calendar-cell {
+  width:12px;height:12px;
+  padding:0;
+  border:1px solid rgba(158,188,213,.08);
+  border-radius:3px;
+  background:rgba(138,166,191,.055);
+  cursor:pointer;
+  transition:transform .16s ease,border-color .16s ease,filter .16s ease;
+}
+.cpa-v2__calendar-cell:hover {z-index:1;transform:scale(1.24);border-color:rgba(238,218,179,.7);filter:brightness(1.2)}
+.cpa-v2__calendar-cell.is-selected {outline:1px solid #f0d39b;outline-offset:2px;box-shadow:0 0 9px rgba(225,193,132,.28)}
+.cpa-v2__calendar-cell.level-0 {background:rgba(121,151,178,.105)}
+.cpa-v2__calendar-cell.level-1 {background:rgba(69,144,157,.42);border-color:rgba(104,188,190,.23)}
+.cpa-v2__calendar-cell.level-2 {background:rgba(63,173,153,.62);border-color:rgba(98,215,184,.3)}
+.cpa-v2__calendar-cell.level-3 {background:rgba(178,153,98,.78);border-color:rgba(228,197,129,.34)}
+.cpa-v2__calendar-cell.level-4 {background:linear-gradient(145deg,#eed59b,#b58a4f);border-color:rgba(246,220,170,.75);box-shadow:0 0 8px rgba(226,189,117,.17)}
+.cpa-v2__calendar-cell.level-missing {
+  background:repeating-linear-gradient(135deg,rgba(133,153,174,.1),rgba(133,153,174,.1) 2px,transparent 2px,transparent 4px);
+  border-style:dashed;
+}
+.cpa-v2__calendar-legend {
+  display:flex;align-items:center;gap:5px;
+  margin:10px 0 8px 40px;
+  color:rgba(155,183,207,.58);
+  font-size:7px;
+}
+.cpa-v2__calendar-legend i {width:9px;height:9px;border-radius:2px;border:1px solid rgba(158,188,213,.1)}
+.cpa-v2__calendar-legend i.level-1 {background:rgba(69,144,157,.55)}
+.cpa-v2__calendar-legend i.level-2 {background:rgba(63,173,153,.72)}
+.cpa-v2__calendar-legend i.level-3 {background:rgba(178,153,98,.85)}
+.cpa-v2__calendar-legend i.level-4 {background:linear-gradient(145deg,#eed59b,#b58a4f)}
+.cpa-v2__selected-day {
+  display:grid;
+  grid-template-columns:minmax(92px,.8fr) minmax(0,1.2fr);
+  gap:10px;
+  margin-top:9px;
+  padding:10px;
+  border:1px solid rgba(195,169,115,.18);
+  border-radius:7px;
+  background:linear-gradient(130deg,rgba(120,94,54,.12),rgba(8,23,38,.44));
+}
+.cpa-v2__selected-day-head {display:flex;min-width:0;flex-direction:column;gap:4px}
+.cpa-v2__selected-day-head small {
+  color:rgba(202,177,128,.68);
+  font:700 6px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.12em;
+}
+.cpa-v2__selected-day-head strong {
+  color:#f1f5fb;font-size:10px;font-weight:700;
+}
+.cpa-v2__selected-day-head span {
+  color:#e7cb92;
+  font:750 12px 'IBM Plex Mono',ui-monospace,monospace;
+  font-variant-numeric:tabular-nums;
+}
+.cpa-v2__selected-day-values {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 9px}
+.cpa-v2__selected-day-values>div {
+  display:grid;grid-template-columns:5px minmax(0,1fr) auto;align-items:center;gap:5px;min-width:0;
+}
+.cpa-v2__selected-day-values i {width:5px;height:5px;border-radius:50%}
+.cpa-v2__selected-day-values span {overflow:hidden;color:rgba(166,192,215,.65);font-size:7px;text-overflow:ellipsis;white-space:nowrap}
+.cpa-v2__selected-day-values b {color:#e7eff8;font:700 8px 'IBM Plex Mono',ui-monospace,monospace}
+@media (max-width:1050px) {
+  .cpa-v2__rhythm-grid {grid-template-columns:minmax(0,1fr)}
+  .cpa-v2__calendar-scroll {max-width:100%}
+}
+@media (max-width:720px) {
+  .cpa-v2__profile-head {flex-direction:column;gap:11px;padding:14px 13px 11px}
+  .cpa-v2__profile-metric {justify-content:flex-start;max-width:none}
+  .cpa-v2__rhythm-grid {gap:9px;padding:9px}
+  .cpa-v2__profile-card {padding:10px}
+  .cpa-v2__distribution-stats strong {font-size:15px}
+  .cpa-v2__selected-day {grid-template-columns:minmax(0,1fr);gap:8px}
+  .cpa-v2__calendar-scroll {overflow-x:auto}
+}
+@media (prefers-reduced-motion:reduce) {
+  .cpa-v2__profile-metric button,.cpa-v2__calendar-cell {transition:none}
+  .cpa-v2__calendar-cell:hover {transform:none}
+}
