@@ -246,7 +246,7 @@ router.get('/map', asyncHandler(async (req, res) => {
       SELECT id::text, name, risk_level, lat, lng, COALESCE(radius_km, 5) AS radius_km
       FROM risk_zones
       WHERE active=true AND lat IS NOT NULL AND lng IS NOT NULL
-      LIMIT 20`).catch(() => ({ rows: [] })),
+      LIMIT 20`).then((result) => ({ ...result, ok: true })).catch(() => ({ rows: [], ok: false })),
 
     safeQuery(req.db, `
       SELECT d.id, d.name, d.model, d.assignment_type,
@@ -272,7 +272,17 @@ router.get('/map', asyncHandler(async (req, res) => {
       LIMIT 100`, [orgId]),
   ]);
 
+  const failedSources = [
+    !convoysR.ok && 'convoys',
+    !alertZonesR.ok && 'alert_zones',
+    !vehiclesR.ok && 'vehicles',
+    !geofencesR.ok && 'geofences',
+    !riskzonesR.ok && 'risk_zones',
+    !devicesR.ok && 'guardian_devices',
+  ].filter(Boolean);
+
   res.json({
+    data_quality: { state: failedSources.length === 0 ? 'complete' : 'partial', failed_sources: failedSources, snapshot_at: new Date().toISOString() },
     convoys: convoysR.rows.map((c, i) => ({
       id: c.id, name: c.name || `Convoy ${i+1}`, status: c.status,
       lat: c.lat ? parseFloat(c.lat) : null,
