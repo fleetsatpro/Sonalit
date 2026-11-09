@@ -7,6 +7,7 @@ const dashboard = read('./CDSDashboard.tsx');
 const constants = read('./constants.ts');
 const component = read('./CDSPerformanceAnalysis.tsx');
 const visual = read('./CDSPerformanceAnalysis.css');
+const advancedCharts = read('./CDSPerformanceAnalysisAdvancedCharts.tsx');
 
 describe('CDS Performance Analysis v2 contract', () => {
   it('mounts the dedicated analysis workspace without leaving the legacy implementation active', () => {
@@ -172,6 +173,25 @@ describe('CDS Performance Analysis v2 contract', () => {
       'cpa-chart-intel-rise',
     ]) expect(visual).toContain(marker);
     expect(component.indexOf('cpa-v2__analysis-grid--hero-chart')).toBeLessThan(component.indexOf('cpa-v2__chart-pair'));
+  });
+
+
+  it('adds a distribution histogram and selected-day calendar heatmap from daily persisted observations', () => {
+    for (const marker of [
+      'DailyActivityProfile',
+      'buildDailyHistogram',
+      'buildActivityCalendar',
+      'Events per calendar day',
+      'ZERO-ACTIVITY DAYS',
+      'SELECT A DAY',
+      'aria-pressed={cell.day === currentDay?.day}',
+      'level-missing',
+    ]) expect(advancedCharts).toContain(marker);
+    expect(component).toContain('<Brush');
+    expect(component).toContain('AVERAGE / DAY');
+    expect(component).toContain('<DailyActivityProfile daily={data.daily} />');
+    expect(visual).toContain('.cpa-v2__calendar-grid');
+    expect(visual).toContain('.cpa-v2__rechart--histogram');
   });
 
   it('styles data tooltips and respects reduced-motion preferences in chart rendering', () => {
