@@ -188,12 +188,14 @@ function MovementRegister({
   isError,
   onRetry,
   onOpen,
+  checkpointsReady,
 }: {
   convoys: CommandConvoy[];
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
   onOpen: () => void;
+  checkpointsReady: boolean;
 }) {
   return (
     <section className='ccx-panel ccx-movement-panel' aria-labelledby='ccx-movement-title'>
@@ -206,6 +208,7 @@ function MovementRegister({
           REGISTER <ArrowUpRight size={13} />
         </button>
       </header>
+      {!checkpointsReady && <div className='ccx-partial-note'>Checkpoint source unavailable — movement progress is not assessed.</div>}
       <div className='ccx-movement-list'>
         {isLoading && (
           <div className='ccx-skeleton-list' aria-label='Loading active movements'>
@@ -253,7 +256,7 @@ function MovementRegister({
                 <span><Truck size={12} /> {convoy.truck_count} {convoy.truck_count === 1 ? 'vehicle' : 'vehicles'}</span>
                 <span><Clock3 size={12} /> ETA {timeLabel(convoy.eta)}</span>
               </span>
-              {total > 0 && (
+              {checkpointsReady && total > 0 && (
                 <span className='ccx-checkpoints' aria-label={completed + ' of ' + total + ' checkpoints reached'}>
                   <span className='ccx-checkpoints__track'><i style={{ width: (completed / total * 100) + '%' }} /></span>
                   <small>{completed}/{total} CHECKPOINTS</small>
@@ -349,12 +352,14 @@ function MilestoneTimeline({
   isError,
   onRetry,
   onOpen,
+  partialSources,
 }: {
   items: CommandMilestone[];
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
   onOpen: (type: string) => void;
+  partialSources: string[];
 }) {
   return (
     <section className='ccx-panel ccx-timeline-panel' aria-labelledby='ccx-timeline-title'>
@@ -380,6 +385,9 @@ function MilestoneTimeline({
           title='No scheduled milestones'
           message='There are no recorded arrivals, checkpoints or shift changes in the next 24 hours.'
         />
+      )}
+      {!isLoading && !isError && partialSources.length > 0 && (
+        <div className='ccx-partial-note'>Partial schedule: {partialSources.join(', ')} did not return a verified result.</div>
       )}
       {!isLoading && !isError && items.length > 0 && (
         <div className='ccx-timeline-list'>
@@ -603,7 +611,7 @@ export default function CommandCentre() {
     ? connectivity.state === 'OFFLINE' ? 'offline' : 'unknown'
     : connectivity.state === 'DEGRADED' ? 'degraded' : 'online';
   const overviewAgeText = overviewAge == null
-    ? overviewQuery.isPending ? 'awaiting first response' : 'no verified response'
+    ? overviewQuery.isPending ? 'awaiting first response' : 'no successful response'
     : overviewQuery.isRefetchError
       ? 'refresh failed · last response ' + ageLabel(overviewAge) + ' ago'
       : 'browser received snapshot ' + ageLabel(overviewAge) + ' ago';
