@@ -57,7 +57,7 @@ describe('CDS Performance Analysis v2 contract', () => {
     expect(component).toContain('type TrendMetric');
     expect(component).toContain('setMetric(option.id)');
     expect(component).toContain('selected.label');
-    expect(component).toContain('Different event streams are not treated as a conversion funnel');
+    expect(component).toContain('One event stream at a time');
     expect(component).not.toContain('visibleSeries.map');
   });
 
@@ -151,8 +151,8 @@ describe('CDS Performance Analysis v2 contract', () => {
 
   it('promotes a full-width chart stage with data-derived trend context and ranked bar labels', () => {
     for (const marker of [
-      'PEAK BUCKET',
-      'AVERAGE / BUCKET',
+      'PEAK DAY',
+      'AVERAGE / DAY',
       'ACTIVE DAYS',
       'ReferenceLine',
       'ReferenceDot',
@@ -185,7 +185,6 @@ describe('CDS Performance Analysis v2 contract', () => {
       'ZERO-ACTIVITY DAYS',
       'SELECT A DAY',
       'aria-pressed={cell.day === currentDay?.day}',
-      'level-missing',
       'preference.addEventListener',
       'p90BinKey',
       'raw == null'
@@ -194,6 +193,7 @@ describe('CDS Performance Analysis v2 contract', () => {
     expect(component).toContain('AVERAGE / DAY');
     expect(component).toContain('<DailyActivityProfile daily={data.daily} />');
     expect(visual).toContain('.cpa-v2__calendar-grid');
+    expect(visual).toContain('.cpa-v2__calendar-cell.level-missing');
     expect(visual).toContain('.cpa-v2__rechart--histogram');
   });
 
