@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, Battery, BatteryCharging, BatteryWarning, Activity, Zap, ChevronRight, type LucideIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Lock, Truck, MapPin, RefreshCw, CheckCircle2, Unlock, BrainCircuit, AlertTriangle, FileText, FileBarChart, Search, ShieldCheck, Clock3, Battery, BatteryCharging, BatteryWarning, Activity, Zap, Download, ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
 
 import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useDashboardKPIs, useLocks, useLockEvents, useTrips, useBookings, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip } from './hooks.js';
+import { useDashboardKPIs, useLocks, useLockEvents, useTrips, useBookings, useBookingHealthSummary, useActivity, useReports, useGenerateReport, useUnclampTrip } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
@@ -276,161 +276,276 @@ function LockDossier({ lock }: { lock: Row }) {
 
 export function LocksView() {
   const [filter, setFilter] = useState('all');
+  const [queryInput, setQueryInput] = useState('');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('priority');
-  const { data, isLoading, isError, isFetching, refetch } = useLocks();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const { openDrawer } = useCDSStore();
-  if (isLoading) return <LoadingState />;
 
-  const all = (data?.data ?? []) as Row[];
-  const total = Number(data?.total ?? all.length);
-  const count = (predicate: (row: Row) => boolean) => all.filter(predicate).length;
-  const tamper = count(row => lockHealth(row).key === 'tamper');
-  const offline = count(row => lockHealth(row).key === 'offline');
-  const stale = count(row => lockHealth(row).key === 'stale');
-  const fresh = count(row => {
-    const age = lockHeartbeatAge(row);
-    return age !== null && age <= LOCK_HEARTBEAT_STALE_MS;
-  });
-  const low = count(row => {
-    const battery = lockBattery(row);
-    return battery !== null && battery < 25;
-  });
-  const charging = count(row => lockSolarState(row) === 'charging');
-  const attention = count(row => ['tamper', 'offline', 'stale', 'low-battery', 'degraded', 'unverified'].includes(lockHealth(row).key));
-  const thermal = count(row => numericTelemetry(row['reported_temperature'], -80, 150) !== null && lockTelemetryFresh(row, 'reported_temperature_at'));
-  const filters = [
-    { id: 'all', label: 'All devices', total: all.length },
-    { id: 'attention', label: 'Needs attention', total: attention },
-    { id: 'tamper', label: 'Tamper', total: tamper },
-    { id: 'offline', label: 'Offline', total: offline },
-    { id: 'stale', label: 'Stale heartbeat', total: stale },
-    { id: 'low', label: 'Low battery', total: low },
-    { id: 'charging', label: 'Solar charging', total: charging },
-    { id: 'maintenance', label: 'Maintenance', total: count(row => lockHealth(row).key === 'maintenance') },
-  ];
-  const searchTerm = query.trim().toLowerCase();
-  const matches = all.filter(row => {
-    const health = lockHealth(row).key;
-    const battery = lockBattery(row);
-    const filterMatch = filter === 'all'
-      || (filter === 'attention' && ['tamper', 'offline', 'stale', 'low-battery', 'degraded', 'unverified'].includes(health))
-      || (filter === 'low' && battery !== null && battery < 25)
-      || (filter === 'charging' && lockSolarState(row) === 'charging')
-      || (filter === health);
-    if (!filterMatch) return false;
-    if (!searchTerm) return true;
-    return [
-      row['serial'], row['serial_number'], row['provider'], row['container_number'],
-      row['truck'], row['vehicle_reg'], row['location'], row['status'],
-      row['firmware_version'], row['tamper_status'],
-    ].some(value => String(value ?? '').toLowerCase().includes(searchTerm));
-  });
-  const healthPriority: Record<string, number> = {
-    tamper: 0, offline: 1, 'low-battery': 2, stale: 3, degraded: 4,
-    unverified: 5, maintenance: 6, removed: 7, secure: 8,
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setQuery(queryInput.trim());
+      setPage(1);
+      setSelectedIds(new Set());
+    }, 260);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
+
+  const filters = {
+    page,
+    pageSize,
+    sortBy: sort,
+    sortOrder: 'asc' as const,
+    ...(query ? { query } : {}),
+    ...(filter !== 'all' ? { health: filter } : {}),
   };
-  const rows = [...matches].sort((a, b) => {
-    if (sort === 'battery') return (lockBattery(a) ?? 101) - (lockBattery(b) ?? 101);
-    if (sort === 'heartbeat') return (lockHeartbeatAge(b) ?? -1) - (lockHeartbeatAge(a) ?? -1);
-    if (sort === 'serial') return lockText(a['serial']).localeCompare(lockText(b['serial']));
-    return (healthPriority[lockHealth(a).key] ?? 9) - (healthPriority[lockHealth(b).key] ?? 9);
-  });
-  const powerWatch = [...all]
-    .filter(row => lockBattery(row) !== null)
-    .sort((a, b) => (lockBattery(a) ?? 101) - (lockBattery(b) ?? 101))
-    .slice(0, 4);
+  const { data, isLoading, isError, isFetching, refetch } = useLocks(filters);
+  const { data: inventoryData } = useLocks({ page: 1, pageSize: 1 });
+  const rows = (data?.data ?? []) as Row[];
+  const total = Number(data?.total ?? 0);
+  const inventoryTotal = Number(inventoryData?.total ?? total);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const first = total === 0 ? 0 : ((page - 1) * pageSize) + 1;
+  const last = Math.min(page * pageSize, total);
+  const allPageSelected = rows.length > 0 && rows.every(row => selectedIds.has(lockText(row['id'], lockText(row['serial']))));
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const changeFilter = (next: string) => {
+    setFilter(next);
+    setPage(1);
+    setSelectedIds(new Set());
+  };
+
+  const openLock = (row: Row) => {
+    const serial = lockText(row['serial'] ?? row['serial_number'] ?? row['lock_id'], 'E-Lock record');
+    openDrawer('E-Lock ' + serial, <LockDossier lock={row} />);
+  };
+
+  const exportRows = () => {
+    const selected = rows.filter(row => selectedIds.has(lockText(row['id'], lockText(row['serial']))));
+    const records = selected.length ? selected : rows;
+    const columns: Array<[string, (row: Row) => unknown]> = [
+      ['Serial', row => row['serial'] ?? row['serial_number']],
+      ['Provider', row => row['provider']],
+      ['Lifecycle status', row => row['status']],
+      ['Health', row => lockHealth(row).key],
+      ['Container', row => row['container_number']],
+      ['Vehicle', row => row['truck'] ?? row['vehicle_reg']],
+      ['Battery percent', row => lockBattery(row)],
+      ['Signal', row => lockSignal(row)],
+      ['Last heartbeat', row => row['last_heartbeat_event_at']],
+      ['Firmware', row => row['firmware_version']],
+      ['Location', row => row['location']],
+    ];
+    const cell = (value: unknown) => {
+      const text = String(value ?? '');
+      const protectedText = /^[\t\r =+\-@]/.test(text) ? "'" + text : text;
+      return '"' + protectedText.replace(/"/g, '""') + '"';
+    };
+    const csv = [
+      columns.map(([label]) => cell(label)).join(','),
+      ...records.map(row => columns.map(([, value]) => cell(value(row))).join(',')),
+    ].join('\r\n');
+    const blob = new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'sonalit-elock-catalogue-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const pageIds = rows.map(row => lockText(row['id'], lockText(row['serial'])));
+  const filtersList = [
+    { id: 'all', label: 'All locks' },
+    { id: 'attention', label: 'Needs attention' },
+    { id: 'tamper', label: 'Tamper' },
+    { id: 'offline', label: 'Offline' },
+    { id: 'stale', label: 'Stale heartbeat' },
+    { id: 'low', label: 'Low battery' },
+    { id: 'charging', label: 'Solar charging' },
+    { id: 'maintenance', label: 'Maintenance' },
+  ];
+
+  if (isLoading && !data) return <LoadingState />;
 
   return (
-    <div className="cds-lock-console">
-      <header className="cds-lock-console__head">
+    <div className="cds-lock-console cds-lock-register">
+      <header className="cds-lock-console__head cds-lock-register__hero">
         <div>
-          <div className="cds-lock-console__eyebrow"><ShieldCheck size={13} aria-hidden="true" /> HARDWARE SECURITY / DEVICE TELEMETRY</div>
-          <h2>E-Lock Control</h2>
-          <p>Device posture, power state, signal quality and integrity evidence in one control surface.</p>
+          <div className="cds-lock-console__eyebrow"><ShieldCheck size={13} aria-hidden="true" /> HARDWARE SECURITY / DEVICE INVENTORY</div>
+          <h2>E-Lock Catalogue</h2>
+          <p>A fleet-scale register for device identity, deployment, operational health and telemetry evidence.</p>
         </div>
-        <div className="cds-lock-console__head-side">
-          <div><small>REGISTERED DEVICES</small><b>{total.toLocaleString()}</b><span>{all.length.toLocaleString()} loaded in this view</span></div>
-          <button type="button" onClick={() => { void refetch(); }} disabled={isFetching} aria-label="Refresh e-lock inventory">
+        <div className="cds-lock-register__hero-meta">
+          <div><small>REGISTERED IN FLEET</small><b>{inventoryTotal.toLocaleString()}</b></div>
+          <button type="button" onClick={() => { void refetch(); }} disabled={isFetching} aria-label="Refresh e-lock catalogue">
             <RefreshCw size={14} className={isFetching ? 'cds-lock-refreshing' : ''} /> {isFetching ? 'Refreshing' : 'Refresh'}
           </button>
         </div>
       </header>
 
-      {isError && <div role="alert" className="cds-lock-console__error">The latest lock inventory request failed. Any already loaded records remain visible; unavailable telemetry is not replaced with assumed values.</div>}
+      {isError && <div role="alert" className="cds-lock-console__error">The latest catalogue request failed. Previously loaded records remain visible; unavailable telemetry is not replaced with assumed values.</div>}
 
-      <section className="cds-lock-metrics" aria-label="E-lock fleet metrics">
-        <div><small>FRESH HEARTBEATS</small><b>{fresh}</b><span>{all.length ? Math.round(fresh / all.length * 100) + '% of loaded devices' : 'No device records'}</span></div>
-        <div><small>NEEDS ATTENTION</small><b className={attention ? 'alert' : ''}>{attention}</b><span>Derived from persisted device state</span></div>
-        <div><small>TAMPER FLAGS</small><b className={tamper ? 'critical' : ''}>{tamper}</b><span>Device-reported integrity state</span></div>
-        <div><small>LOW BATTERY</small><b className={low ? 'warning' : ''}>{low}</b><span>Below 25% reported charge</span></div>
-        <div><small>OFFLINE / STALE</small><b className={offline + stale ? 'warning' : ''}>{offline + stale}</b><span>No link or heartbeat older than 15m</span></div>
-        <div><small>SOLAR CHARGING</small><b>{charging}</b><span>{thermal} devices report temperature</span></div>
+      <section className="cds-lock-register__summary" aria-label="Catalogue result summary">
+        <div><span>RESULT SET</span><strong>{total.toLocaleString()}</strong><small>matches current filters</small></div>
+        <div><span>VISIBLE WINDOW</span><strong>{first.toLocaleString()}–{last.toLocaleString()}</strong><small>{rows.length} records on this page</small></div>
+        <div><span>REGISTER SCOPE</span><strong>{inventoryTotal.toLocaleString()}</strong><small>all registered devices</small></div>
+        <div><span>HEARTBEAT RULE</span><strong>15 min</strong><small>freshness threshold</small></div>
       </section>
 
-      <div className="cds-lock-controlbar">
-        <label className="cds-lock-search"><Search size={15} aria-hidden="true" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search serial, container, vehicle, provider, firmware…" aria-label="Search e-lock inventory" /></label>
-        <label className="cds-lock-sort"><span>SORT</span><select value={sort} onChange={event => setSort(event.target.value)} aria-label="Sort lock devices"><option value="priority">Risk priority</option><option value="battery">Lowest battery</option><option value="heartbeat">Oldest heartbeat</option><option value="serial">Serial number</option></select></label>
-      </div>
-
-      <nav className="cds-lock-filters" aria-label="Filter e-lock inventory">
-        {filters.map(item => <button type="button" key={item.id} aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}>{item.label}<b>{item.total}</b></button>)}
-      </nav>
-
-      {powerWatch.length > 0 && (
-        <section className="cds-lock-power-watch" aria-label="Lowest reported battery devices">
-          <header><div><span>POWER INTELLIGENCE / PRIORITY WATCH</span><b>Lowest reported charge</b></div><small>NO BATTERY-LIFE ESTIMATE INFERRED</small></header>
-          <div className="cds-lock-power-watch__items">
-            {powerWatch.map(row => (
-              <button type="button" key={lockText(row['id'])} onClick={() => openDrawer('E-Lock ' + lockText(row['serial']), <LockDossier lock={row} />)}>
-                <LockBatteryReadout row={row} />
-                <span><b>{lockText(row['serial'])}</b><small>{lockText(row['container_number'], 'UNASSIGNED')}</small></span>
-                <ChevronRight size={14} aria-hidden="true" />
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <div className="cds-lock-results-head"><div><span>DEVICE REGISTER</span><b>{rows.length} MATCHING / {all.length} LOADED</b></div><small>HEARTBEAT FRESHNESS THRESHOLD · 15 MINUTES</small></div>
-      {rows.length ? (
-        <div className="cds-lock-grid">
-          {rows.map((row, index) => {
-            const serial = lockText(row['serial'] ?? row['serial_number'] ?? row['lock_id'], 'LOCK ' + (index + 1));
-            const battery = lockBattery(row);
-            const signal = lockSignal(row);
-            const heartbeatAge = lockHeartbeatAge(row);
-            const location = lockText(row['location'], row['lat'] != null && row['lng'] != null
-              ? Number(row['lat']).toFixed(4) + ', ' + Number(row['lng']).toFixed(4) : 'LOCATION NOT REPORTED');
-            return (
-              <button type="button" className={'cds-lock-device cds-lock-device--' + lockHealth(row).key} key={lockText(row['id'], serial)} onClick={() => openDrawer('E-Lock ' + serial, <LockDossier lock={row} />)}>
-                <div className="cds-lock-device__top">
-                  <div><small>DEVICE / {lockText(row['provider'], 'UNKNOWN PROVIDER').toUpperCase()}</small><b>{serial}</b></div>
-                  <LockHealthBadge row={row} />
-                </div>
-                <div className="cds-lock-device__power">
-                  <LockBatteryReadout row={row} />
-                  <div className="cds-lock-device__power-track"><i style={{ width: (battery ?? 0) + '%' }} data-missing={battery === null ? 'true' : 'false'} /></div>
-                  <small>{lockSolarState(row) === 'charging' ? 'SOLAR INPUT · RECENT HEARTBEAT' : lockSolarState(row) === 'idle' ? 'NOT CHARGING · RECENT HEARTBEAT' : battery === null ? 'POWER STATE UNKNOWN' : battery < 25 ? 'LOW POWER · REVIEW' : 'CHARGE STATE UNVERIFIED'}</small>
-                </div>
-                <div className="cds-lock-device__telemetry">
-                  <div><small>LINK</small><LockSignalReadout value={signal} /></div>
-                  <div><small>HEARTBEAT</small><b>{heartbeatAge === null ? 'UNVERIFIED' : lockAgeLabel(row['last_heartbeat_event_at'])}</b></div>
-                  <div><small>TEMPERATURE</small><b>{numericTelemetry(row['reported_temperature'], -80, 150) === null ? '—' : numericTelemetry(row['reported_temperature'], -80, 150)!.toFixed(1) + '°C' + (lockTelemetryFresh(row, 'reported_temperature_at') ? '' : ' · STALE')}</b></div>
-                </div>
-                <div className="cds-lock-device__assignment">
-                  <span><MapPin size={12} aria-hidden="true" /> {location}</span>
-                  <span><Lock size={12} aria-hidden="true" /> {lockText(row['container_number'], 'UNASSIGNED')}</span>
-                </div>
-                <footer><span>FW {lockText(row['firmware_version'], '—')}</span><span>LAST EVENT {lockAgeLabel(row['last_persisted_event_at'])}</span><ChevronRight size={14} aria-hidden="true" /></footer>
-              </button>
-            );
-          })}
+      <section className="cds-lock-register__workspace" aria-label="E-lock inventory">
+        <div className="cds-lock-register__toolbar">
+          <label className="cds-lock-register__search">
+            <Search size={16} aria-hidden="true" />
+            <input value={queryInput} onChange={event => setQueryInput(event.target.value)} placeholder="Find serial, provider, container, vehicle, firmware or location…" aria-label="Search e-lock catalogue" />
+            {queryInput && <button type="button" onClick={() => setQueryInput('')} aria-label="Clear search">×</button>}
+          </label>
+          <label className="cds-lock-register__sort">
+            <span>SORT BY</span>
+            <select value={sort} onChange={event => { setSort(event.target.value); setPage(1); setSelectedIds(new Set()); }} aria-label="Sort e-lock catalogue">
+              <option value="priority">Risk priority</option>
+              <option value="battery">Lowest reported battery</option>
+              <option value="heartbeat">Oldest heartbeat</option>
+              <option value="serial">Serial number</option>
+            </select>
+          </label>
+          <button type="button" className="cds-lock-register__export" onClick={exportRows} disabled={!rows.length}>
+            <Download size={14} aria-hidden="true" /> {selectedIds.size ? 'Export selected (' + selectedIds.size + ')' : 'Export page'}
+          </button>
         </div>
-      ) : (
-        <div className="cds-lock-empty"><Activity size={21} aria-hidden="true" /><b>{isError && all.length === 0 ? 'LOCK INVENTORY UNAVAILABLE' : 'NO DEVICES MATCH THIS VIEW'}</b><span>{all.length ? 'Adjust the selected health filter or search phrase. The underlying device records are unchanged.' : 'No e-lock records were returned for this organisation. This is not evidence of a healthy or empty device fleet.'}</span></div>
-      )}
-      {total > all.length && <div className="cds-lock-pagination-note">Showing {all.length} of {total} registered records. The current API read is capped at 200 devices.</div>}
+
+        <nav className="cds-lock-register__filters" aria-label="Filter e-lock health">
+          {filtersList.map(item => (
+            <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => changeFilter(item.id)}>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="cds-lock-register__table-meta">
+          <div><span>DEVICE REGISTER</span><strong>{total.toLocaleString()} MATCHING DEVICES</strong></div>
+          <span>{selectedIds.size ? selectedIds.size + ' selected on this page' : 'Select rows to export a subset'}</span>
+        </div>
+
+        <div className="cds-lock-register__table-wrap">
+          <table className="cds-lock-register__table">
+            <thead>
+              <tr>
+                <th className="is-select">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all devices on this page"
+                    checked={allPageSelected}
+                    ref={element => { if (element) element.indeterminate = !allPageSelected && rows.some(row => selectedIds.has(lockText(row['id'], lockText(row['serial'])))); }}
+                    onChange={event => {
+                      const checked = event.target.checked;
+                      setSelectedIds(current => {
+                        const next = new Set(current);
+                        pageIds.forEach(id => checked ? next.add(id) : next.delete(id));
+                        return next;
+                      });
+                    }}
+                  />
+                </th>
+                <th>Device identity</th>
+                <th>Operational state</th>
+                <th>Assignment</th>
+                <th>Battery</th>
+                <th>Signal</th>
+                <th>Last heartbeat</th>
+                <th aria-label="Open device record" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const serial = lockText(row['serial'] ?? row['serial_number'] ?? row['lock_id'], 'UNIDENTIFIED DEVICE');
+                const id = lockText(row['id'], serial);
+                const battery = lockBattery(row);
+                const heartbeatAge = lockHeartbeatAge(row);
+                return (
+                  <tr key={id} className={'cds-lock-register__row cds-lock-register__row--' + lockHealth(row).key}>
+                    <td className="is-select" data-label="Select">
+                      <input type="checkbox" checked={selectedIds.has(id)} aria-label={'Select ' + serial} onChange={event => {
+                        setSelectedIds(current => {
+                          const next = new Set(current);
+                          if (event.target.checked) next.add(id); else next.delete(id);
+                          return next;
+                        });
+                      }} />
+                    </td>
+                    <td data-label="Device">
+                      <div className="cds-lock-register__identity">
+                        <strong>{serial}</strong>
+                        <small>{lockText(row['provider'], 'Unknown provider')} <span>·</span> FW {lockText(row['firmware_version'], '—')}</small>
+                      </div>
+                    </td>
+                    <td data-label="Operational state">
+                      <div className="cds-lock-register__state">
+                        <StatusBadge status={lockText(row['status'], 'unknown')} />
+                        <LockHealthBadge row={row} />
+                      </div>
+                    </td>
+                    <td data-label="Assignment">
+                      <div className="cds-lock-register__assignment">
+                        <strong>{lockText(row['container_number'], 'Unassigned')}</strong>
+                        <small>{lockText(row['truck'] ?? row['vehicle_reg'], 'No vehicle linked')}</small>
+                      </div>
+                    </td>
+                    <td data-label="Battery">
+                      <div className="cds-lock-register__battery">
+                        <LockBatteryReadout row={row} />
+                        <small>{battery === null ? 'Not verified' : lockTelemetryFresh(row, 'reported_battery_at') ? 'Reported recently' : 'Telemetry stale'}</small>
+                      </div>
+                    </td>
+                    <td data-label="Signal"><LockSignalReadout value={lockSignal(row)} /></td>
+                    <td data-label="Last heartbeat">
+                      <div className="cds-lock-register__heartbeat">
+                        <strong>{heartbeatAge === null ? 'Unverified' : lockAgeLabel(row['last_heartbeat_event_at'])}</strong>
+                        <small>Event {lockAgeLabel(row['last_persisted_event_at'])}</small>
+                      </div>
+                    </td>
+                    <td data-label="Details">
+                      <button type="button" className="cds-lock-register__details" onClick={() => openLock(row)}>
+                        Details <ChevronRight size={13} aria-hidden="true" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!rows.length && (
+                <tr><td colSpan={8}>
+                  <div className="cds-lock-empty">
+                    <Activity size={21} aria-hidden="true" />
+                    <b>{isError && total === 0 ? 'CATALOGUE UNAVAILABLE' : 'NO MATCHING LOCKS'}</b>
+                    <span>{isError ? 'The register could not be refreshed. Retry to check the source.' : inventoryTotal === 0 ? 'No e-lock records are registered for this organisation.' : 'Change the health filter or search phrase to broaden the result set.'}</span>
+                    {isError && <button type="button" onClick={() => { void refetch(); }}>Retry catalogue read</button>}
+                  </div>
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <footer className="cds-lock-register__pagination">
+          <div><strong>{first.toLocaleString()}–{last.toLocaleString()}</strong><span> of {total.toLocaleString()} matching devices</span></div>
+          <label><span>ROWS</span><select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); setSelectedIds(new Set()); }} aria-label="Rows per page">
+            <option value={25}>25</option><option value={50}>50</option><option value={100}>100</option>
+          </select></label>
+          <div className="cds-lock-register__page-actions">
+            <span>Page {page} / {totalPages}</span>
+            <button type="button" disabled={page <= 1 || isFetching} onClick={() => { setPage(value => Math.max(1, value - 1)); setSelectedIds(new Set()); }} aria-label="Previous page"><ChevronLeft size={15} /></button>
+            <button type="button" disabled={page >= totalPages || isFetching} onClick={() => { setPage(value => Math.min(totalPages, value + 1)); setSelectedIds(new Set()); }} aria-label="Next page"><ChevronRight size={15} /></button>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 }
@@ -500,13 +615,6 @@ const TRANSIT_STATUSES = new Set(['dispatched', 'in_transit', 'transit', 'checkp
 
 const STALE_HOURS = 48;
 
-function isToday(dateStr: unknown): boolean {
-  if (!dateStr) return false;
-  const d = new Date(String(dateStr));
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-}
-
 function hoursSince(dateStr: unknown): number {
   if (!dateStr) return Infinity;
   return (Date.now() - new Date(String(dateStr)).getTime()) / 3_600_000;
@@ -539,119 +647,184 @@ function StatusDistribution({ counts, total }: { counts: { label: string; count:
 }
 
 export function PulseView() {
-  const [filter, setFilter] = useState('all');
-  const { data, isLoading } = useBookings();
-  const { data: alertData } = useAlerts();
+  const [filter, setFilter] = useState<'all' | 'active' | 'transit' | 'exceptions' | 'completed'>('all');
+  const [queryInput, setQueryInput] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
   const { openDrawer } = useCDSStore();
-  if (isLoading) return <LoadingState />;
-  const all = (data?.data ?? []) as Row[];
-  const alerts = (alertData?.data ?? []) as Row[];
+  const { data: summaryData, isError: summaryError } = useBookingHealthSummary();
 
-  const activeRows = all.filter(r => ACTIVE_STATUSES.has(s(r['status'])));
-  const inTransit = all.filter(r => TRANSIT_STATUSES.has(s(r['status'])));
-  const completedToday = all.filter(r => COMPLETED_STATUSES.has(s(r['status'])) && isToday(r['updated_at']));
-  const exceptions = all.filter(r => {
-    if (EXCEPTION_STATUSES.has(s(r['status']))) return true;
-    if (ACTIVE_STATUSES.has(s(r['status'])) && hoursSince(r['updated_at']) > STALE_HOURS) return true;
-    return false;
-  });
-  const staleActive = all.filter(r => ACTIVE_STATUSES.has(s(r['status'])) && !EXCEPTION_STATUSES.has(s(r['status'])) && hoursSince(r['updated_at']) > STALE_HOURS);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setQuery(queryInput.trim());
+      setPage(1);
+    }, 260);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
 
-  const statusGroups = [
-    { label: 'Pending', count: all.filter(r => ['created', 'draft', 'pending', 'approved'].includes(s(r['status']))).length, color: '#64748b' },
-    { label: 'Assigned', count: all.filter(r => ['assigned', 'vehicle_assigned', 'driver_assigned'].includes(s(r['status']))).length, color: '#ff7a00' },
-    { label: 'In Transit', count: inTransit.length, color: '#37e6ff' },
-    { label: 'At Port', count: all.filter(r => s(r['status']) === 'at_port').length, color: '#ffb020' },
-    { label: 'Delayed', count: all.filter(r => s(r['status']) === 'delayed').length, color: '#ff5c5c' },
-    { label: 'Delivered', count: all.filter(r => s(r['status']) === 'delivered').length, color: '#33d6a8' },
-    { label: 'Completed', count: all.filter(r => ['completed', 'billed'].includes(s(r['status']))).length, color: '#22c55e' },
-  ];
-
-  const filterMap: Record<string, Row[]> = {
-    all,
-    active: activeRows,
-    transit: inTransit,
-    exceptions,
-    completed: all.filter(r => COMPLETED_STATUSES.has(s(r['status']))),
+  const statusQuery = filter === 'active' ? Array.from(ACTIVE_STATUSES).join(',')
+    : filter === 'transit' ? Array.from(TRANSIT_STATUSES).join(',')
+      : filter === 'completed' ? Array.from(COMPLETED_STATUSES).join(',') : undefined;
+  const filters = {
+    page,
+    pageSize,
+    sortBy: 'created_at',
+    sortOrder: 'desc' as const,
+    ...(query ? { query } : {}),
+    ...(statusQuery ? { status: statusQuery } : {}),
+    ...(filter === 'exceptions' ? { health: 'exceptions' } : {}),
   };
-  const rows = filterMap[filter] ?? all;
+  const { data, isLoading, isError, isFetching, refetch } = useBookings(filters);
+  const summary = summaryData?.data;
+  const rows = (data?.data ?? []) as Row[];
+  const total = Number(data?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const first = total === 0 ? 0 : ((page - 1) * pageSize) + 1;
+  const last = Math.min(page * pageSize, total);
 
-  const isException = (r: Row) => EXCEPTION_STATUSES.has(s(r['status'])) || (ACTIVE_STATUSES.has(s(r['status'])) && hoursSince(r['updated_at']) > STALE_HOURS);
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const changeFilter = (next: typeof filter) => {
+    setFilter(next);
+    setPage(1);
+  };
+  const isException = (row: Row) => EXCEPTION_STATUSES.has(s(row['status']))
+    || (ACTIVE_STATUSES.has(s(row['status'])) && hoursSince(row['updated_at']) > STALE_HOURS);
+
+  const statusGroups = summary ? [
+    { label: 'Pending', count: Number(summary.pending), color: '#64748b' },
+    { label: 'Assigned', count: Number(summary.assigned), color: '#ff7a00' },
+    { label: 'In Transit', count: Number(summary.in_transit), color: '#37e6ff' },
+    { label: 'At Port', count: Number(summary.at_port), color: '#ffb020' },
+    { label: 'Delayed', count: Number(summary.delayed), color: '#ff5c5c' },
+    { label: 'Delivered', count: Number(summary.delivered), color: '#33d6a8' },
+    { label: 'Completed', count: Number(summary.completed) - Number(summary.delivered), color: '#22c55e' },
+    { label: 'Cancelled', count: Number(summary.cancelled), color: '#b7809c' },
+    { label: 'Other', count: Number(summary.other), color: '#64748b' },
+  ] : [];
+
+  if (isLoading && !data) return <LoadingState />;
 
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-        <KPICard label="ACTIVE BOOKINGS" value={String(activeRows.length)} delta={`${all.length} total`} trend="up" />
-        <KPICard label="IN TRANSIT" value={String(inTransit.length)} delta="moving now" trend="up" />
-        <KPICard label="EXCEPTIONS" value={String(exceptions.length)} delta={staleActive.length > 0 ? `${staleActive.length} stale` : 'none flagged'} trend={exceptions.length > 0 ? 'down' : 'up'} />
-        <KPICard label="COMPLETED TODAY" value={String(completedToday.length)} delta={`${alerts.length} alerts`} trend={completedToday.length > 0 ? 'up' : 'down'} />
-      </div>
+    <div className="cds-booking-health">
+      <header className="cds-booking-health__head">
+        <div>
+          <span>BOOKING HEALTH / TENANT-WIDE LIFECYCLE</span>
+          <h1>Booking Health</h1>
+          <p>Lifecycle coverage, movement exceptions and records requiring operational review.</p>
+        </div>
+        <button type="button" onClick={() => { void refetch(); }} disabled={isFetching}>
+          <RefreshCw size={14} className={isFetching ? 'cds-lock-refreshing' : ''} /> {isFetching ? 'Refreshing' : 'Refresh'}
+        </button>
+      </header>
+      {isError && <div role="alert" className="cds-booking-health__error">The booking register could not be refreshed. Previously loaded rows remain visible.</div>}
+      {summaryError && <div role="status" className="cds-booking-health__error">Tenant-wide summary is unavailable. Summary figures are withheld rather than estimated from this page.</div>}
 
-      <StatusDistribution counts={statusGroups} total={all.length} />
+      <section className="cds-booking-health__metrics" aria-label="Tenant-wide booking metrics">
+        <KPICard label="TOTAL BOOKINGS" value={summary ? String(summary.total) : '—'} delta="organisation register" trend="up" />
+        <KPICard label="ACTIVE BOOKINGS" value={summary ? String(summary.active) : '—'} delta="open lifecycle records" trend="up" />
+        <KPICard label="IN TRANSIT" value={summary ? String(summary.in_transit) : '—'} delta="dispatched to checkpoint" trend="up" />
+        <KPICard label="EXCEPTIONS" value={summary ? String(summary.exceptions) : '—'} delta="flagged or stale over 48h" trend={summary?.exceptions ? 'down' : 'up'} />
+      </section>
 
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {[
-          { id: 'all', label: `All (${all.length})` },
-          { id: 'active', label: `Active (${activeRows.length})` },
-          { id: 'transit', label: `In Transit (${inTransit.length})` },
-          { id: 'exceptions', label: `Exceptions (${exceptions.length})` },
-          { id: 'completed', label: `Completed (${all.filter(r => COMPLETED_STATUSES.has(s(r['status']))).length})` },
-        ].map(f => <FilterChip key={f.id} label={f.label} active={filter === f.id} onClick={() => setFilter(f.id)} />)}
-      </div>
+      {summary && <StatusDistribution counts={statusGroups} total={Number(summary.total)} />}
 
-      <DataTable
-        columns={[
-          { id: 'ref', header: 'Booking Ref', accessor: (r: Row) => (
-            <div className="flex items-center gap-1.5">
-              {isException(r) && <span className="w-1.5 h-1.5 rounded-full bg-cds-red flex-none" style={{ boxShadow: '0 0 6px rgba(255,92,92,.6)' }} />}
-              <span className="font-mono font-bold text-cds-orange text-xs">{s(r['booking_number'])}</span>
-            </div>
-          )},
-          { id: 'client', header: 'Client', accessor: (r: Row) => <span className="text-xs truncate max-w-[140px] block">{s(r['customer_name'])}</span> },
-          { id: 'route', header: 'Route', accessor: (r: Row) => {
-            const from = s(r['pickup_location'] ?? r['origin']);
-            const to = s(r['delivery_location'] ?? r['destination']);
-            if (from === '—' && to === '—') return <span className="text-text-2 text-xs">—</span>;
-            return <span className="text-[10px] font-mono text-text-1 truncate max-w-[180px] block">{from} → {to}</span>;
-          }},
-          { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
-          { id: 'age', header: 'Last Update', accessor: (r: Row) => {
-            const h = hoursSince(r['updated_at']);
-            const stale = ACTIVE_STATUSES.has(s(r['status'])) && h > STALE_HOURS;
-            if (!isFinite(h)) return <span className="text-text-2 text-[10px] font-mono">—</span>;
-            const label = h < 1 ? '<1h ago' : h < 24 ? `${Math.floor(h)}h ago` : `${Math.floor(h / 24)}d ago`;
-            return <span className={`text-[10px] font-mono ${stale ? 'text-cds-red font-bold' : 'text-text-2'}`}>{label}{stale ? ' !' : ''}</span>;
-          }},
-        ]}
-        data={rows}
-        keyExtractor={(r: Row) => s(r['id'])}
-        searchable
-        searchPlaceholder="Search bookings…"
-        onRowClick={(r: Row) => openDrawer(`Pulse — ${s(r['booking_number'])}`, (
-          <>
-            <DrawerField label="Booking #" value={<span className="text-cds-orange">{s(r['booking_number'])}</span>} />
-            {s(r['carrier_reference']) !== '—' && <DrawerField label="Carrier Ref" value={s(r['carrier_reference'])} />}
-            <DrawerField label="Client" value={s(r['customer_name'])} />
-            <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
-            <DrawerField label="Commodity" value={s(r['commodity'])} />
-            {s(r['pickup_location'] ?? r['origin']) !== '—' && <DrawerField label="From" value={s(r['pickup_location'] ?? r['origin'])} />}
-            {s(r['delivery_location'] ?? r['destination']) !== '—' && <DrawerField label="To" value={s(r['delivery_location'] ?? r['destination'])} />}
-            {s(r['vessel']) !== '—' && <DrawerField label="Vessel" value={`${s(r['vessel'])} / ${s(r['voyage'])}`} />}
-            {s(r['shipping_line']) !== '—' && <DrawerField label="Line" value={s(r['shipping_line'])} />}
-            {r['eta'] && <DrawerField label="ETA" value={new Date(s(r['eta'])).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} />}
-            <DrawerField label="Last Updated" value={r['updated_at'] ? new Date(s(r['updated_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'} />
-            <DrawerField label="Created" value={r['created_at'] ? new Date(s(r['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'} />
-            {isException(r) && (
-              <div className="mt-3 px-3 py-2 rounded-lg bg-cds-red/10 border border-cds-red/20">
-                <div className="text-[10px] font-mono text-cds-red font-bold tracking-wider mb-1">EXCEPTION</div>
-                <div className="text-[11px] text-cds-red/80">
-                  {EXCEPTION_STATUSES.has(s(r['status'])) ? `Status: ${s(r['status']).toUpperCase()}` : `No update in ${Math.floor(hoursSince(r['updated_at']))}h — possible stall`}
-                </div>
+      <section className="cds-booking-health__register">
+        <div className="cds-booking-health__tools">
+          <label>
+            <Search size={15} aria-hidden="true" />
+            <input value={queryInput} onChange={event => setQueryInput(event.target.value)} placeholder="Search booking reference or customer…" aria-label="Search booking health register" />
+            {queryInput && <button type="button" onClick={() => setQueryInput('')} aria-label="Clear search">×</button>}
+          </label>
+          <div className="cds-booking-health__filters" role="group" aria-label="Filter booking lifecycle">
+            {[
+              { id: 'all', label: 'All', count: summary?.total },
+              { id: 'active', label: 'Active', count: summary?.active },
+              { id: 'transit', label: 'In Transit', count: summary?.in_transit },
+              { id: 'exceptions', label: 'Exceptions', count: summary?.exceptions },
+              { id: 'completed', label: 'Completed', count: summary?.completed },
+            ].map(item => (
+              <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => changeFilter(item.id as typeof filter)}>
+                {item.label}<b>{item.count == null ? '—' : Number(item.count).toLocaleString()}</b>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="cds-booking-health__table-meta">
+          <strong>{total.toLocaleString()} MATCHING BOOKINGS</strong>
+          <span>{isFetching ? 'Updating results…' : 'Sorted by most recently created'}</span>
+        </div>
+        <DataTable
+          columns={[
+            { id: 'ref', header: 'Booking Ref', accessor: (r: Row) => (
+              <div className="flex items-center gap-1.5">
+                {isException(r) && <span className="w-1.5 h-1.5 rounded-full bg-cds-red flex-none" style={{ boxShadow: '0 0 6px rgba(255,92,92,.6)' }} />}
+                <span className="font-mono font-bold text-cds-orange text-xs">{s(r['booking_number'])}</span>
               </div>
-            )}
-          </>
-        ))}
-      />
+            )},
+            { id: 'client', header: 'Client', accessor: (r: Row) => <span className="text-xs truncate max-w-[140px] block">{s(r['customer_name'])}</span> },
+            { id: 'route', header: 'Route', accessor: (r: Row) => {
+              const from = s(r['pickup_location'] ?? r['origin']);
+              const to = s(r['delivery_location'] ?? r['destination']);
+              if (from === '—' && to === '—') return <span className="text-text-2 text-xs">—</span>;
+              return <span className="text-[10px] font-mono text-text-1 truncate max-w-[180px] block">{from} → {to}</span>;
+            }},
+            { id: 'containers', header: 'Containers', accessor: (r: Row) => <span className="font-mono text-xs">{Number(r['container_count'] ?? 0).toLocaleString()}</span> },
+            { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
+            { id: 'age', header: 'Last Update', accessor: (r: Row) => {
+              const hours = hoursSince(r['updated_at']);
+              const stale = ACTIVE_STATUSES.has(s(r['status'])) && hours > STALE_HOURS;
+              if (!isFinite(hours)) return <span className="text-text-2 text-[10px] font-mono">—</span>;
+              const label = hours < 1 ? '<1h ago' : hours < 24 ? Math.floor(hours) + 'h ago' : Math.floor(hours / 24) + 'd ago';
+              return <span className={'text-[10px] font-mono ' + (stale ? 'text-cds-red font-bold' : 'text-text-2')}>{label}{stale ? ' !' : ''}</span>;
+            }},
+          ]}
+          data={rows}
+          keyExtractor={(r: Row) => s(r['id'])}
+          onRowClick={(r: Row) => openDrawer('Booking — ' + s(r['booking_number']), (
+            <>
+              <DrawerField label="Booking #" value={<span className="text-cds-orange">{s(r['booking_number'])}</span>} />
+              {s(r['carrier_reference']) !== '—' && <DrawerField label="Carrier Ref" value={s(r['carrier_reference'])} />}
+              <DrawerField label="Client" value={s(r['customer_name'])} />
+              <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
+              <DrawerField label="Commodity" value={s(r['commodity'])} />
+              {s(r['pickup_location'] ?? r['origin']) !== '—' && <DrawerField label="From" value={s(r['pickup_location'] ?? r['origin'])} />}
+              {s(r['delivery_location'] ?? r['destination']) !== '—' && <DrawerField label="To" value={s(r['delivery_location'] ?? r['destination'])} />}
+              {s(r['vessel']) !== '—' && <DrawerField label="Vessel" value={s(r['vessel']) + ' / ' + s(r['voyage'])} />}
+              {s(r['shipping_line']) !== '—' && <DrawerField label="Line" value={s(r['shipping_line'])} />}
+              {r['eta'] && <DrawerField label="ETA" value={new Date(s(r['eta'])).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} />}
+              <DrawerField label="Last Updated" value={r['updated_at'] ? new Date(s(r['updated_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'} />
+              <DrawerField label="Created" value={r['created_at'] ? new Date(s(r['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'} />
+              {isException(r) && (
+                <div className="mt-3 px-3 py-2 rounded-lg bg-cds-red/10 border border-cds-red/20">
+                  <div className="text-[10px] font-mono text-cds-red font-bold tracking-wider mb-1">EXCEPTION</div>
+                  <div className="text-[11px] text-cds-red/80">
+                    {EXCEPTION_STATUSES.has(s(r['status'])) ? 'Status: ' + s(r['status']).toUpperCase() : 'No update in ' + Math.floor(hoursSince(r['updated_at'])) + 'h — possible stall'}
+                  </div>
+                </div>
+              )}
+            </>
+          ))}
+        />
+        {!rows.length && !isLoading && (
+          <div className="cds-booking-health__empty">
+            <b>{isError ? 'REGISTER UNAVAILABLE' : 'NO MATCHING BOOKINGS'}</b>
+            <span>{isError ? 'The latest request failed; retry the register to obtain current records.' : 'Change the selected lifecycle filter or search term.'}</span>
+          </div>
+        )}
+        <footer className="cds-booking-health__pagination">
+          <span>{first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}</span>
+          <div>
+            <span>Page {page} / {totalPages}</span>
+            <button type="button" disabled={page <= 1 || isFetching} onClick={() => setPage(value => Math.max(1, value - 1))} aria-label="Previous booking page"><ChevronLeft size={15} /></button>
+            <button type="button" disabled={page >= totalPages || isFetching} onClick={() => setPage(value => Math.min(totalPages, value + 1))} aria-label="Next booking page"><ChevronRight size={15} /></button>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 }

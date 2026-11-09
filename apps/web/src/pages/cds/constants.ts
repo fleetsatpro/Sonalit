@@ -11,7 +11,7 @@ export const CDS_VIEWS: CDSViewDef[] = [
   { id: 'port', label: 'Port Clearance', sub: 'ARRIVAL · UNCLAMP · SEAL VERIFICATION' },
   { id: 'pulse', label: 'Booking Health', sub: 'LIFECYCLE · DELAY · STALE RECORDS' },
   { id: 'containers', label: 'Container Register', sub: 'EQUIPMENT IDENTITY · CONDITION · INSPECTIONS' },
-  { id: 'locks', label: 'E-Lock Control', sub: 'DEVICE HEALTH · ASSIGNMENTS · SEAL EVENTS' },
+  { id: 'locks', label: 'E-Lock Catalogue', sub: 'DEVICE INVENTORY · HEALTH · TELEMETRY' },
   { id: 'transporters', label: 'Transport Partners', sub: 'CARRIER CAPACITY · SERVICE PROFILE' },
   { id: 'inbox', label: 'Activity & Custody', sub: 'FIELD EVENTS · LOCK EVENTS · TRIP TRANSITIONS' },
   { id: 'analytics', label: 'Performance Analysis', sub: 'MEASURED THROUGHPUT · SERVICE RELIABILITY · ASSET INTEGRITY' },

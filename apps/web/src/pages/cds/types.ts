@@ -427,6 +427,22 @@ export interface SearchFilters {
   sortOrder?: 'asc' | 'desc';
   page?: number;
   pageSize?: number;
+  health?: string;
+}
+
+export interface BookingHealthSummary {
+  total: number;
+  active: number;
+  in_transit: number;
+  exceptions: number;
+  completed: number;
+  pending: number;
+  assigned: number;
+  at_port: number;
+  delayed: number;
+  delivered: number;
+  cancelled: number;
+  other: number;
 }
 
 export type PipelineStage =

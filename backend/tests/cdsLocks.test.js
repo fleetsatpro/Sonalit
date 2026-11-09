@@ -1,0 +1,129 @@
+const router = require('../src/routes/cds');
+
+function routeLayer(path, method) {
+  const layer = router.stack.find(item => item.route && item.route.path === path && item.route.methods[method]);
+  if (!layer) throw new Error('No ' + method.toUpperCase() + ' route registered for ' + path);
+  return layer.route.stack[layer.route.stack.length - 1].handle;
+}
+
+function response() {
+  const result = { status: 200, body: undefined };
+  return {
+    result,
+    status(code) { result.status = code; return this; },
+    json(body) { result.body = body; return this; },
+  };
+}
+
+describe('CDS E-Lock catalogue and booking health queries', () => {
+  test('lock catalogue applies server pagination, safe search, health and allowed sorting', async () => {
+    const res = response();
+    const calls = [];
+    const rows = [{ id: 'lock-26', serial: 'SEC-0026' }];
+    await routeLayer('/locks', 'get')({
+      query: { search: 'SEC-00', health: 'tamper', sortBy: 'serial', sortOrder: 'asc', limit: '25', offset: '25' },
+      user: { org_id: 'org-1' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        return calls.length === 1 ? { rows } : { rows: [{ count: '126' }] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.body).toEqual({ data: rows, total: 126 });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].sql).toContain('FROM cds_electronic_locks t');
+    expect(calls[0].sql).toContain('t.tamper_detected');
+    expect(calls[0].sql).toContain('t.serial ASC NULLS LAST');
+    expect(calls[0].sql).toContain('LIMIT $2 OFFSET $3');
+    expect(calls[0].values).toEqual(['%SEC-00%', 25, 25]);
+    expect(calls[1].values).toEqual(['%SEC-00%']);
+  });
+
+  test('unrecognised lock sort keys cannot inject SQL fragments', async () => {
+    const res = response();
+    let statement = '';
+    await routeLayer('/locks', 'get')({
+      query: { sortBy: 'serial; DROP TABLE cds_electronic_locks', sortOrder: 'asc', limit: '10', offset: '0' },
+      user: { org_id: 'org-1' },
+      db: async sql => {
+        statement = sql;
+        return statement.startsWith('SELECT COUNT(*)')
+          ? { rows: [{ count: '0' }] }
+          : { rows: [] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(statement).toContain('ORDER BY t.created_at ASC NULLS LAST');
+    expect(statement).not.toContain('DROP TABLE');
+    expect(res.result.body.total).toBe(0);
+  });
+
+  test('tenant-wide booking summary is scoped to the authenticated organisation', async () => {
+    const res = response();
+    let statement = '';
+    let parameters = [];
+    const summary = {
+      total: 320,
+      active: 72,
+      in_transit: 31,
+      exceptions: 4,
+      completed: 210,
+      pending: 18,
+      assigned: 23,
+      at_port: 11,
+      delayed: 3,
+      delivered: 180,
+      cancelled: 12,
+      other: 2,
+    };
+    await routeLayer('/bookings/summary', 'get')({
+      query: {},
+      user: { org_id: 'org-tenant-a' },
+      db: async (sql, values) => {
+        statement = sql;
+        parameters = values;
+        return { rows: [summary] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(statement).toContain('FROM cds_bookings t');
+    expect(statement).toContain('WHERE t.org_id = $1 AND t.deleted_at IS NULL');
+    expect(parameters).toEqual(['org-tenant-a']);
+    expect(res.result.body.data).toEqual(summary);
+  });
+
+  test('booking register combines multi-status and exception filters with paginated search', async () => {
+    const res = response();
+    const calls = [];
+    const rows = [{ id: 'booking-1', booking_number: 'SON-1001' }];
+    await routeLayer('/bookings', 'get')({
+      query: {
+        status: 'dispatched,in_transit,at_port',
+        health: 'exceptions',
+        search: 'SON-10',
+        sortBy: 'booking_number',
+        sortOrder: 'asc',
+        limit: '25',
+        offset: '50',
+      },
+      user: { org_id: 'org-1' },
+      db: async (sql, values) => {
+        calls.push({ sql, values });
+        return calls.length === 1 ? { rows } : { rows: [{ count: '71' }] };
+      },
+    }, res, error => { if (error) throw error; });
+
+    expect(res.result.body).toEqual({ data: rows, total: 71 });
+    expect(calls[0].sql).toContain('t.status = ANY($1::text[])');
+    expect(calls[0].sql).toContain("t.updated_at < NOW() - INTERVAL '48 hours'");
+    expect(calls[0].sql).toContain('t.booking_number ILIKE $2');
+    expect(calls[0].sql).toContain('ORDER BY t.booking_number ASC NULLS LAST');
+    expect(calls[0].values).toEqual([['dispatched', 'in_transit', 'at_port'], '%SON-10%', 25, 50]);
+    expect(calls[1].values).toEqual([['dispatched', 'in_transit', 'at_port'], '%SON-10%']);
+  });
+
+  test('booking summary route is registered before the booking id route', () => {
+    const paths = router.stack.filter(item => item.route).map(item => item.route.path);
+    expect(paths.indexOf('/bookings/summary')).toBeLessThan(paths.indexOf('/bookings/:id'));
+  });
+});
