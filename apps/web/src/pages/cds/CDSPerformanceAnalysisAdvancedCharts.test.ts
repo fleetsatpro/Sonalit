@@ -47,8 +47,9 @@ describe('CDS daily activity visual transforms', () => {
   });
 
   it('keeps unavailable values separate from zero activity', () => {
-    const incomplete = [{ ...rows[0], bookings_received: Number.NaN }];
+    const incomplete = [{ ...rows[0], bookings_received: null as unknown as number }];
     const result = buildActivityCalendar(incomplete, 'bookings_received');
     expect(result[0].cells[0]).toEqual({ day: '2026-11-02', value: null, level: -1 });
+    expect(buildDailyHistogram(incomplete, 'bookings_received').observedDays).toBe(0);
   });
 });
