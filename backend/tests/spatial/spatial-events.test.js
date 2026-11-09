@@ -1,4 +1,4 @@
-const { detectSpatialEvents, sourceProviderFromReferences, providerCanReconcile, severityFor } = require('../../src/services/spatial/spatialEvents');
+const { detectSpatialEvents, sourceProviderFromReferences, providerCanReconcile, severityFor, shouldCreateSpatialAlert } = require('../../src/services/spatial/spatialEvents');
 
 function vehicle(overrides) {
   return Object.assign({
@@ -152,6 +152,17 @@ describe('deterministic spatial events', () => {
     const event = events.find(e => e.eventType === 'TRAFFIC_CONGESTION');
     expect(event).toBeTruthy();
     expect(event.severity).toBe('medium');
+  });
+
+  test('checkpoint, recovery and heading context stays in the event ledger, not response alerts', () => {
+    expect(shouldCreateSpatialAlert({ eventType: 'CHECKPOINT_APPROACH', severity: 'low' })).toBe(false);
+    expect(shouldCreateSpatialAlert({ eventType: 'CHECKPOINT_PASS', severity: 'low' })).toBe(false);
+    expect(shouldCreateSpatialAlert({ eventType: 'CORRIDOR_REENTRY', severity: 'low' })).toBe(false);
+    expect(shouldCreateSpatialAlert({ eventType: 'TELEMETRY_RECOVERED', severity: 'low' })).toBe(false);
+    expect(shouldCreateSpatialAlert({ eventType: 'HEADING_ANOMALY', severity: 'medium' })).toBe(false);
+    expect(shouldCreateSpatialAlert({ eventType: 'ENVIRONMENTAL_DETERIORATION', severity: 'high' })).toBe(false);
+    expect(shouldCreateSpatialAlert({ eventType: 'CORRIDOR_EXIT', severity: 'high' })).toBe(true);
+    expect(shouldCreateSpatialAlert({ eventType: 'STALE_TELEMETRY', severity: 'medium' })).toBe(true);
   });
   test('does not turn unverified intelligence into an actionable security event', () => {
     const events = detectSpatialEvents({

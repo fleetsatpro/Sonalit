@@ -209,7 +209,14 @@ router.get('/overview', asyncHandler(async (req, res) => {
         AND resolved_at IS NULL
         AND deleted_at IS NULL
         AND COALESCE(metadata->>'eventType', '') <> 'ENVIRONMENTAL_DETERIORATION'
-        AND COALESCE(message, '') NOT ILIKE 'Spatial environmental deterioration:%'`, [orgId]),
+        AND COALESCE(message, '') NOT ILIKE 'Spatial environmental deterioration:%'
+        AND NOT (
+          COALESCE(metadata->>'source', '') = 'sonalit-spatial'
+          AND (
+            COALESCE(severity, 'low') = 'low'
+            OR COALESCE(metadata->>'eventType', '') IN ('CORRIDOR_REENTRY', 'TELEMETRY_RECOVERED', 'HEADING_ANOMALY', 'CHECKPOINT_APPROACH', 'CHECKPOINT_PASS')
+          )
+        )`, [orgId]),
 
     safeQuery(req.db, `
       SELECT
@@ -717,6 +724,13 @@ router.get('/alerts', asyncHandler(async (req, res) => {
         AND a.deleted_at IS NULL
         AND COALESCE(a.metadata->>'eventType', '') <> 'ENVIRONMENTAL_DETERIORATION'
         AND COALESCE(a.message, '') NOT ILIKE 'Spatial environmental deterioration:%'
+        AND NOT (
+          COALESCE(a.metadata->>'source', '') = 'sonalit-spatial'
+          AND (
+            COALESCE(a.severity, 'low') = 'low'
+            OR COALESCE(a.metadata->>'eventType', '') IN ('CORRIDOR_REENTRY', 'TELEMETRY_RECOVERED', 'HEADING_ANOMALY', 'CHECKPOINT_APPROACH', 'CHECKPOINT_PASS')
+          )
+        )
       ORDER BY
         CASE a.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
         a.created_at DESC

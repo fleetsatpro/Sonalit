@@ -40,6 +40,21 @@ function severityFor(type) {
   return 'low';
 }
 
+const NON_ALERTING_EVENT_TYPES = new Set([
+  'CORRIDOR_REENTRY',
+  'TELEMETRY_RECOVERED',
+  'HEADING_ANOMALY',
+  'CHECKPOINT_APPROACH',
+  'CHECKPOINT_PASS',
+]);
+
+function shouldCreateSpatialAlert(event) {
+  if (!event) return false;
+  if (event.eventType === 'ENVIRONMENTAL_DETERIORATION') return false;
+  if (NON_ALERTING_EVENT_TYPES.has(String(event.eventType || ''))) return false;
+  return String(event.severity || 'low').toLowerCase() !== 'low';
+}
+
 
 const EVENT_MODES = Object.freeze({
   stateful: new Set([
@@ -693,8 +708,7 @@ async function persistSpatialEvents(db, events, options) {
     // Occurrence events are already resolved in the spatial_events ledger, but
     // still create the normal Sonalit alert exactly once at first persistence.
     if (!wasCreated) continue;
-    // Legacy defensive guard: ambient weather context is never a security alert.
-    if (event.eventType === 'ENVIRONMENTAL_DETERIORATION') continue;
+    if (!shouldCreateSpatialAlert(event)) continue;
 
     const alertType = alertTypeFor(event.eventType);
     const evidenceText = (event.evidence || []).slice(0, 3).map(function(e) {
@@ -803,6 +817,7 @@ module.exports = {
   detectSpatialEvents,
   persistSpatialEvents,
   severityFor,
+  shouldCreateSpatialAlert,
   reconcileSpatialEvents,
   DEFAULTS,
   EVENT_MODES,
