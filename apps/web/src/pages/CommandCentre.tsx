@@ -310,7 +310,7 @@ function FleetSignal({
           <span className='ccx-eyebrow'>POSITION INTEGRITY / 02</span>
           <h2 id='ccx-fleet-title'>Fleet signal</h2>
         </div>
-        <button type='button' className='ccx-icon-link' onClick={onOpen} aria-label='Open live fleet view'>
+        <button type='button' className='ccx-icon-link' onClick={onOpen} aria-label='Open vehicle GPS register'>
           <Crosshair size={15} />
         </button>
       </header>
