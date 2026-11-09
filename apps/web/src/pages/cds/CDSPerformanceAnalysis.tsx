@@ -6,8 +6,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
-  Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, Pie, PieChart,
-  ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Line, Pie, PieChart,
+  ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import type { CDSAnalyticsPayload, CDSAnalyticsSummary } from './types.js';
 import { useAcknowledgeAlert, useCDSAnalytics } from './hooks.js';
@@ -143,7 +143,8 @@ function ChartTooltip({ active, payload, label }: {
   return (
     <div className="cpa-v2__chart-tooltip">
       {title != null ? <strong className="cpa-v2__chart-tooltip-title">{String(title)}</strong> : null}
-      {payload.filter(item => item.value != null).map((item, index) => (
+      {payload.filter((item, index, rows) => item.value != null
+        && rows.findIndex(candidate => candidate.name === item.name && candidate.value === item.value) === index).map((item, index) => (
         <div className="cpa-v2__chart-tooltip-row" key={String(item.name ?? index)}>
           <i style={{ background: item.color ?? '#8eb9ed' }} />
           <span>{item.name ?? 'Value'}</span>
@@ -249,12 +250,17 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
       {buckets.length && values.some(value => value > 0) ? (
         <div className="cpa-v2__rechart cpa-v2__rechart--line" role="img" aria-label={selected.label + ' line chart across the selected reporting period'}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={buckets} margin={{ top: 12, right: 16, bottom: 4, left: -10 }}>
+            <ComposedChart data={buckets} margin={{ top: 12, right: 16, bottom: 4, left: -10 }}>
               <defs>
                 <linearGradient id="cpa-v2-throughput-line" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="0%" stopColor={selected.color} stopOpacity=".76" />
                   <stop offset="52%" stopColor={selected.color} stopOpacity="1" />
                   <stop offset="100%" stopColor="#f0d39b" stopOpacity=".92" />
+                </linearGradient>
+                <linearGradient id="cpa-v2-throughput-area" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={selected.color} stopOpacity=".28" />
+                  <stop offset="78%" stopColor={selected.color} stopOpacity=".055" />
+                  <stop offset="100%" stopColor={selected.color} stopOpacity="0" />
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} stroke="rgba(178,205,233,.12)" strokeDasharray="3 7" />
@@ -281,6 +287,19 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
                 cursor={{ stroke: 'rgba(210,226,243,.36)', strokeDasharray: '3 5' }}
                 labelFormatter={value => dateLabel(String(value))}
               />
+              <Area
+                type="linear"
+                dataKey={metric}
+                name={selected.label}
+                stroke="none"
+                fill="url(#cpa-v2-throughput-area)"
+                fillOpacity={1}
+                dot={false}
+                activeDot={false}
+                isAnimationActive={!reducedMotion}
+                animationDuration={900}
+                animationEasing="ease-out"
+              />
               {total > 0 ? (
                 <ReferenceLine
                   y={averagePerBucket}
@@ -289,6 +308,17 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
                   strokeDasharray="5 6"
                   ifOverflow="extendDomain"
                   label={{ value: 'MEAN / BUCKET', position: 'insideTopRight', fill: '#e5c17c', fontSize: 8, fontWeight: 700 }}
+                />
+              ) : null}
+              {peakBucket ? (
+                <ReferenceDot
+                  x={peakBucket.start}
+                  y={peakBucket[metric]}
+                  r={5}
+                  fill="#f0d39b"
+                  stroke="#10263a"
+                  strokeWidth={2}
+                  isFront
                 />
               ) : null}
               <Line
@@ -305,7 +335,7 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
                 animationDuration={950}
                 animationEasing="ease-out"
               />
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       ) : (
