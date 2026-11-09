@@ -265,7 +265,7 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
       ) : (
         <div className="cpa-v2__empty-chart"><BarChart3 size={22} /><strong>No activity recorded in this window</strong><span>The chart will populate from persisted CDS event timestamps when activity exists.</span></div>
       )}
-      <div className="cpa-v2__chart-footnote">Daily counts are grouped into 3-day or 7-day buckets for longer windows. Unlike event streams are deliberately kept separate, not presented as a conversion funnel.</div>
+      <div className="cpa-v2__chart-footnote">Daily counts are grouped into 3-day or 7-day buckets for longer windows. Different event streams are not treated as a conversion funnel; unlike event counts remain in separate metric views.</div>
     </GlassPanel>
   );
 }
