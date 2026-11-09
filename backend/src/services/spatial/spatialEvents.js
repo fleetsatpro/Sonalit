@@ -298,16 +298,22 @@ function detectSpatialEvents(context, options) {
       : vehicle.convoyId || null;
 
     if (relation === 'OFF_ROUTE') {
+      const positionQuality = String(vehicle.quality && vehicle.quality.freshnessClass || 'UNKNOWN').toUpperCase();
+      const positionAgeMs = Number(vehicle.freshnessMs);
+      const positionFresh = ['LIVE', 'FRESH', 'CURRENT'].includes(positionQuality)
+        && (!Number.isFinite(positionAgeMs) || positionAgeMs <= cfg.staleMs);
       events.push(makeEvent({
         type: 'CORRIDOR_EXIT',
         vehicle,
         convoyId,
+        severity: positionFresh ? 'high' : 'medium',
         previousState: previousRelation || 'UNKNOWN',
         newState: 'OUTSIDE_CORRIDOR',
         evidence: [
           { metric: 'cross_track_km', value: Number(route.crossTrackKm) },
           { metric: 'corridor_km', value: Number(route.corridorKm) },
-          { metric: 'telemetry_freshness', value: vehicle.quality && vehicle.quality.freshnessClass || 'UNKNOWN' }
+          { metric: 'telemetry_freshness', value: positionQuality },
+          { metric: 'telemetry_age_ms', value: Number.isFinite(positionAgeMs) ? positionAgeMs : null }
         ]
       }));
     } else if (previousRelation === 'OFF_ROUTE' && relation === 'ON_ROUTE') {

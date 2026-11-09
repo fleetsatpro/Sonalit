@@ -127,10 +127,16 @@ function spatialEvidenceSummary(eventCode, evidenceValue, relatedValue) {
   const measuredDistance = distanceM == null ? null
     : distanceM >= 1000 ? (format(distanceM / 1000, 2) + ' km') : (format(distanceM, 0) + ' m');
   if (eventCode === 'CORRIDOR_EXIT' || eventCode === 'ROUTE_DEVIATION') {
+    const details = [];
     const crossTrack = format(valueOf('cross_track_km'));
     const tolerance = format(valueOf('corridor_km') ?? valueOf('deviation_threshold_km'));
-    if (crossTrack && tolerance) return 'Measured cross-track distance ' + crossTrack + ' km; configured corridor ' + tolerance + ' km.';
-    if (crossTrack) return 'Measured cross-track distance ' + crossTrack + ' km.';
+    if (crossTrack && tolerance) details.push('Measured cross-track distance ' + crossTrack + ' km; configured corridor ' + tolerance + ' km.');
+    else if (crossTrack) details.push('Measured cross-track distance ' + crossTrack + ' km.');
+    const quality = valueOf('telemetry_freshness');
+    if (quality && !['LIVE', 'FRESH', 'CURRENT'].includes(String(quality).toUpperCase())) {
+      details.push('Position quality is ' + String(quality).toUpperCase() + '; a fresh fix is required to confirm the breach.');
+    }
+    if (details.length) return details.join(' ');
   }
   if (eventCode === 'POSITION_JUMP') {
     const actual = format(valueOf('implied_speed_kmh'), 0);
@@ -177,10 +183,12 @@ function alertPresentation(alert) {
             : reference.startsWith('nasa-firms') ? 'NASA FIRMS'
               : metadata.source === 'sonalit-spatial' ? 'Sonalit spatial rules' : metadata.source || null;
   const priorityReason = metadata.priorityReason || (
-    copy ? [copy.priorityReason, evidenceSummary].filter(Boolean).join(' ')
-      : ['critical', 'high'].includes(severity)
-        ? 'The source assigned this priority but supplied no operator rationale. Verify the originating evidence before escalation.'
-        : null
+    eventCode === 'CORRIDOR_EXIT' && severity !== 'high'
+      ? 'Medium: the reported off-route state is not supported by a fresh positioning fix. Confirm current GPS and route distance before escalation. ' + (evidenceSummary || '')
+      : copy ? [copy.priorityReason, evidenceSummary].filter(Boolean).join(' ')
+        : ['critical', 'high'].includes(severity)
+          ? 'The source assigned this priority but supplied no operator rationale. Verify the originating evidence before escalation.'
+          : null
   );
   const fallbackTitle = eventCode
     ? 'Event reported: ' + eventCode.replace(/_/g, ' ').toLowerCase()

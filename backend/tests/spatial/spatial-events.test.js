@@ -45,8 +45,32 @@ describe('deterministic spatial events', () => {
     const event = events.find(e => e.eventType === 'CORRIDOR_EXIT');
     expect(event).toBeTruthy();
     expect(event.eventKey).toBe('CORRIDOR_EXIT:vehicle:vehicle-1');
+    expect(event.severity).toBe('high');
     expect(event.evidence).toEqual(expect.arrayContaining([
       expect.objectContaining({ metric: 'cross_track_km', value: 3.1 }),
+      expect.objectContaining({ metric: 'telemetry_freshness', value: 'LIVE' }),
+    ]));
+  });
+
+  test('a stale off-route fix is medium until a fresh GPS reading confirms the breach', () => {
+    const events = detectSpatialEvents({
+      mission: { convoyId: 'convoy-1' },
+      operational: {
+        vehicles: [vehicle({
+          quality: { freshnessClass: 'STALE' },
+          freshnessMs: 25 * 60 * 1000,
+          routeState: { relation: 'OFF_ROUTE', crossTrackKm: 3.1, corridorKm: 2 },
+          previousRouteState: { relation: 'ON_ROUTE' },
+        })],
+      },
+      relations: [],
+      environment: [],
+    }, { now: Date.parse('2026-09-24T12:00:10.000Z') });
+    const event = events.find(e => e.eventType === 'CORRIDOR_EXIT');
+    expect(event).toBeTruthy();
+    expect(event.severity).toBe('medium');
+    expect(event.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ metric: 'telemetry_freshness', value: 'STALE' }),
     ]));
   });
 
