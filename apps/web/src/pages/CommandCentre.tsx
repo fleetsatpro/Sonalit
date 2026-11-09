@@ -549,7 +549,7 @@ export default function CommandCentre() {
     retry: 1,
   });
 
-  const convoysQuery = useQuery<CommandConvoy[]>({
+  const convoysQuery = useQuery<CommandConvoyResponse>({
     queryKey: ['command-centre-convoys'],
     queryFn: async () => {
       const response = await api.get<CommandConvoyResponse>('/dashboard/convoys');
@@ -571,7 +571,7 @@ export default function CommandCentre() {
     retry: 1,
   });
 
-  const timelineQuery = useQuery<CommandMilestone[]>({
+  const timelineQuery = useQuery<CommandTimelineResponse>({
     queryKey: ['command-centre-timeline'],
     queryFn: async () => {
       const response = await api.get<CommandTimelineResponse>('/dashboard/timeline');
@@ -595,8 +595,8 @@ export default function CommandCentre() {
   }, [overviewQuery.data, setOverview]);
 
   useEffect(() => {
-    if (convoysQuery.data) {
-      const records: ConvoyUpdate[] = convoysQuery.data.map((item) => ({
+    if (convoysQuery.data?.data) {
+      const records: ConvoyUpdate[] = convoysQuery.data.data.map((item) => ({
         id: item.id,
         name: item.name,
         status: item.status,
