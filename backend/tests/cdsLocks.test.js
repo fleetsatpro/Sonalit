@@ -228,7 +228,7 @@ describe('CDS E-Lock catalogue and booking health queries', () => {
       },
     }, res, error => { if (error) throw error; });
 
-    expect(statement).toContain('ORDER BY t.created_at DESC NULLS LAST');
+    expect(statement).toContain('ORDER BY t.created_at ASC NULLS LAST');
     expect(statement).not.toContain('function toString');
     expect(res.result.body.total).toBe(0);
   });
