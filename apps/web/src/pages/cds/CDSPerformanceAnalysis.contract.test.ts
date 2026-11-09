@@ -131,6 +131,23 @@ describe('CDS Performance Analysis v2 contract', () => {
     expect(component).toContain('sort((a, b) => Number(b.containers_handled) - Number(a.containers_handled))');
   });
 
+  it('compares equal-length periods only where an explicit prior baseline is returned', () => {
+    for (const marker of [
+      'function PeriodComparisonChart',
+      'data.period_comparison',
+      'Current {days}-day window vs the immediately preceding {days} days',
+      'metricValue(prior?.bookings_received)',
+      'metricValue(prior?.containers_clamped)',
+      'metricValue(prior?.trips_started)',
+      'metricValue(prior?.deliveries_completed)',
+      'No comparable prior-period baseline',
+      'Previous period',
+    ]) expect(component).toContain(marker);
+    expect(component).toContain('row.current != null && row.previous != null');
+    expect(component).toContain('cpa-v2__comparison-legend');
+    expect(visual).toContain('.cpa-v2__comparison-legend');
+  });
+
   it('promotes a full-width chart stage with data-derived trend context and ranked bar labels', () => {
     for (const marker of [
       'PEAK BUCKET',
