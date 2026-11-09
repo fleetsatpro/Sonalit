@@ -519,6 +519,7 @@ function PartnerAnalysis({ data }: { data: CDSAnalyticsPayload }) {
         <span className="cpa-v2__tag">{partners.length} ACTIVE PARTNERS</span>
       </div>
       {partners.length ? (
+        <>
         <PartnerVolumeChart partners={partners} />
         <div className="cpa-v2__partner-list">
           {partners.slice(0, 8).map((partner, index) => (
@@ -531,6 +532,7 @@ function PartnerAnalysis({ data }: { data: CDSAnalyticsPayload }) {
             </article>
           ))}
         </div>
+        </>
       ) : <div className="cpa-v2__empty-state">No partner-linked trips or container activity in this period.</div>}
       <div className="cpa-v2__method-note">ETA adherence is not a contractual on-time-delivery score unless the recorded ETA represents the agreed customer commitment.</div>
     </GlassPanel>
