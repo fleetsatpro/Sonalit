@@ -527,3 +527,573 @@
   .cds-performance-analysis-v2 *,.cds-performance-analysis-v2 *::before,.cds-performance-analysis-v2 *::after {scroll-behavior:auto!important;transition-duration:.01ms!important}
   .cpa-v2__kpi:hover {transform:none}
 }
+
+
+/* Recharts visual system — crisp data marks, calm grid and low-friction inspection. */
+.cpa-v2__rechart {
+  position:relative;
+  width:100%;
+  min-width:0;
+  height:264px;
+  padding:9px 15px 5px 8px;
+}
+.cpa-v2__rechart--bar {height:314px;padding:5px 18px 9px 8px}
+.cpa-v2__rechart--partner {height:248px;padding:4px 17px 8px 8px}
+.cpa-v2__rechart .recharts-responsive-container {min-width:0}
+.cpa-v2__rechart .recharts-surface {overflow:visible}
+.cpa-v2__rechart .recharts-cartesian-axis-tick-value {
+  fill:rgba(174,198,221,.72);
+  font-family:'IBM Plex Mono',ui-monospace,monospace;
+  font-size:9px;
+}
+.cpa-v2__rechart .recharts-cartesian-axis line,
+.cpa-v2__rechart .recharts-cartesian-axis path {stroke:rgba(160,198,231,.13)}
+.cpa-v2__rechart .recharts-cartesian-grid line {stroke:rgba(178,205,233,.105)}
+.cpa-v2__rechart .recharts-tooltip-cursor {fill:rgba(142,185,237,.055)}
+.cpa-v2__chart-tooltip {
+  min-width:142px;
+  padding:10px 12px;
+  border:1px solid rgba(145,193,225,.22);
+  border-radius:9px;
+  background:rgba(5,16,30,.96);
+  box-shadow:0 14px 38px rgba(0,0,0,.38),inset 0 1px rgba(255,255,255,.045);
+  backdrop-filter:blur(16px);
+  pointer-events:none;
+}
+.cpa-v2__chart-tooltip-title {
+  display:block;
+  margin-bottom:7px;
+  color:#f1f6fc;
+  font:700 9px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.03em;
+}
+.cpa-v2__chart-tooltip-row {
+  display:grid;
+  grid-template-columns:7px minmax(0,1fr) auto;
+  align-items:center;
+  gap:7px;
+  padding-top:5px;
+  color:rgba(177,199,222,.76);
+  font-size:9px;
+}
+.cpa-v2__chart-tooltip-row>i {width:6px;height:6px;border-radius:50%}
+.cpa-v2__chart-tooltip-row>b {color:#fff;font:750 10px 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cpa-v2__mix-chart-grid {
+  display:grid;
+  grid-template-columns:minmax(180px,.92fr) minmax(0,1.08fr);
+  align-items:center;
+  gap:11px;
+  padding:9px 17px 15px;
+}
+.cpa-v2__mix-pie {
+  position:relative;
+  width:100%;
+  min-width:0;
+  height:226px;
+}
+.cpa-v2__mix-pie .recharts-responsive-container {position:absolute;inset:0}
+.cpa-v2__mix-centre {
+  position:absolute;
+  top:50%;
+  left:50%;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:3px;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+.cpa-v2__mix-centre strong {
+  color:#f5f8ff;
+  font:800 25px/1 'Space Grotesk',sans-serif;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.045em;
+}
+.cpa-v2__mix-centre span {
+  color:rgba(157,184,209,.62);
+  font:700 7px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.16em;
+}
+.cpa-v2__mix-list {display:grid;gap:8px;min-width:0}
+.cpa-v2__mix-row {
+  display:grid;
+  grid-template-columns:7px minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.cpa-v2__mix-row>i {width:6px;height:22px;border-radius:4px;box-shadow:0 0 10px rgba(160,202,229,.12)}
+.cpa-v2__mix-row-label {display:flex;min-width:0;flex-direction:column;gap:5px}
+.cpa-v2__mix-row-label>strong {overflow:hidden;color:#e8f1fa;font-size:9px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.cpa-v2__mix-row-label>span {display:block;width:100%;height:3px;overflow:hidden;border-radius:99px;background:rgba(178,205,233,.1)}
+.cpa-v2__mix-share-track>i {display:block;height:100%;border-radius:inherit;transition:width 750ms cubic-bezier(.2,.8,.2,1)}
+.cpa-v2__mix-row>b {color:#f3f7ff;font:750 10px 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cpa-v2__mix-row>small {min-width:40px;color:rgba(159,185,210,.66);font:650 8px 'IBM Plex Mono',ui-monospace,monospace;text-align:right}
+.cpa-v2__subchart-heading {
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 17px 0;
+}
+.cpa-v2__subchart-heading>strong {color:#eaf3fc;font-size:10px;font-weight:700}
+.cpa-v2__subchart-heading>span {color:rgba(151,180,207,.62);font:650 7px 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.07em;text-transform:uppercase}
+.cpa-v2__partner-volume {padding:0 0 10px;border-bottom:1px solid rgba(153,188,218,.075)}
+.cpa-v2__partner-volume .cpa-v2__empty-state {min-height:78px}
+@media (max-width:1050px) {
+  .cpa-v2__mix-chart-grid {grid-template-columns:minmax(190px,.75fr) minmax(0,1.25fr)}
+}
+@media (max-width:720px) {
+  .cpa-v2__rechart {height:238px;padding:7px 7px 5px 1px}
+  .cpa-v2__rechart--bar {height:292px;padding:4px 7px 7px 0}
+  .cpa-v2__rechart--partner {height:255px;padding:4px 7px 7px 0}
+  .cpa-v2__mix-chart-grid {grid-template-columns:minmax(0,1fr);gap:4px;padding:5px 12px 13px}
+  .cpa-v2__mix-pie {height:210px;max-width:300px;margin:0 auto}
+  .cpa-v2__mix-list {gap:7px;padding:0 2px}
+  .cpa-v2__mix-row {grid-template-columns:7px minmax(0,1fr) auto auto;gap:8px}
+  .cpa-v2__subchart-heading {align-items:flex-start;flex-direction:column;gap:4px;padding:12px 13px 0}
+}
+@media (max-width:390px) {
+  .cpa-v2__rechart--bar {height:300px}
+  .cpa-v2__mix-row>small {min-width:35px}
+  .cpa-v2__mix-row-label>strong {font-size:8px}
+  .cpa-v2__mix-centre strong {font-size:23px}
+}
+
+
+/* Performance chart stage — enlarge the primary signal and surface its statistical context. */
+.cpa-v2__analysis-grid--hero-chart {
+  grid-template-columns:minmax(0,1fr);
+  margin-top:15px;
+}
+.cpa-v2__analysis-grid--hero-chart > .cpa-v2__trend-panel {grid-column:1/-1}
+.cpa-v2__analysis-grid--service {
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  align-items:stretch;
+  margin-top:14px;
+}
+.cpa-v2__analysis-grid--service > * {min-width:0}
+.cpa-v2__analysis-grid--service > .cpa-v2__service-grid {
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  min-width:0;
+}
+.cpa-v2__chart-pair {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  align-items:stretch;
+  gap:13px;
+  margin:13px 0;
+}
+.cpa-v2__chart-pair > * {min-width:0;height:100%}
+.cpa-v2__chart-pair .cpa-v2__panel {height:100%}
+.cpa-v2__trend-panel {
+  border-color:rgba(196,169,112,.24);
+  background:
+    radial-gradient(ellipse at 76% -9%,rgba(201,170,106,.095),transparent 43%),
+    radial-gradient(ellipse at 8% 100%,rgba(81,166,198,.07),transparent 47%),
+    linear-gradient(148deg,rgba(17,35,55,.84),rgba(7,18,31,.9));
+  box-shadow:inset 0 1px rgba(255,255,255,.075),inset 0 -1px rgba(85,141,182,.07),0 16px 38px rgba(0,0,0,.2);
+}
+.cpa-v2__trend-panel .cpa-v2__panel-head {
+  align-items:flex-start;
+  padding-bottom:15px;
+}
+.cpa-v2__trend-panel .cpa-v2__panel-head h3 {
+  font-size:clamp(17px,1.5vw,21px);
+  letter-spacing:-.025em;
+}
+.cpa-v2__trend-panel .cpa-v2__panel-head p {max-width:570px}
+.cpa-v2__chart-intelligence {
+  display:grid;
+  grid-template-columns:1.2fr repeat(3,minmax(0,1fr));
+  gap:7px;
+  padding:0 17px 10px;
+}
+.cpa-v2__chart-intelligence > div {
+  display:flex;
+  min-width:0;
+  min-height:76px;
+  flex-direction:column;
+  justify-content:center;
+  gap:5px;
+  padding:10px 12px;
+  border:1px solid rgba(157,190,218,.12);
+  border-radius:8px;
+  background:linear-gradient(135deg,rgba(25,46,68,.54),rgba(8,22,37,.42));
+  box-shadow:inset 0 1px rgba(255,255,255,.035);
+  animation:cpa-chart-intel-rise 560ms cubic-bezier(.2,.75,.25,1) both;
+}
+.cpa-v2__chart-intelligence > div:nth-child(2) {animation-delay:55ms}
+.cpa-v2__chart-intelligence > div:nth-child(3) {animation-delay:110ms}
+.cpa-v2__chart-intelligence > div:nth-child(4) {animation-delay:165ms}
+.cpa-v2__chart-intelligence > div.cpa-v2__chart-intel-primary {
+  border-color:rgba(216,184,121,.25);
+  background:linear-gradient(135deg,rgba(130,101,57,.2),rgba(23,38,52,.55));
+}
+.cpa-v2__chart-intelligence small {
+  color:rgba(163,188,212,.68);
+  font:700 7px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.13em;
+}
+.cpa-v2__chart-intelligence strong {
+  overflow:hidden;
+  color:#f3f7fc;
+  font:800 clamp(17px,1.8vw,22px)/1 'Space Grotesk',sans-serif;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.045em;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.cpa-v2__chart-intelligence span {
+  overflow:hidden;
+  color:rgba(158,185,209,.65);
+  font-size:8px;
+  line-height:1.35;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.cpa-v2__rechart--line {
+  height:336px;
+  padding:8px 19px 7px 9px;
+}
+.cpa-v2__rechart--bar {
+  height:326px;
+  padding-right:20px;
+}
+.cpa-v2__bar-panel {
+  border-color:rgba(128,177,216,.19);
+  background:
+    radial-gradient(ellipse at 90% 0%,rgba(95,169,211,.085),transparent 45%),
+    linear-gradient(148deg,rgba(15,34,54,.82),rgba(7,18,31,.9));
+}
+.cpa-v2__bar-panel .cpa-v2__panel-head h3 {font-size:16px}
+.cpa-v2__bar-panel .cpa-v2__chart-footnote {padding-top:9px}
+.cpa-v2__rechart .recharts-label-list text {
+  fill:#eff6ff;
+  font-family:'IBM Plex Mono',ui-monospace,monospace;
+  font-size:9px;
+  font-weight:700;
+  paint-order:stroke;
+  stroke:rgba(7,18,31,.66);
+  stroke-width:2px;
+  stroke-linejoin:round;
+}
+.cpa-v2__chart-pair .cpa-v2__mix-panel .cpa-v2__panel-head,
+.cpa-v2__chart-pair .cpa-v2__bar-panel .cpa-v2__panel-head {min-height:104px}
+@keyframes cpa-chart-intel-rise {
+  from {opacity:0;transform:translateY(7px)}
+  to {opacity:1;transform:translateY(0)}
+}
+@media (max-width:1050px) {
+  .cpa-v2__chart-pair {grid-template-columns:minmax(0,1fr)}
+  .cpa-v2__analysis-grid--service {grid-template-columns:minmax(0,1fr)}
+  .cpa-v2__analysis-grid--service > .cpa-v2__service-grid {grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:720px) {
+  .cpa-v2__chart-intelligence {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+    padding:0 12px 8px;
+  }
+  .cpa-v2__chart-intelligence > div {min-height:67px;padding:9px}
+  .cpa-v2__chart-intelligence > div.cpa-v2__chart-intel-primary {grid-column:1/-1}
+  .cpa-v2__chart-intelligence strong {font-size:18px}
+  .cpa-v2__rechart--line {height:274px;padding:6px 8px 5px 0}
+  .cpa-v2__chart-pair {gap:10px;margin:10px 0}
+  .cpa-v2__analysis-grid--service > .cpa-v2__service-grid {grid-template-columns:minmax(0,1fr)}
+  .cpa-v2__chart-pair .cpa-v2__mix-panel .cpa-v2__panel-head,
+  .cpa-v2__chart-pair .cpa-v2__bar-panel .cpa-v2__panel-head {min-height:0}
+}
+@media (prefers-reduced-motion:reduce) {
+  .cpa-v2__chart-intelligence > div {animation:none!important}
+}
+
+.cpa-v2__comparison-legend {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:13px;
+  padding:0 17px 5px;
+}
+.cpa-v2__comparison-legend>span {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  color:rgba(175,198,220,.72);
+  font-size:8px;
+  font-weight:650;
+}
+.cpa-v2__comparison-legend i {
+  width:7px;
+  height:7px;
+  border-radius:2px;
+  box-shadow:0 0 10px rgba(158,197,226,.16);
+}
+.cpa-v2__comparison-legend i.is-current {background:linear-gradient(135deg,#b89053,#f5dfae)}
+.cpa-v2__comparison-legend i.is-previous {background:linear-gradient(135deg,#426c88,#79a8c8)}
+.cpa-v2__comparison-chart .cpa-v2__chart-footnote {padding-top:11px}
+@media (max-width:720px) {
+  .cpa-v2__comparison-legend {padding-right:13px;padding-left:13px}
+}
+
+
+/* Day-level analyst layer: frequency distribution plus a keyboard-operable calendar heatmap. */
+.cpa-v2__activity-profile {
+  margin:14px 0;
+  border-color:rgba(195,171,119,.2);
+  background:
+    radial-gradient(ellipse at 92% 0%,rgba(191,159,96,.075),transparent 42%),
+    radial-gradient(ellipse at 0% 100%,rgba(75,155,190,.055),transparent 50%),
+    linear-gradient(145deg,rgba(15,32,50,.86),rgba(7,18,31,.91));
+  box-shadow:inset 0 1px rgba(255,255,255,.055),0 15px 36px rgba(0,0,0,.17);
+}
+.cpa-v2__profile-head {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:18px;
+  padding:17px 18px 14px;
+  border-bottom:1px solid rgba(157,190,218,.09);
+}
+.cpa-v2__profile-head h3 {
+  margin:5px 0 4px;
+  color:#eef5fc;
+  font:750 17px/1.2 'Space Grotesk',sans-serif;
+  letter-spacing:-.025em;
+}
+.cpa-v2__profile-head p {
+  margin:0;
+  color:rgba(162,188,212,.69);
+  font-size:9px;
+  line-height:1.5;
+}
+.cpa-v2__profile-metric {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:5px;
+  max-width:490px;
+}
+.cpa-v2__profile-metric button {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:28px;
+  padding:0 8px;
+  border:1px solid rgba(155,190,220,.13);
+  border-radius:6px;
+  background:rgba(10,24,39,.56);
+  color:rgba(174,198,221,.72);
+  font-size:8px;
+  font-weight:650;
+  transition:background .18s ease,border-color .18s ease,color .18s ease,transform .18s ease;
+}
+.cpa-v2__profile-metric button i {
+  width:6px;height:6px;border-radius:50%;
+  box-shadow:0 0 8px currentColor;
+}
+.cpa-v2__profile-metric button:hover {transform:translateY(-1px);border-color:rgba(219,190,133,.3);color:#edf5fc}
+.cpa-v2__profile-metric button[aria-pressed="true"] {
+  border-color:rgba(216,184,121,.42);
+  background:linear-gradient(135deg,rgba(137,107,61,.22),rgba(23,43,60,.76));
+  color:#f4dfb7;
+  box-shadow:inset 0 1px rgba(255,255,255,.05),0 0 16px rgba(193,158,94,.055);
+}
+.cpa-v2__rhythm-grid {
+  display:grid;
+  grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);
+  gap:12px;
+  padding:12px;
+}
+.cpa-v2__profile-card {
+  min-width:0;
+  padding:12px;
+  border:1px solid rgba(151,190,222,.105);
+  border-radius:9px;
+  background:linear-gradient(145deg,rgba(18,38,58,.65),rgba(8,21,35,.63));
+  box-shadow:inset 0 1px rgba(255,255,255,.035);
+}
+.cpa-v2__profile-card-head {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  min-height:30px;
+}
+.cpa-v2__profile-card-head>div {display:flex;min-width:0;flex-direction:column;gap:4px}
+.cpa-v2__profile-card-head small {
+  color:rgba(161,188,213,.61);
+  font:700 7px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.13em;
+}
+.cpa-v2__profile-card-head strong {color:#edf4fc;font-size:10px;font-weight:700}
+.cpa-v2__profile-card-head>span {
+  padding-top:1px;
+  color:rgba(162,188,212,.6);
+  font:650 7px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.06em;
+  text-align:right;
+  text-transform:uppercase;
+}
+.cpa-v2__distribution-stats {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px;
+  margin:10px 0 0;
+}
+.cpa-v2__distribution-stats>div {
+  display:flex;min-width:0;flex-direction:column;gap:4px;
+  padding:8px 9px;
+  border:1px solid rgba(152,188,218,.095);
+  border-radius:6px;
+  background:rgba(8,22,37,.49);
+}
+.cpa-v2__distribution-stats small {
+  overflow:hidden;
+  color:rgba(161,188,213,.58);
+  font:700 6px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.08em;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.cpa-v2__distribution-stats strong {
+  color:#f1f6fc;
+  font:800 17px/1 'Space Grotesk',sans-serif;
+  font-variant-numeric:tabular-nums;
+}
+.cpa-v2__rechart--histogram {height:218px;padding:12px 6px 0 0}
+.cpa-v2__rechart--histogram .recharts-label-list text {
+  fill:#dce9f6;
+  font:700 8px 'IBM Plex Mono',ui-monospace,monospace;
+}
+.cpa-v2__profile-foot {
+  min-height:26px;
+  padding:8px 2px 0;
+  color:rgba(146,174,199,.55);
+  font-size:7px;
+  line-height:1.5;
+}
+.cpa-v2__calendar-wrap {
+  display:grid;
+  grid-template-columns:33px minmax(0,1fr);
+  gap:7px;
+  margin-top:12px;
+}
+.cpa-v2__weekday-labels {
+  display:grid;
+  grid-template-rows:repeat(7,12px);
+  gap:4px;
+  padding-top:0;
+}
+.cpa-v2__weekday-labels span {
+  display:flex;align-items:center;
+  color:rgba(148,177,202,.57);
+  font:650 6px 'IBM Plex Mono',ui-monospace,monospace;
+}
+.cpa-v2__calendar-scroll {
+  min-width:0;
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding-bottom:5px;
+  scrollbar-color:rgba(165,143,101,.35) rgba(10,24,39,.45);
+  scrollbar-width:thin;
+}
+.cpa-v2__calendar-months {
+  display:grid;
+  grid-template-rows:12px;
+  gap:0;
+  min-width:max-content;
+  margin-bottom:5px;
+}
+.cpa-v2__calendar-months span {
+  color:rgba(174,197,219,.66);
+  font:650 7px 'IBM Plex Mono',ui-monospace,monospace;
+  white-space:nowrap;
+}
+.cpa-v2__calendar-grid {
+  display:grid;
+  grid-template-rows:repeat(7,12px);
+  grid-auto-flow:column;
+  grid-auto-columns:12px;
+  gap:4px;
+  width:max-content;
+}
+.cpa-v2__calendar-cell {
+  width:12px;height:12px;
+  padding:0;
+  border:1px solid rgba(158,188,213,.08);
+  border-radius:3px;
+  background:rgba(138,166,191,.055);
+  cursor:pointer;
+  transition:transform .16s ease,border-color .16s ease,filter .16s ease;
+}
+.cpa-v2__calendar-cell:hover {z-index:1;transform:scale(1.24);border-color:rgba(238,218,179,.7);filter:brightness(1.2)}
+.cpa-v2__calendar-cell.is-selected {outline:1px solid #f0d39b;outline-offset:2px;box-shadow:0 0 9px rgba(225,193,132,.28)}
+.cpa-v2__calendar-cell.level-0 {background:rgba(121,151,178,.105)}
+.cpa-v2__calendar-cell.level-1 {background:rgba(69,144,157,.42);border-color:rgba(104,188,190,.23)}
+.cpa-v2__calendar-cell.level-2 {background:rgba(63,173,153,.62);border-color:rgba(98,215,184,.3)}
+.cpa-v2__calendar-cell.level-3 {background:rgba(178,153,98,.78);border-color:rgba(228,197,129,.34)}
+.cpa-v2__calendar-cell.level-4 {background:linear-gradient(145deg,#eed59b,#b58a4f);border-color:rgba(246,220,170,.75);box-shadow:0 0 8px rgba(226,189,117,.17)}
+.cpa-v2__calendar-cell.level-missing {
+  background:repeating-linear-gradient(135deg,rgba(133,153,174,.1),rgba(133,153,174,.1) 2px,transparent 2px,transparent 4px);
+  border-style:dashed;
+}
+.cpa-v2__calendar-legend {
+  display:flex;align-items:center;gap:5px;
+  margin:10px 0 8px 40px;
+  color:rgba(155,183,207,.58);
+  font-size:7px;
+}
+.cpa-v2__calendar-legend i {width:9px;height:9px;border-radius:2px;border:1px solid rgba(158,188,213,.1)}
+.cpa-v2__calendar-legend i.level-1 {background:rgba(69,144,157,.55)}
+.cpa-v2__calendar-legend i.level-2 {background:rgba(63,173,153,.72)}
+.cpa-v2__calendar-legend i.level-3 {background:rgba(178,153,98,.85)}
+.cpa-v2__calendar-legend i.level-4 {background:linear-gradient(145deg,#eed59b,#b58a4f)}
+.cpa-v2__selected-day {
+  display:grid;
+  grid-template-columns:minmax(92px,.8fr) minmax(0,1.2fr);
+  gap:10px;
+  margin-top:9px;
+  padding:10px;
+  border:1px solid rgba(195,169,115,.18);
+  border-radius:7px;
+  background:linear-gradient(130deg,rgba(120,94,54,.12),rgba(8,23,38,.44));
+}
+.cpa-v2__selected-day-head {display:flex;min-width:0;flex-direction:column;gap:4px}
+.cpa-v2__selected-day-head small {
+  color:rgba(202,177,128,.68);
+  font:700 6px 'IBM Plex Mono',ui-monospace,monospace;
+  letter-spacing:.12em;
+}
+.cpa-v2__selected-day-head strong {
+  color:#f1f5fb;font-size:10px;font-weight:700;
+}
+.cpa-v2__selected-day-head span {
+  color:#e7cb92;
+  font:750 12px 'IBM Plex Mono',ui-monospace,monospace;
+  font-variant-numeric:tabular-nums;
+}
+.cpa-v2__selected-day-values {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 9px}
+.cpa-v2__selected-day-values>div {
+  display:grid;grid-template-columns:5px minmax(0,1fr) auto;align-items:center;gap:5px;min-width:0;
+}
+.cpa-v2__selected-day-values i {width:5px;height:5px;border-radius:50%}
+.cpa-v2__selected-day-values span {overflow:hidden;color:rgba(166,192,215,.65);font-size:7px;text-overflow:ellipsis;white-space:nowrap}
+.cpa-v2__selected-day-values b {color:#e7eff8;font:700 8px 'IBM Plex Mono',ui-monospace,monospace}
+@media (max-width:1050px) {
+  .cpa-v2__rhythm-grid {grid-template-columns:minmax(0,1fr)}
+  .cpa-v2__calendar-scroll {max-width:100%}
+}
+@media (max-width:720px) {
+  .cpa-v2__profile-head {flex-direction:column;gap:11px;padding:14px 13px 11px}
+  .cpa-v2__profile-metric {justify-content:flex-start;max-width:none}
+  .cpa-v2__rhythm-grid {gap:9px;padding:9px}
+  .cpa-v2__profile-card {padding:10px}
+  .cpa-v2__distribution-stats strong {font-size:15px}
+  .cpa-v2__selected-day {grid-template-columns:minmax(0,1fr);gap:8px}
+  .cpa-v2__calendar-scroll {overflow-x:auto}
+}
+@media (prefers-reduced-motion:reduce) {
+  .cpa-v2__profile-metric button,.cpa-v2__calendar-cell {transition:none}
+  .cpa-v2__calendar-cell:hover {transform:none}
+}

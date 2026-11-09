@@ -7,6 +7,7 @@ const dashboard = read('./CDSDashboard.tsx');
 const constants = read('./constants.ts');
 const component = read('./CDSPerformanceAnalysis.tsx');
 const visual = read('./CDSPerformanceAnalysis.css');
+const advancedCharts = read('./CDSPerformanceAnalysisAdvancedCharts.tsx');
 
 describe('CDS Performance Analysis v2 contract', () => {
   it('mounts the dedicated analysis workspace without leaving the legacy implementation active', () => {
@@ -56,7 +57,7 @@ describe('CDS Performance Analysis v2 contract', () => {
     expect(component).toContain('type TrendMetric');
     expect(component).toContain('setMetric(option.id)');
     expect(component).toContain('selected.label');
-    expect(component).toContain('Different event streams are not treated as a conversion funnel');
+    expect(component).toContain('One event stream at a time');
     expect(component).not.toContain('visibleSeries.map');
   });
 
@@ -67,7 +68,7 @@ describe('CDS Performance Analysis v2 contract', () => {
       'bookings_with_trip',
       'bookings_delivered',
       'SAME BOOKING COHORT',
-      'Five exclusive stages for bookings created in this reporting window',
+      'Five mutually exclusive stages for bookings created in this reporting window',
     ]) expect(component).toContain(marker);
   });
 
@@ -110,4 +111,101 @@ describe('CDS Performance Analysis v2 contract', () => {
       'not a time-based utilization rate',
     ]) expect(component).toContain(marker);
   });
+  it('renders an interactive line, bar and pie chart suite from persisted analytics data', () => {
+    for (const marker of [
+      'ResponsiveContainer',
+      'ComposedChart',
+      '<Area',
+      '<Line',
+      'CorridorActivityChart',
+      'BarChart',
+      '<Bar',
+      'PieChart',
+      '<Pie',
+      'booking_pipeline',
+      'trips_started',
+      'containers_handled',
+      'Five mutually exclusive stages',
+    ]) expect(component).toContain(marker);
+    expect(component).toContain('isAnimationActive={!reducedMotion}');
+    expect(component).toContain('sort((a, b) => Number(b.trips_started) - Number(a.trips_started))');
+    expect(component).toContain('sort((a, b) => Number(b.containers_handled) - Number(a.containers_handled))');
+  });
+
+  it('compares equal-length periods only where an explicit prior baseline is returned', () => {
+    for (const marker of [
+      'function PeriodComparisonChart',
+      'data.period_comparison',
+      'Current {days}-day window vs the immediately preceding {days} days',
+      'metricValue(prior?.bookings_received)',
+      'metricValue(prior?.containers_clamped)',
+      'metricValue(prior?.trips_started)',
+      'metricValue(prior?.deliveries_completed)',
+      'No comparable prior-period baseline',
+      'Previous period',
+    ]) expect(component).toContain(marker);
+    expect(component).toContain('row.current != null && row.previous != null');
+    expect(component).toContain('cpa-v2__comparison-legend');
+    expect(visual).toContain('.cpa-v2__comparison-legend');
+  });
+
+  it('promotes a full-width chart stage with data-derived trend context and ranked bar labels', () => {
+    for (const marker of [
+      'PEAK DAY',
+      'AVERAGE / DAY',
+      'ACTIVE DAYS',
+      'ReferenceLine',
+      'ReferenceDot',
+      'throughput-area',
+      'ComposedChart',
+      'LabelList',
+      'dateRangeLabel(peakBucket.start, peakBucket.end)',
+      'averagePerBucket',
+      'activeDays',
+      'cpa-v2__chart-pair',
+      'cpa-v2__analysis-grid--hero-chart',
+    ]) expect(component).toContain(marker);
+    for (const marker of [
+      '.cpa-v2__chart-intelligence',
+      '.cpa-v2__chart-pair',
+      '.cpa-v2__analysis-grid--hero-chart',
+      '.cpa-v2__rechart--line',
+      'cpa-chart-intel-rise',
+    ]) expect(visual).toContain(marker);
+    expect(component.indexOf('cpa-v2__analysis-grid--hero-chart')).toBeLessThan(component.indexOf('cpa-v2__chart-pair'));
+  });
+
+
+  it('adds a distribution histogram and selected-day calendar heatmap from daily persisted observations', () => {
+    for (const marker of [
+      'DailyActivityProfile',
+      'buildDailyHistogram',
+      'buildActivityCalendar',
+      'Events per calendar day',
+      'ZERO-ACTIVITY DAYS',
+      'SELECT A DAY',
+      'aria-pressed={cell.day === currentDay?.day}',
+      'preference.addEventListener',
+      'p90BinKey',
+      'raw == null'
+    ]) expect(advancedCharts).toContain(marker);
+    expect(component).toContain('<Brush');
+    expect(component).toContain('AVERAGE / DAY');
+    expect(component).toContain('<DailyActivityProfile daily={data.daily} />');
+    expect(visual).toContain('.cpa-v2__calendar-grid');
+    expect(visual).toContain('.cpa-v2__calendar-cell.level-missing');
+    expect(visual).toContain('.cpa-v2__rechart--histogram');
+  });
+
+  it('styles data tooltips and respects reduced-motion preferences in chart rendering', () => {
+    expect(component).toContain("window.matchMedia('(prefers-reduced-motion: reduce)')");
+    for (const marker of [
+      '.cpa-v2__rechart',
+      '.cpa-v2__chart-tooltip',
+      '.cpa-v2__mix-chart-grid',
+      '.cpa-v2__mix-centre',
+    ]) expect(visual).toContain(marker);
+    expect(visual).toContain('@media (prefers-reduced-motion:reduce)');
+  });
+
 });

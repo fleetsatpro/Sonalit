@@ -1,11 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Activity, AlertTriangle, BarChart3, CheckCircle2, Clock3, Gauge, PackageCheck,
   RefreshCw, ShieldAlert, Truck, Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import {
+  Area, Bar, BarChart, Brush, CartesianGrid, Cell, ComposedChart, LabelList, Line, Pie, PieChart,
+  ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts';
 import type { CDSAnalyticsPayload, CDSAnalyticsSummary } from './types.js';
+import { DailyActivityProfile } from './CDSPerformanceAnalysisAdvancedCharts.js';
 import { useAcknowledgeAlert, useCDSAnalytics } from './hooks.js';
 import { useCDSStore } from './store.js';
 import './CDSPerformanceAnalysis.css';
@@ -38,6 +43,11 @@ const pct = (value: number | null | undefined) => value == null || !Number.isFin
 const dateLabel = (value: string) => {
   const date = new Date(value + (value.length === 10 ? 'T12:00:00' : ''));
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+const dateRangeLabel = (start: string, end: string) => {
+  const first = dateLabel(start);
+  const last = dateLabel(end);
+  return first === last ? first : first + ' — ' + last;
 };
 const signedHours = (value: number | null | undefined) => {
   if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -119,50 +129,69 @@ function ProgressLine({ label, value, denominator, color, suffix }: {
   );
 }
 
-function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days: number }) {
-  const [metric, setMetric] = useState<TrendMetric>('bookings_received');
-  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+type ChartTooltipItem = {
+  name?: string; value?: unknown; color?: string;
+  payload?: { start?: string; end?: string };
+};
+function ChartTooltip({ active, payload, label }: {
+  active?: boolean; payload?: ChartTooltipItem[]; label?: string | number;
+}) {
+  if (!active || !payload?.length) return null;
+  const firstRow = payload[0]?.payload;
+  const title = firstRow?.start && firstRow?.end
+    ? dateRangeLabel(firstRow.start, firstRow.end)
+    : label;
+  return (
+    <div className="cpa-v2__chart-tooltip">
+      {title != null ? <strong className="cpa-v2__chart-tooltip-title">{String(title)}</strong> : null}
+      {payload.filter((item, index, rows) => item.value != null
+        && rows.findIndex(candidate => candidate.name === item.name && candidate.value === item.value) === index).map((item, index) => (
+        <div className="cpa-v2__chart-tooltip-row" key={String(item.name ?? index)}>
+          <i style={{ background: item.color ?? '#8eb9ed' }} />
+          <span>{item.name ?? 'Value'}</span>
+          <b>{typeof item.value === 'number' ? fmt(item.value) : String(item.value)}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-  const buckets = useMemo<TrendBucket[]>(() => {
-    const span = days === 365 ? 7 : days === 90 ? 3 : 1;
-    const result: TrendBucket[] = [];
-    for (let index = 0; index < daily.length; index += span) {
-      const rows = daily.slice(index, index + span);
-      if (!rows.length) continue;
-      const bucket: TrendBucket = {
-        start: rows[0].day,
-        end: rows[rows.length - 1].day,
-        bookings_received: 0,
-        containers_clamped: 0,
-        containers_unclamped: 0,
-        trips_started: 0,
-        deliveries_completed: 0,
-      };
-      rows.forEach(row => {
-        bucket.bookings_received += Number(row.bookings_received || 0);
-        bucket.containers_clamped += Number(row.containers_clamped || 0);
-        bucket.containers_unclamped += Number(row.containers_unclamped || 0);
-        bucket.trips_started += Number(row.trips_started || 0);
-        bucket.deliveries_completed += Number(row.deliveries_completed || 0);
-      });
-      result.push(bucket);
-    }
-    return result;
-  }, [daily, days]);
+function useReducedMotionPreference() {
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(preference.matches);
+    update();
+    preference.addEventListener('change', update);
+    return () => preference.removeEventListener('change', update);
+  }, []);
+  return reducedMotion;
+}
+
+function TrendChart({ daily }: { daily: CDSAnalyticsPayload['daily'] }) {
+  const [metric, setMetric] = useState<TrendMetric>('bookings_received');
+  const reducedMotion = useReducedMotionPreference();
+
+  const buckets = useMemo<TrendBucket[]>(() => daily.map(row => ({
+    start: row.day,
+    end: row.day,
+    bookings_received: Number(row.bookings_received ?? 0),
+    containers_clamped: Number(row.containers_clamped ?? 0),
+    containers_unclamped: Number(row.containers_unclamped ?? 0),
+    trips_started: Number(row.trips_started ?? 0),
+    deliveries_completed: Number(row.deliveries_completed ?? 0),
+  })), [daily]);
 
   const values = buckets.map(row => row[metric]);
-  const maximum = Math.max(1, ...values);
-  const minimum = Math.min(0, ...values);
-  const range = Math.max(1, maximum - minimum);
-  const points = values.map((value, index) => ({
-    x: buckets.length <= 1 ? 50 : 44 + index * (912 / (buckets.length - 1)),
-    y: 196 - ((value - minimum) / range) * 164,
-  }));
-  const path = points.map((point, index) => (index === 0 ? 'M' : 'L') + point.x.toFixed(1) + ' ' + point.y.toFixed(1)).join(' ');
-  const area = points.length ? path + ' L ' + points[points.length - 1].x + ' 204 L ' + points[0].x + ' 204 Z' : '';
+  const total = daily.reduce((sum, row) => sum + Number(row[metric] ?? 0), 0);
+  const averagePerBucket = buckets.length ? total / buckets.length : 0;
+  const activeDays = daily.filter(row => Number(row[metric] ?? 0) > 0).length;
+  const peakBucket = buckets.reduce<TrendBucket | null>(
+    (peak, row) => !peak || row[metric] > peak[metric] ? row : peak,
+    null,
+  );
   const selected = trendOptions.find(option => option.id === metric) ?? trendOptions[0];
-  const activeIndex = focusIndex == null ? Math.max(0, buckets.length - 1) : focusIndex;
-  const active = buckets[activeIndex];
 
   return (
     <GlassPanel className="cpa-v2__trend-panel" id="cds-throughput">
@@ -170,92 +199,208 @@ function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days
         <div>
           <div className="cpa-v2__kicker"><span>01</span> ACTIVITY / EVENT DATE</div>
           <h3>Operational throughput</h3>
-          <p>Choose one event stream at a time. Each line is counted on its own event date.</p>
+          <p>One event stream at a time. Hover or focus a point to inspect the recorded value.</p>
         </div>
         <div className="cpa-v2__metric-select" role="group" aria-label="Select throughput metric">
           {trendOptions.map(option => (
-            <button key={option.id} type="button" aria-pressed={metric === option.id} onClick={() => { setMetric(option.id); setFocusIndex(null); }}>
+            <button key={option.id} type="button" aria-pressed={metric === option.id} onClick={() => setMetric(option.id)}>
               <i style={{ background: option.color }} />{option.label}
             </button>
           ))}
         </div>
       </div>
-      <div className="cpa-v2__chart-topline">
-        <div><strong>{fmt(buckets.reduce((sum, row) => sum + row[metric], 0))}</strong><span>{selected.label.toLowerCase()} in selected window</span></div>
-        <div className="cpa-v2__chart-unit">EVENT COUNT · {days} DAYS</div>
+      <div className="cpa-v2__chart-intelligence" aria-label={selected.label + ' trend summary'}>
+        <div className="cpa-v2__chart-intel-primary">
+          <small>WINDOW TOTAL</small>
+          <strong>{fmt(total)}</strong>
+          <span>{selected.label.toLowerCase()} events</span>
+        </div>
+        <div>
+          <small>PEAK DAY</small>
+          <strong>{peakBucket ? fmt(peakBucket[metric]) : '—'}</strong>
+          <span>{peakBucket ? dateRangeLabel(peakBucket.start, peakBucket.end) : 'No peak recorded'}</span>
+        </div>
+        <div>
+          <small>AVERAGE / DAY</small>
+          <strong>{fmt(averagePerBucket)}</strong>
+          <span>Across {fmt(buckets.length)} observed calendar days</span>
+        </div>
+        <div>
+          <small>ACTIVE DAYS</small>
+          <strong>{fmt(activeDays)}</strong>
+          <span>Days with at least one event</span>
+        </div>
       </div>
       {buckets.length && values.some(value => value > 0) ? (
-        <div className="cpa-v2__chart-wrap">
-          <svg viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label={selected.label + ' across the selected reporting period'} onMouseLeave={() => setFocusIndex(null)}>
-            <defs>
-              <linearGradient id="cpa-v2-area" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor={selected.color} stopOpacity=".26" />
-                <stop offset="100%" stopColor={selected.color} stopOpacity="0" />
-              </linearGradient>
-              <filter id="cpa-v2-glow" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="3" result="blur" />
-                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-              </filter>
-            </defs>
-            {[0, 1, 2, 3].map(index => {
-              const value = maximum * (3 - index) / 3;
-              const y = 28 + index * 56;
-              return <g key={index}>
-                <line x1="38" x2="970" y1={y} y2={y} stroke="rgba(178,205,233,.12)" strokeDasharray="3 8" />
-                <text x="1" y={y + 4} fill="rgba(193,211,232,.55)" fontSize="11">{Math.round(value)}</text>
-              </g>;
-            })}
-            <path d={area} fill="url(#cpa-v2-area)" />
-            <path d={path} fill="none" stroke={selected.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" filter="url(#cpa-v2-glow)" vectorEffect="non-scaling-stroke" />
-            {points.map((point, index) => (
-              <g key={buckets[index].start} onMouseEnter={() => setFocusIndex(index)} onFocus={() => setFocusIndex(index)} onClick={() => setFocusIndex(index)} tabIndex={0} role="button" aria-label={dateLabel(buckets[index].start) + ': ' + fmt(values[index]) + ' ' + selected.label.toLowerCase()}>
-                <circle cx={point.x} cy={point.y} r={activeIndex === index ? 8 : 3.5} fill={selected.color} opacity={activeIndex === index ? 1 : .78} />
-                <circle cx={point.x} cy={point.y} r="14" fill="transparent" />
-              </g>
-            ))}
-            {active ? <line x1={points[activeIndex]?.x ?? 0} x2={points[activeIndex]?.x ?? 0} y1="18" y2="204" stroke="rgba(210,226,243,.28)" strokeDasharray="3 5" /> : null}
-            <text x="42" y="222" fill="rgba(193,211,232,.62)" fontSize="11">{buckets.length ? dateLabel(buckets[0].start) : ''}</text>
-            <text x="970" y="222" fill="rgba(193,211,232,.62)" fontSize="11" textAnchor="end">{buckets.length ? dateLabel(buckets[buckets.length - 1].end) : ''}</text>
-          </svg>
-          <div className="cpa-v2__chart-readout" aria-live="polite">
-            <span>{active ? (active.start === active.end ? dateLabel(active.start) : dateLabel(active.start) + ' – ' + dateLabel(active.end)) : 'Select a chart point'}</span>
-            <strong style={{ color: selected.color }}>{active ? fmt(active[metric]) : '—'}</strong>
-            <small>{selected.label}</small>
-          </div>
+        <div className="cpa-v2__rechart cpa-v2__rechart--line" role="img" aria-label={selected.label + ' line chart across the selected reporting period'}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={buckets} margin={{ top: 12, right: 16, bottom: 4, left: -10 }}>
+              <defs>
+                <linearGradient id="cpa-v2-throughput-line" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor={selected.color} stopOpacity=".76" />
+                  <stop offset="52%" stopColor={selected.color} stopOpacity="1" />
+                  <stop offset="100%" stopColor="#f0d39b" stopOpacity=".92" />
+                </linearGradient>
+                <linearGradient id="cpa-v2-throughput-area" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={selected.color} stopOpacity=".28" />
+                  <stop offset="78%" stopColor={selected.color} stopOpacity=".055" />
+                  <stop offset="100%" stopColor={selected.color} stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} stroke="rgba(178,205,233,.12)" strokeDasharray="3 7" />
+              <XAxis
+                dataKey="start"
+                tickFormatter={value => dateLabel(String(value))}
+                interval="preserveStartEnd"
+                minTickGap={28}
+                tick={{ fill: 'rgba(169,194,218,.72)', fontSize: 9 }}
+                axisLine={{ stroke: 'rgba(160,198,231,.14)' }}
+                tickLine={false}
+              />
+              <YAxis
+                domain={[0, 'auto']}
+                allowDecimals={false}
+                tickFormatter={value => fmt(Number(value))}
+                width={48}
+                tick={{ fill: 'rgba(169,194,218,.62)', fontSize: 9 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                content={<ChartTooltip />}
+                cursor={{ stroke: 'rgba(210,226,243,.36)', strokeDasharray: '3 5' }}
+                labelFormatter={value => dateLabel(String(value))}
+              />
+              <Area
+                type="linear"
+                dataKey={metric}
+                name={selected.label}
+                stroke="none"
+                fill="url(#cpa-v2-throughput-area)"
+                fillOpacity={1}
+                dot={false}
+                activeDot={false}
+                isAnimationActive={!reducedMotion}
+                animationDuration={900}
+                animationEasing="ease-out"
+              />
+              {total > 0 ? (
+                <ReferenceLine
+                  y={averagePerBucket}
+                  stroke="#e5c17c"
+                  strokeOpacity={0.72}
+                  strokeDasharray="5 6"
+                  ifOverflow="extendDomain"
+                  label={{ value: 'MEAN / BUCKET', position: 'insideTopRight', fill: '#e5c17c', fontSize: 8, fontWeight: 700 }}
+                />
+              ) : null}
+              {peakBucket ? (
+                <ReferenceDot
+                  x={peakBucket.start}
+                  y={peakBucket[metric]}
+                  r={5}
+                  fill="#f0d39b"
+                  stroke="#10263a"
+                  strokeWidth={2}
+                  isFront
+                />
+              ) : null}
+              <Line
+                type="linear"
+                dataKey={metric}
+                name={selected.label}
+                stroke="url(#cpa-v2-throughput-line)"
+                strokeWidth={2.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                dot={{ r: 2.4, fill: selected.color, stroke: '#071525', strokeWidth: 1.3 }}
+                activeDot={{ r: 5.5, stroke: '#071525', strokeWidth: 2, fill: selected.color }}
+                isAnimationActive={!reducedMotion}
+                animationDuration={950}
+                animationEasing="ease-out"
+              />
+              {buckets.length > 30 ? (
+                <Brush
+                  dataKey="start"
+                  height={18}
+                  travellerWidth={8}
+                  stroke="#c9ad76"
+                  fill="rgba(10,25,41,.86)"
+                  gap={1}
+                />
+              ) : null}
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
       ) : (
         <div className="cpa-v2__empty-chart"><BarChart3 size={22} /><strong>No activity recorded in this window</strong><span>The chart will populate from persisted CDS event timestamps when activity exists.</span></div>
       )}
-      <div className="cpa-v2__chart-footnote">Daily counts are grouped into 3-day or 7-day buckets for longer windows. Different event streams are not treated as a conversion funnel.</div>
+      <div className="cpa-v2__chart-footnote">The plot preserves every recorded calendar day. Use the navigator beneath the axis to zoom into individual dates; zero-event days remain visible as observed dates.</div>
     </GlassPanel>
   );
 }
 
 function BookingMix({ data }: { data: CDSAnalyticsPayload }) {
+  const reducedMotion = useReducedMotionPreference();
   const rows = bookingStages.map(stage => ({
     ...stage,
-    count: data.booking_pipeline.find(row => row.status === stage.status)?.count ?? 0,
+    count: Number(data.booking_pipeline.find(row => row.status === stage.status)?.count ?? 0),
   }));
   const total = rows.reduce((sum, row) => sum + row.count, 0);
+  const chartRows = rows.filter(row => row.count > 0);
   return (
     <GlassPanel className="cpa-v2__mix-panel">
       <div className="cpa-v2__panel-head">
-        <div><div className="cpa-v2__kicker"><span>02</span> BOOKING COHORT / SNAPSHOT STAGE</div><h3>Booking Mix</h3><p>Five exclusive stages for bookings created in this reporting window.</p></div>
+        <div><div className="cpa-v2__kicker"><span>02</span> BOOKING COHORT / SNAPSHOT STAGE</div><h3>Booking Mix</h3><p>Five mutually exclusive stages for bookings created in this reporting window.</p></div>
         <div className="cpa-v2__mix-total"><strong>{fmt(total)}</strong><span>bookings received</span></div>
       </div>
-      <div className="cpa-v2__mix-track" role="img" aria-label={rows.map(row => row.label + ': ' + row.count).join(', ')}>
-        {rows.map(row => row.count > 0 ? <span key={row.status} style={{ width: (row.count / Math.max(1, total) * 100) + '%', background: row.color }} /> : null)}
-      </div>
-      <div className="cpa-v2__mix-list">
-        {rows.map(row => (
-          <div key={row.status} className="cpa-v2__mix-row">
-            <i style={{ background: row.color }} />
-            <span>{row.label}</span>
-            <strong>{fmt(row.count)}</strong>
-            <small>{total ? (row.count / total * 100).toFixed(1) + '%' : '0.0%'}</small>
+      {chartRows.length ? (
+        <div className="cpa-v2__mix-chart-grid">
+          <div className="cpa-v2__mix-pie" role="img" aria-label={'Booking mix pie chart. ' + rows.map(row => row.label + ': ' + fmt(row.count)).join(', ')}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Tooltip content={<ChartTooltip />} />
+                <Pie
+                  data={chartRows}
+                  dataKey="count"
+                  nameKey="label"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={53}
+                  outerRadius={88}
+                  paddingAngle={2}
+                  stroke="#091827"
+                  strokeWidth={3}
+                  isAnimationActive={!reducedMotion}
+                  animationDuration={900}
+                  animationEasing="ease-out"
+                >
+                  {chartRows.map(row => <Cell key={row.status} fill={row.color} />)}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="cpa-v2__mix-centre" aria-hidden="true"><strong>{fmt(total)}</strong><span>BOOKINGS</span></div>
           </div>
-        ))}
-      </div>
+          <div className="cpa-v2__mix-list" aria-label="Booking stage breakdown">
+            {rows.map(row => {
+              const share = total > 0 ? row.count / total * 100 : 0;
+              return (
+                <div key={row.status} className="cpa-v2__mix-row">
+                  <i style={{ background: row.color }} />
+                  <div className="cpa-v2__mix-row-label">
+                    <strong>{row.label}</strong>
+                    <span className="cpa-v2__mix-share-track"><i style={{ width: share + '%', background: row.color }} /></span>
+                  </div>
+                  <b>{fmt(row.count)}</b>
+                  <small>{share.toFixed(1)}%</small>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="cpa-v2__empty-chart"><PieChart size={22} /><strong>No booking stages recorded</strong><span>There are no booking records in the selected reporting window.</span></div>
+      )}
       <div className="cpa-v2__cohort-note">Stage is evaluated from the latest persisted booking, trip and clamp evidence; the reporting-window filter applies to booking creation time.</div>
     </GlassPanel>
   );
@@ -328,6 +473,113 @@ function ServiceQuality({ data }: { data: CDSAnalyticsPayload }) {
   );
 }
 
+function PeriodComparisonChart({ data, days }: { data: CDSAnalyticsPayload; days: number }) {
+  const reducedMotion = useReducedMotionPreference();
+  const prior = data.period_comparison;
+  const metricValue = (value: number | null | undefined) =>
+    value == null || !Number.isFinite(Number(value)) ? null : Number(value);
+  const rows = [
+    { metric: 'Bookings', current: metricValue(data.summary.bookings_received), previous: metricValue(prior?.bookings_received) },
+    { metric: 'Clamped', current: metricValue(data.summary.containers_clamped), previous: metricValue(prior?.containers_clamped) },
+    { metric: 'Trips started', current: metricValue(data.summary.trips_started), previous: metricValue(prior?.trips_started) },
+    { metric: 'Delivered', current: metricValue(data.summary.deliveries_completed), previous: metricValue(prior?.deliveries_completed) },
+  ].filter((row): row is { metric: string; current: number; previous: number } =>
+    row.current != null && row.previous != null
+  );
+
+  return (
+    <GlassPanel className="cpa-v2__bar-panel cpa-v2__comparison-chart">
+      <div className="cpa-v2__panel-head">
+        <div>
+          <div className="cpa-v2__kicker"><span>02A</span> PERIOD-OVER-PERIOD / EVENT COUNTS</div>
+          <h3>Activity vs previous period</h3>
+          <p>Current {days}-day window vs the immediately preceding {days} days. Each event family is compared with its own prior-period count.</p>
+        </div>
+        <span className="cpa-v2__tag">CURRENT / PRIOR</span>
+      </div>
+      <div className="cpa-v2__comparison-legend" aria-label="Chart legend">
+        <span><i className="is-current" />Current period</span>
+        <span><i className="is-previous" />Previous period</span>
+      </div>
+      {rows.length ? (
+        <div className="cpa-v2__rechart cpa-v2__rechart--bar" role="img" aria-label="Grouped horizontal bar chart comparing current and previous period event counts">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} layout="vertical" barGap={5} barCategoryGap={23} margin={{ top: 7, right: 35, bottom: 3, left: 0 }}>
+              <defs>
+                <linearGradient id="cpa-v2-period-current" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#b89053" />
+                  <stop offset="55%" stopColor="#e7c47f" />
+                  <stop offset="100%" stopColor="#f5dfae" />
+                </linearGradient>
+                <linearGradient id="cpa-v2-period-prior" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#426c88" />
+                  <stop offset="100%" stopColor="#79a8c8" />
+                </linearGradient>
+              </defs>
+              <CartesianGrid horizontal={false} stroke="rgba(178,205,233,.1)" strokeDasharray="3 7" />
+              <XAxis type="number" domain={[0, 'dataMax']} allowDecimals={false} tickFormatter={value => fmt(Number(value))} tick={{ fill: 'rgba(169,194,218,.65)', fontSize: 9 }} axisLine={{ stroke: 'rgba(160,198,231,.14)' }} tickLine={false} />
+              <YAxis type="category" dataKey="metric" width={92} interval={0} tick={{ fill: 'rgba(201,216,233,.82)', fontSize: 9 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(142,185,237,.055)' }} />
+              <Bar dataKey="current" name="Current period" fill="url(#cpa-v2-period-current)" barSize={12} radius={[0, 6, 6, 0]} isAnimationActive={!reducedMotion} animationDuration={850} animationEasing="ease-out">
+                <LabelList dataKey="current" position="right" fill="#f4e5c5" fontSize={8} fontWeight={700} />
+              </Bar>
+              <Bar dataKey="previous" name="Previous period" fill="url(#cpa-v2-period-prior)" barSize={12} radius={[0, 6, 6, 0]} isAnimationActive={!reducedMotion} animationDuration={850} animationEasing="ease-out">
+                <LabelList dataKey="previous" position="right" fill="#b9d2e5" fontSize={8} fontWeight={700} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="cpa-v2__empty-chart"><BarChart3 size={22} /><strong>No comparable prior-period baseline</strong><span>The API did not return comparable values for this reporting window. No zero baseline has been substituted.</span></div>
+      )}
+      <div className="cpa-v2__chart-footnote">Counts remain distinct event families. This comparison does not imply that bookings, clamp events, trip starts and deliveries form a conversion funnel.</div>
+    </GlassPanel>
+  );
+}
+
+function CorridorActivityChart({ data }: { data: CDSAnalyticsPayload }) {
+  const reducedMotion = useReducedMotionPreference();
+  const rows = [...(data.lanes ?? [])]
+    .filter(row => Number(row.trips_started) > 0)
+    .sort((a, b) => Number(b.trips_started) - Number(a.trips_started))
+    .slice(0, 8)
+    .map(row => ({
+      corridor: row.origin + ' → ' + row.destination,
+      trips_started: Number(row.trips_started),
+    }));
+  return (
+    <GlassPanel className="cpa-v2__bar-panel">
+      <div className="cpa-v2__panel-head">
+        <div><div className="cpa-v2__kicker"><span>06A</span> ROUTE VOLUME / EVENT COUNT</div><h3>Trip starts by corridor</h3><p>Highest-volume origin and destination pairs, ranked by recorded trip-start timestamps.</p></div>
+        <span className="cpa-v2__tag">TOP {rows.length} CORRIDORS</span>
+      </div>
+      {rows.length ? (
+        <div className="cpa-v2__rechart cpa-v2__rechart--bar" role="img" aria-label="Horizontal bar chart ranking corridors by trips started">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} layout="vertical" margin={{ top: 6, right: 28, bottom: 2, left: 6 }}>
+              <defs>
+                <linearGradient id="cpa-v2-corridor-fill" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#57cdbd" />
+                  <stop offset="58%" stopColor="#8eb9ed" />
+                  <stop offset="100%" stopColor="#e5c17c" />
+                </linearGradient>
+              </defs>
+              <CartesianGrid horizontal={false} stroke="rgba(178,205,233,.1)" strokeDasharray="3 7" />
+              <XAxis type="number" domain={[0, 'dataMax']} allowDecimals={false} tick={{ fill: 'rgba(169,194,218,.65)', fontSize: 9 }} axisLine={{ stroke: 'rgba(160,198,231,.14)' }} tickLine={false} />
+              <YAxis type="category" dataKey="corridor" width={148} interval={0} tickFormatter={value => String(value).length > 23 ? String(value).slice(0, 20) + '…' : String(value)} tick={{ fill: 'rgba(189,208,228,.78)', fontSize: 9 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(142,185,237,.07)' }} />
+              <Bar dataKey="trips_started" name="Trips started" fill="url(#cpa-v2-corridor-fill)" barSize={22} radius={[0, 8, 8, 0]} isAnimationActive={!reducedMotion} animationDuration={920} animationEasing="ease-out">
+                <LabelList dataKey="trips_started" position="right" fill="#eaf2fb" fontSize={9} fontWeight={700} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : <div className="cpa-v2__empty-state">No corridor trip-start activity is available in this reporting window.</div>}
+      <div className="cpa-v2__chart-footnote">Counts are trip-start events grouped by origin and destination. Delivery counts and current delays remain separate measures in the corridor register below.</div>
+    </GlassPanel>
+  );
+}
+
 function LaneAnalysis({ data }: { data: CDSAnalyticsPayload }) {
   const lanes = data.lanes ?? [];
   const highest = Math.max(1, ...lanes.map(row => row.trips_started));
@@ -358,6 +610,44 @@ function LaneAnalysis({ data }: { data: CDSAnalyticsPayload }) {
   );
 }
 
+function PartnerVolumeChart({ partners }: {
+  partners: NonNullable<CDSAnalyticsPayload['transporter_leaderboard']>;
+}) {
+  const reducedMotion = useReducedMotionPreference();
+  const rows = [...partners]
+    .filter(partner => Number(partner.containers_handled) > 0)
+    .sort((a, b) => Number(b.containers_handled) - Number(a.containers_handled))
+    .slice(0, 8)
+    .map(partner => ({ partner: partner.company_name, containers_handled: Number(partner.containers_handled) }));
+  return (
+    <div className="cpa-v2__partner-volume">
+      <div className="cpa-v2__subchart-heading"><strong>Container volume by partner</strong><span>Distinct containers handled · top {rows.length}</span></div>
+      {rows.length ? (
+        <div className="cpa-v2__rechart cpa-v2__rechart--partner" role="img" aria-label="Horizontal bar chart ranking transport partners by containers handled">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 28, bottom: 0, left: 4 }}>
+              <defs>
+                <linearGradient id="cpa-v2-partner-fill" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#83b8ff" />
+                  <stop offset="60%" stopColor="#b29aff" />
+                  <stop offset="100%" stopColor="#e5c17c" />
+                </linearGradient>
+              </defs>
+              <CartesianGrid horizontal={false} stroke="rgba(178,205,233,.09)" strokeDasharray="3 7" />
+              <XAxis type="number" domain={[0, 'dataMax']} allowDecimals={false} tick={{ fill: 'rgba(169,194,218,.62)', fontSize: 9 }} axisLine={{ stroke: 'rgba(160,198,231,.12)' }} tickLine={false} />
+              <YAxis type="category" dataKey="partner" width={134} interval={0} tickFormatter={value => String(value).length > 19 ? String(value).slice(0, 16) + '…' : String(value)} tick={{ fill: 'rgba(189,208,228,.73)', fontSize: 8 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(178,154,255,.06)' }} />
+              <Bar dataKey="containers_handled" name="Containers handled" fill="url(#cpa-v2-partner-fill)" barSize={18} radius={[0, 7, 7, 0]} isAnimationActive={!reducedMotion} animationDuration={880} animationEasing="ease-out">
+                <LabelList dataKey="containers_handled" position="right" fill="#eaf2fb" fontSize={9} fontWeight={700} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : <div className="cpa-v2__empty-state">No partner-linked container activity is recorded for this period.</div>}
+    </div>
+  );
+}
+
 function PartnerAnalysis({ data }: { data: CDSAnalyticsPayload }) {
   const partners = data.transporter_leaderboard ?? [];
   return (
@@ -367,6 +657,8 @@ function PartnerAnalysis({ data }: { data: CDSAnalyticsPayload }) {
         <span className="cpa-v2__tag">{partners.length} ACTIVE PARTNERS</span>
       </div>
       {partners.length ? (
+        <>
+        <PartnerVolumeChart partners={partners} />
         <div className="cpa-v2__partner-list">
           {partners.slice(0, 8).map((partner, index) => (
             <article className="cpa-v2__partner-row" key={partner.transporter_id}>
@@ -378,6 +670,7 @@ function PartnerAnalysis({ data }: { data: CDSAnalyticsPayload }) {
             </article>
           ))}
         </div>
+        </>
       ) : <div className="cpa-v2__empty-state">No partner-linked trips or container activity in this period.</div>}
       <div className="cpa-v2__method-note">ETA adherence is not a contractual on-time-delivery score unless the recorded ETA represents the agreed customer commitment.</div>
     </GlassPanel>
@@ -684,12 +977,16 @@ export function AnalyticsView() {
 
       {section === 'overview' ? (
         <div id="cpa-panel-overview" className="cpa-v2__workspace" role="region" aria-label="Performance overview" tabIndex={0}>
-          <div className="cpa-v2__flow-grid" id="cds-cohort">
-            <BookingCohort data={data} />
-            <BookingMix data={data} />
+          <div className="cpa-v2__analysis-grid cpa-v2__analysis-grid--hero-chart">
+            <TrendChart daily={data.daily} />
           </div>
-          <div className="cpa-v2__analysis-grid">
-            <TrendChart daily={data.daily} days={days} />
+          <DailyActivityProfile daily={data.daily} />
+          <div className="cpa-v2__chart-pair" aria-label="Booking distribution and period comparison charts">
+            <BookingMix data={data} />
+            <PeriodComparisonChart data={data} days={days} />
+          </div>
+          <div className="cpa-v2__analysis-grid cpa-v2__analysis-grid--service">
+            <BookingCohort data={data} />
             <ServiceQuality data={data} />
           </div>
         </div>
@@ -697,6 +994,7 @@ export function AnalyticsView() {
       {section === 'network' ? (
         <div id="cpa-panel-network" className="cpa-v2__workspace" role="region" aria-label="Network performance" tabIndex={0}>
           <SectionHeading index="06–07" kicker="CARRIER / CORRIDOR PERFORMANCE" title="Network execution" />
+          <CorridorActivityChart data={data} />
           <LaneAnalysis data={data} />
           <PartnerAnalysis data={data} />
         </div>
