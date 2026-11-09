@@ -527,7 +527,6 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
   const panicActive = useDashboardStore((s) => s.panicState?.status === 'active');
   // Radar color: red during panic, cyan normally
   const rc  = panicActive ? '255,30,30'  : '34,232,255';
-  const sig = panicActive ? '#ff1e1e'    : 'var(--d-sig)';
 
   // Resize map when container size changes (e.g. expand/collapse)
   useEffect(() => {
@@ -563,7 +562,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap', rowGap: 6, ...(expanded && { padding: '12px 16px 0' }) }}>
         <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2, flexShrink: 0 }} />
         <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>TACTICAL MAP</span>
-        <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · Live</span>
+        <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · Reported positions</span>
         <div style={{ flex: 1 }} />
         <LegendDot color='#29ffb0' label='OK' />
         <LegendDot color='#ffc93f' label='WARN' />
@@ -644,17 +643,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
             <text x={80} y={158} textAnchor='middle' fill={`rgba(${rc},.35)`} fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>S</text>
             <text x={155} y={83} textAnchor='start'  fill={`rgba(${rc},.35)`} fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>E</text>
             <text x={4}   y={83} textAnchor='end'    fill={`rgba(${rc},.35)`} fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>W</text>
-            {/* Rotating sweep group — CCW comet tail behind clockwise arm */}
-            <g>
-              <animateTransform attributeName='transform' type='rotate' from='0 80 80' to='360 80 80' dur={panicActive ? '2s' : '6s'} repeatCount='indefinite' />
-              {/* arm=north(80,12); 45°CCW→NW(31.92,31.92); 90°CCW→W(12,80); 135°CCW→SW(31.92,128.08) */}
-              <path d='M 80 80 L 80 12 A 68 68 0 0 0 31.92 31.92' fill={`rgba(${rc},.22)`} />
-              <path d='M 80 80 L 31.92 31.92 A 68 68 0 0 0 12 80'      fill={`rgba(${rc},.12)`} />
-              <path d='M 80 80 L 12 80 A 68 68 0 0 0 31.92 128.08'  fill={`rgba(${rc},.05)`} />
-              {/* Arm: glow then crisp line */}
-              <line x1={80} y1={80} x2={80} y2={12} stroke={`rgba(${rc},.38)`} strokeWidth={panicActive ? 8 : 5} strokeLinecap='round' />
-              <line x1={80} y1={80} x2={80} y2={12} stroke={sig} strokeWidth={1.5} strokeLinecap='round' />
-            </g>
+            {/* Static location reticle. The map has no radar sensor feed, so no synthetic sweep is shown. */}
             {/* Centre reticle */}
             <circle cx={80} cy={80} r={4} fill='none' stroke={`rgba(${rc},.45)`} strokeWidth={1} />
             <circle cx={80} cy={80} r={2} fill={`rgba(${rc},.9)`} />
@@ -684,8 +673,6 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
 
         {/* HUD grid overlay */}
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', backgroundImage: `linear-gradient(rgba(${rc},.02) 1px, transparent 1px), linear-gradient(90deg, rgba(${rc},.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }} />
-        {/* Scanline */}
-        <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, rgba(${rc},.18), transparent)`, animation: `d-scanv ${panicActive ? '1.5s' : '4s'} linear infinite`, pointerEvents: 'none' }} />
         {/* Edge vignette */}
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse at 50% 50%, transparent 65%, rgba(0,0,0,.28))' }} />
       </div>
