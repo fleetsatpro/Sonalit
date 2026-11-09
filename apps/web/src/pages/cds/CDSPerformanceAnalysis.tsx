@@ -169,7 +169,7 @@ function useReducedMotionPreference() {
   return reducedMotion;
 }
 
-function TrendChart({ daily, days }: { daily: CDSAnalyticsPayload['daily']; days: number }) {
+function TrendChart({ daily }: { daily: CDSAnalyticsPayload['daily'] }) {
   const [metric, setMetric] = useState<TrendMetric>('bookings_received');
   const reducedMotion = useReducedMotionPreference();
 
@@ -978,7 +978,7 @@ export function AnalyticsView() {
       {section === 'overview' ? (
         <div id="cpa-panel-overview" className="cpa-v2__workspace" role="region" aria-label="Performance overview" tabIndex={0}>
           <div className="cpa-v2__analysis-grid cpa-v2__analysis-grid--hero-chart">
-            <TrendChart daily={data.daily} days={days} />
+            <TrendChart daily={data.daily} />
           </div>
           <DailyActivityProfile daily={data.daily} />
           <div className="cpa-v2__chart-pair" aria-label="Booking distribution and period comparison charts">
