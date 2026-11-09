@@ -495,7 +495,9 @@ describe('world context integration assembly', () => {
     expect(ctx.relations.some(r => r.predicate === 'APPROACHING')).toBe(true);
     expect(ctx.relations.some(r => r.predicate === 'HAZARD_NEAR_ROUTE' || r.predicate === 'WITHIN')).toBe(true);
 
-    expect(ctx.events.some(e => e.eventType === 'ENVIRONMENTAL_DETERIORATION')).toBe(true);
+    // Ambient weather remains available in the environment layer, but is not
+    // converted into a convoy/vehicle response event without a route relation.
+    expect(ctx.events.some(e => e.eventType === 'ENVIRONMENTAL_DETERIORATION')).toBe(false);
     expect(ctx.operational.alerts).toEqual([]);
 
     const everySqlHasOrgParam = calls

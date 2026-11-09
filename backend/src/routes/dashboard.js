@@ -13,8 +13,194 @@ const logger = require('../utils/logger');
 
 router.use(authenticate, attachOrgDb);
 
-// Returns { rows: [] } on any DB error so individual query failures don't crash endpoints
-const safeQuery = (db, sql, params) => db(sql, params).catch(() => ({ rows: [] }));
+// Keep dashboard aggregation resilient without disguising a failed source as an empty register.
+// Consumers may still render partial results, but must be able to distinguish them from a verified empty result.
+const safeQuery = async (db, sql, params) => {
+  try {
+    const result = await db(sql, params);
+    return { ...result, ok: true };
+  } catch (_) {
+    return { rows: [], ok: false };
+  }
+};
+
+const SPATIAL_ALERT_COPY = Object.freeze({
+  CORRIDOR_EXIT: {
+    title: 'Vehicle outside assigned route corridor',
+    summary: 'The latest route evaluation places this vehicle beyond its configured corridor. Confirm the GPS fix and deviation distance before escalating.',
+    priorityReason: 'High: an active vehicle has crossed its approved route boundary. Verify position freshness and route assignment before intervention.',
+  },
+  ROUTE_DEVIATION: {
+    title: 'Route deviation detected',
+    summary: 'Reported cross-track distance is above the configured route tolerance. Check the position age and distance before changing the plan.',
+    priorityReason: 'Medium: the vehicle is outside its normal route tolerance, but a corridor breach has not been confirmed.',
+  },
+  INCIDENT_NEAR_CONVOY: {
+    title: 'Incident reported near active convoy',
+    summary: 'An incident source has been spatially related to an active convoy. Review the mapped distance, source and observation time.',
+    priorityReason: 'High: a reported incident is close enough to an active movement to require operator verification.',
+  },
+  HAZARD_NEAR_ROUTE: {
+    title: 'Risk zone related to convoy route',
+    summary: 'A mapped risk zone is related to the active route. Check the zone classification and route overlap before replanning.',
+    priorityReason: 'High: the route intersects a mapped risk area that may affect safe passage.',
+  },
+  EXTERNAL_INCIDENT_NEAR_ROUTE: {
+    title: 'External incident near convoy route',
+    summary: 'An external incident feed reports an event related to the route. Verify source freshness and proximity in the originating layer.',
+    priorityReason: 'High: an external incident is spatially related to the planned route and may affect movement.',
+  },
+  EXTERNAL_HAZARD_NEAR_ROUTE: {
+    title: 'External hazard near convoy route',
+    summary: 'An external hazard feed reports a hazard related to the route. Inspect its mapped extent and observation time before changing the plan.',
+    priorityReason: 'High: a sourced hazard is spatially related to the route; its location and freshness need operator review.',
+  },
+  TRAFFIC_CLOSURE: {
+    title: 'Road closure reported on route',
+    summary: 'A traffic source reports a closure related to the planned route. Confirm the affected segment and provider update before rerouting.',
+    priorityReason: 'High: a reported closure may make a planned route segment unusable.',
+  },
+  TRAFFIC_CONGESTION: {
+    title: 'Traffic congestion near route',
+    summary: 'Traffic conditions may affect journey time. This is a movement-planning issue, not by itself a security incident.',
+    priorityReason: 'Medium: congestion can affect ETA and coordination, but does not establish a security threat.',
+  },
+  NATURAL_HAZARD_NEAR_ROUTE: {
+    title: 'Natural hazard related to route',
+    summary: 'A natural-hazard source is spatially related to the route. Review event geometry, source freshness and distance before dispatch or rerouting.',
+    priorityReason: 'High: a reported natural hazard is related to the active route and may affect safe passage.',
+  },
+  STALE_TELEMETRY: {
+    title: 'Vehicle position is stale',
+    summary: 'No sufficiently recent positioning update is available. Movement since the last observation is not verified.',
+    priorityReason: 'Medium: current vehicle position cannot be confirmed; stale telemetry is not proof of hostile activity.',
+  },
+  GPS_GAP: {
+    title: 'Gap in vehicle position history',
+    summary: 'A gap in GPS history means movement during that interval is unobserved. Check the last fix and device connectivity.',
+    priorityReason: 'Medium: the movement record is incomplete, but the gap alone does not establish an incident.',
+  },
+  POSITION_JUMP: {
+    title: 'Implausible vehicle position jump',
+    summary: 'The reported movement rate is outside the configured plausibility threshold. Delayed or inaccurate GPS may explain the jump.',
+    priorityReason: 'Medium: position integrity needs verification; a GPS anomaly alone is not evidence of deliberate diversion.',
+  },
+  LONG_DWELL: {
+    title: 'Vehicle stationary beyond dwell threshold',
+    summary: 'The vehicle has remained stationary beyond the configured dwell period. Confirm whether this is a planned stop, checkpoint or delay.',
+    priorityReason: 'Medium: a prolonged stop needs checking, but its cause is not yet established.',
+  },
+  UNEXPECTED_STOP: {
+    title: 'Unexpected vehicle stop',
+    summary: 'Vehicle movement stopped longer than the configured threshold. Confirm driver and vehicle status before escalation.',
+    priorityReason: 'Medium: the stop may affect safety or schedule; it is not by itself proof of distress.',
+  },
+  VESSEL_APPROACHING_DESTINATION: {
+    title: 'Vessel approaching destination',
+    summary: 'Maritime tracking reports a vessel approaching its destination. Verify the latest AIS observation and arrival window.',
+    priorityReason: 'Medium: this is an arrival-coordination signal, not a security incident by itself.',
+  },
+});
+
+function parseAlertJson(value, fallback) {
+  if (Array.isArray(value) || (value && typeof value === 'object')) return value;
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch (_) { return fallback; }
+  }
+  return fallback;
+}
+
+function spatialEvidenceSummary(eventCode, evidenceValue, relatedValue) {
+  const evidence = parseAlertJson(evidenceValue, []);
+  const related = parseAlertJson(relatedValue, []);
+  const valueOf = (metric) => {
+    const row = evidence.find((entry) => entry && entry.metric === metric);
+    return row ? row.value : null;
+  };
+  const format = (value, digits = 1) => {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? String(Number(number.toFixed(digits))) : null;
+  };
+  const distanceM = related.map((entry) => entry && entry.distanceM != null ? Number(entry.distanceM) : NaN)
+    .find((value) => Number.isFinite(value) && value >= 0);
+  const measuredDistance = distanceM == null ? null
+    : distanceM >= 1000 ? (format(distanceM / 1000, 2) + ' km') : (format(distanceM, 0) + ' m');
+  if (eventCode === 'CORRIDOR_EXIT' || eventCode === 'ROUTE_DEVIATION') {
+    const details = [];
+    const crossTrack = format(valueOf('cross_track_km'));
+    const tolerance = format(valueOf('corridor_km') ?? valueOf('deviation_threshold_km'));
+    if (crossTrack && tolerance) details.push('Measured cross-track distance ' + crossTrack + ' km; configured corridor ' + tolerance + ' km.');
+    else if (crossTrack) details.push('Measured cross-track distance ' + crossTrack + ' km.');
+    const quality = valueOf('telemetry_freshness');
+    if (quality && !['LIVE', 'FRESH', 'CURRENT'].includes(String(quality).toUpperCase())) {
+      details.push('Position quality is ' + String(quality).toUpperCase() + '; a fresh fix is required to confirm the breach.');
+    }
+    if (details.length) return details.join(' ');
+  }
+  if (eventCode === 'POSITION_JUMP') {
+    const actual = format(valueOf('implied_speed_kmh'), 0);
+    const threshold = format(valueOf('threshold_kmh'), 0);
+    if (actual && threshold) return 'Calculated position-change rate ' + actual + ' km/h; plausibility threshold ' + threshold + ' km/h.';
+  }
+  if (eventCode === 'STALE_TELEMETRY') {
+    const rawAge = valueOf('telemetry_age_ms');
+    const age = rawAge == null ? null : format(Number(rawAge) / 60000, 0);
+    if (age) return 'Last reported position is approximately ' + age + ' minutes old.';
+  }
+  if (eventCode === 'GPS_GAP') {
+    const rawGap = valueOf('gap_ms');
+    const gap = rawGap == null ? null : format(Number(rawGap) / 60000, 0);
+    if (gap) return 'Position-history gap is approximately ' + gap + ' minutes.';
+  }
+  if (eventCode === 'LONG_DWELL' || eventCode === 'UNEXPECTED_STOP') {
+    const rawDwell = valueOf('stationary_duration_ms');
+    const dwell = rawDwell == null ? null : format(Number(rawDwell) / 60000, 0);
+    if (dwell) return 'Observed stationary period is approximately ' + dwell + ' minutes.';
+  }
+  if (measuredDistance) return 'Related source geometry is approximately ' + measuredDistance + ' from the vehicle or route reference.';
+  return null;
+}
+
+function alertPresentation(alert) {
+  const metadata = parseAlertJson(alert.metadata, {});
+  const eventCode = String(metadata.eventType || '').toUpperCase();
+  const copy = SPATIAL_ALERT_COPY[eventCode] || null;
+  const severity = String(alert.severity || 'unclassified').toLowerCase();
+  const evidenceSummary = spatialEvidenceSummary(
+    eventCode,
+    alert.spatial_evidence || metadata.evidence,
+    alert.spatial_related_entities || metadata.relatedEntities
+  );
+  const sourceReferences = parseAlertJson(alert.spatial_source_references || metadata.sourceReferences, []);
+  const sourceReference = Array.isArray(sourceReferences) ? sourceReferences[0] : null;
+  const reference = String(sourceReference || '').toLowerCase();
+  const provider = reference.startsWith('open-meteo') ? 'Open-Meteo'
+    : reference.startsWith('tomtom') ? 'TomTom'
+      : reference.startsWith('mapbox') ? 'Mapbox'
+        : reference.startsWith('nasa-eonet') || reference.startsWith('eonet') ? 'NASA EONET'
+          : reference.startsWith('usgs') ? 'USGS'
+            : reference.startsWith('nasa-firms') ? 'NASA FIRMS'
+              : metadata.source === 'sonalit-spatial' ? 'Sonalit spatial rules' : metadata.source || null;
+  const priorityReason = metadata.priorityReason || (
+    eventCode === 'CORRIDOR_EXIT' && severity !== 'high'
+      ? 'Medium: the reported off-route state is not supported by a fresh positioning fix. Confirm current GPS and route distance before escalation. ' + (evidenceSummary || '')
+      : copy ? [copy.priorityReason, evidenceSummary].filter(Boolean).join(' ')
+        : ['critical', 'high'].includes(severity)
+          ? 'The source assigned this priority but supplied no operator rationale. Verify the originating evidence before escalation.'
+          : null
+  );
+  const fallbackTitle = eventCode
+    ? 'Event reported: ' + eventCode.replace(/_/g, ' ').toLowerCase()
+    : String(alert.message || 'Alert reported by source').replace(/\s*\[spatial-event:[^\]]+\]/i, '').trim();
+  return {
+    eventCode: eventCode || null,
+    source: provider,
+    title: copy?.title || fallbackTitle,
+    summary: copy?.summary || 'Review the originating record and its source evidence before deciding whether to act.',
+    priorityReason,
+  };
+}
 
 // ── §2.1 Overview ──────────────────────────────────────────────────────────
 router.get('/overview', asyncHandler(async (req, res) => {
@@ -23,10 +209,22 @@ router.get('/overview', asyncHandler(async (req, res) => {
   const [threatR, kpiR, nextR, shiftR, panicR] = await Promise.all([
     safeQuery(req.db, `
       SELECT
-        COUNT(*) FILTER (WHERE type='sos' AND resolved_at IS NULL) AS sos_open,
-        COUNT(*) FILTER (WHERE severity='critical' AND resolved_at IS NULL) AS crit_open,
-        COUNT(*) FILTER (WHERE resolved_at IS NULL) AS alerts_open
-      FROM alerts WHERE org_id=$1`, [orgId]),
+        COUNT(*) FILTER (WHERE type='sos') AS sos_open,
+        COUNT(*) FILTER (WHERE severity='critical') AS crit_open,
+        COUNT(*) AS alerts_open
+      FROM alerts
+      WHERE org_id=$1
+        AND resolved_at IS NULL
+        AND deleted_at IS NULL
+        AND COALESCE(metadata->>'eventType', '') <> 'ENVIRONMENTAL_DETERIORATION'
+        AND COALESCE(message, '') NOT ILIKE 'Spatial environmental deterioration:%'
+        AND NOT (
+          COALESCE(metadata->>'source', '') = 'sonalit-spatial'
+          AND (
+            COALESCE(severity, 'low') = 'low'
+            OR COALESCE(metadata->>'eventType', '') IN ('CORRIDOR_REENTRY', 'TELEMETRY_RECOVERED', 'HEADING_ANOMALY', 'CHECKPOINT_APPROACH', 'CHECKPOINT_PASS')
+          )
+        )`, [orgId]),
 
     safeQuery(req.db, `
       SELECT
@@ -87,14 +285,21 @@ router.get('/overview', asyncHandler(async (req, res) => {
     kmToday = parseFloat(kmR.rows[0]?.km) || 0;
   } catch (_) { /* defensive: keep dashboard load resilient to this query's failure */ }
 
-  const t = threatR.rows[0];
+  const failedSources = [
+    !threatR.ok && 'alerts',
+    !kpiR.ok && 'operational_metrics',
+    !nextR.ok && 'next_delivery',
+    !shiftR.ok && 'shift',
+    !panicR.ok && 'panic_events',
+  ].filter(Boolean);
+  const t = threatR.rows[0] || {};
   const sosOpen = parseInt(t.sos_open) || 0;
   const critOpen = parseInt(t.crit_open) || 0;
   const alertsOpen = parseInt(t.alerts_open) || 0;
   const panicOpen = parseInt(panicR.rows[0]?.panic_open) || 0;
   const threatLevel = panicOpen > 0 || sosOpen > 0 ? 'critical' : critOpen > 0 ? 'elevated' : 'secure';
 
-  const k = kpiR.rows[0];
+  const k = kpiR.rows[0] || {};
 
   // on_time_pct from recently delivered shipments
   let onTimePct = 100;
@@ -113,6 +318,13 @@ router.get('/overview', asyncHandler(async (req, res) => {
   const shiftRow = shiftR.rows[0];
 
   res.json({
+    data_quality: {
+      state: failedSources.length === 0 ? 'complete' : 'partial',
+      critical_ready: threatR.ok && panicR.ok,
+      kpi_ready: kpiR.ok,
+      failed_sources: failedSources,
+      snapshot_at: new Date().toISOString(),
+    },
     threat: { level: threatLevel, alerts_open: alertsOpen + panicOpen, incidents_active: parseInt(k.incidents_active)||0 },
     kpi: {
       vehicles_live: parseInt(k.vehicles_live)||0,
@@ -224,7 +436,7 @@ router.get('/map', asyncHandler(async (req, res) => {
       SELECT id::text, name, risk_level, lat, lng, COALESCE(radius_km, 5) AS radius_km
       FROM risk_zones
       WHERE active=true AND lat IS NOT NULL AND lng IS NOT NULL
-      LIMIT 20`).catch(() => ({ rows: [] })),
+      LIMIT 20`).then((result) => ({ ...result, ok: true })).catch(() => ({ rows: [], ok: false })),
 
     safeQuery(req.db, `
       SELECT d.id, d.name, d.model, d.assignment_type,
@@ -250,7 +462,17 @@ router.get('/map', asyncHandler(async (req, res) => {
       LIMIT 100`, [orgId]),
   ]);
 
+  const failedSources = [
+    !convoysR.ok && 'convoys',
+    !alertZonesR.ok && 'alert_zones',
+    !vehiclesR.ok && 'vehicles',
+    !geofencesR.ok && 'geofences',
+    !riskzonesR.ok && 'risk_zones',
+    !devicesR.ok && 'guardian_devices',
+  ].filter(Boolean);
+
   res.json({
+    data_quality: { state: failedSources.length === 0 ? 'complete' : 'partial', failed_sources: failedSources, snapshot_at: new Date().toISOString() },
     convoys: convoysR.rows.map((c, i) => ({
       id: c.id, name: c.name || `Convoy ${i+1}`, status: c.status,
       lat: c.lat ? parseFloat(c.lat) : null,
@@ -490,26 +712,55 @@ router.get('/alerts', asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
   try {
     const r = await req.db(`
-      SELECT id, severity, type, message,
-             convoy_id, created_at AS occurred_at,
-             resolved_at IS NOT NULL AS acknowledged
-      FROM alerts WHERE org_id=$1
+      SELECT a.id, a.severity, a.type, a.message, a.metadata,
+             a.convoy_id, a.created_at AS occurred_at,
+             a.resolved_at IS NOT NULL AS acknowledged,
+             se.evidence AS spatial_evidence,
+             se.related_entities AS spatial_related_entities,
+             se.source_references AS spatial_source_references
+      FROM alerts a
+      LEFT JOIN LATERAL (
+        SELECT evidence, related_entities, source_references
+        FROM spatial_events se
+        WHERE se.org_id=a.org_id
+          AND se.event_key=a.metadata->>'spatialEventKey'
+        ORDER BY se.updated_at DESC, se.detected_at DESC
+        LIMIT 1
+      ) se ON true
+      WHERE a.org_id=$1
+        AND a.resolved_at IS NULL
+        AND a.deleted_at IS NULL
+        AND COALESCE(a.metadata->>'eventType', '') <> 'ENVIRONMENTAL_DETERIORATION'
+        AND COALESCE(a.message, '') NOT ILIKE 'Spatial environmental deterioration:%'
+        AND NOT (
+          COALESCE(a.metadata->>'source', '') = 'sonalit-spatial'
+          AND (
+            COALESCE(a.severity, 'low') = 'low'
+            OR COALESCE(a.metadata->>'eventType', '') IN ('CORRIDOR_REENTRY', 'TELEMETRY_RECOVERED', 'HEADING_ANOMALY', 'CHECKPOINT_APPROACH', 'CHECKPOINT_PASS')
+          )
+        )
       ORDER BY
-        CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
-        created_at DESC
+        CASE a.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
+        a.created_at DESC
       LIMIT $2`, [req.user.org_id, limit]);
 
-    res.json({ data: r.rows.map(a => ({
-      id: a.id,
-      severity: a.severity,
-      type: a.type,
-      title: a.message,
-      summary: a.message || '',
-      convoy_id: a.convoy_id || null,
-      occurred_at: new Date(a.occurred_at).toISOString(),
-      acknowledged: a.acknowledged,
-    })) });
-  } catch (_) { res.json({ data: [] }); }
+    res.json({ data: r.rows.map(a => {
+      const presentation = alertPresentation(a);
+      return {
+        id: a.id,
+        severity: a.severity,
+        type: a.type,
+        event_code: presentation.eventCode,
+        source: presentation.source,
+        title: presentation.title,
+        summary: presentation.summary,
+        priority_reason: presentation.priorityReason,
+        convoy_id: a.convoy_id || null,
+        occurred_at: new Date(a.occurred_at).toISOString(),
+        acknowledged: a.acknowledged,
+      };
+    }) });
+  } catch (_) { res.status(503).json({ error: 'Alert register unavailable', data: [] }); }
 }));
 
 // ── §2.5 Convoys ───────────────────────────────────────────────────────────
@@ -528,6 +779,7 @@ router.get('/convoys', asyncHandler(async (req, res) => {
 
     const convoyIds = r.rows.map(c => c.id);
     let checkpoints = [];
+    let checkpointsReady = true;
     if (convoyIds.length > 0) {
       const ph = convoyIds.map((_, i) => `$${i+2}`).join(',');
       const cpR = await safeQuery(req.db, `
@@ -536,6 +788,7 @@ router.get('/convoys', asyncHandler(async (req, res) => {
         WHERE cc.convoy_id IN (${ph})
         ORDER BY cc.convoy_id`, [orgId, ...convoyIds]);
       checkpoints = cpR.rows;
+      checkpointsReady = cpR.ok;
     }
 
     const cpByConvoy = {};
@@ -544,7 +797,9 @@ router.get('/convoys', asyncHandler(async (req, res) => {
       cpByConvoy[cp.convoy_id].push(cp);
     }
 
-    res.json({ data: r.rows.map(c => ({
+    res.json({
+      data_quality: { checkpoints_ready: checkpointsReady, snapshot_at: new Date().toISOString() },
+      data: r.rows.map(c => ({
       id: c.id,
       name: c.name || c.id,
       status: c.status,
@@ -558,8 +813,9 @@ router.get('/convoys', asyncHandler(async (req, res) => {
         status: cp.reached_at ? 'done' : 'pending',
         reached_at: cp.reached_at ? new Date(cp.reached_at).toISOString() : null,
       })),
-    })) });
-  } catch (_) { res.json({ data: [] }); }
+      }))
+    });
+  } catch (_) { res.status(503).json({ error: 'Convoy register unavailable', data: [] }); }
 }));
 
 // ── §2.6 Route Risk ────────────────────────────────────────────────────────
@@ -921,7 +1177,16 @@ router.get('/timeline', asyncHandler(async (req, res) => {
     fraction: Math.max(0, Math.min(1, (new Date(e.time).getTime() - now) / (end - now))),
   })).sort((a, b) => a.fraction - b.fraction);
 
-  res.json({ data: events });
+  const failedSources = [
+    !arrivalsR.ok && 'arrivals',
+    !checkpointsR.ok && 'checkpoints',
+    !shiftsR.ok && 'shifts',
+  ].filter(Boolean);
+
+  res.json({
+    data: events,
+    data_quality: { state: failedSources.length === 0 ? 'complete' : 'partial', failed_sources: failedSources, snapshot_at: new Date().toISOString() },
+  });
 }));
 
 module.exports = router;

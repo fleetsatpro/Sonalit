@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { ArrowUpRight, Mic, Siren } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
@@ -16,12 +17,31 @@ function chipFor(type: string, severity?: string): Chip {
   if (t.includes('panic') || t.includes('sos')) return { label: 'SOS', hue: '255,59,92' };
   if (t.includes('voice')) return { label: 'VOICE NOTE', hue: '55,230,255' };
   if (t.includes('capture') || t.includes('photo')) return { label: 'CAPTURE', hue: '55,230,255' };
-  if (t.includes('geofence') || t.includes('corridor') || t.includes('deviation')) return { label: 'GEOFENCE', hue: '255,178,62' };
+  if (t.includes('natural_hazard') || t.includes('hazard_near_route') || t.includes('risk_zone')) return { label: 'HAZARD', hue: '255,178,62' };
+  if (t.includes('traffic_closure') || t.includes('traffic_congestion') || t.includes('traffic')) return { label: 'TRAFFIC', hue: '255,178,62' };
+  if (t.includes('stale_telemetry') || t.includes('gps_gap') || t.includes('position_jump')) return { label: 'GPS', hue: '55,230,255' };
+  if (t.includes('geofence') || t.includes('corridor') || t.includes('deviation')) return { label: 'ROUTE', hue: '255,178,62' };
   if (t.includes('brak') || t.includes('speed') || t.includes('driver') || t.includes('accel')) return { label: 'DRIVER', hue: '55,230,255' };
   if (t.includes('fuel')) return { label: 'FUEL', hue: '255,178,62' };
   if (t.includes('convoy')) return { label: 'CONVOY', hue: '34,227,154' };
-  if (severity === 'critical' || severity === 'high') return { label: 'ALERT', hue: '255,59,92' };
+  if (t.includes('incident')) return { label: 'INCIDENT', hue: '255,59,92' };
+  if (t.includes('alert') || severity === 'critical' || severity === 'high') return { label: 'ALERT', hue: '255,59,92' };
   return { label: 'EVENT', hue: '255,178,62' };
+}
+
+function isAmbientWeatherRecord(record: {
+  type?: unknown;
+  event_code?: unknown;
+  title?: unknown;
+  message?: unknown;
+}) {
+  const identity = [record.type, record.event_code, record.title, record.message]
+    .filter((value) => value !== undefined && value !== null)
+    .map(String)
+    .join(' ');
+  return /ENVIRONMENTAL[_\s.-]+DETERIORATION/i.test(identity)
+    || /^\s*Spatial\s+environmental\s+deterioration\s*:/i.test(identity)
+    || /\[spatial-event:ENVIRONMENTAL[_\s.-]+DETERIORATION:/i.test(identity);
 }
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -35,6 +55,8 @@ function relTime(iso: string): string {
   return `${Math.floor(sec / 86400)}d`;
 }
 
+export type QueueDestination = '/alerts' | '/panic-center' | '/guardian' | '/surveillance' | '/convoys' | '/incidents' | '/field-officers' | '/fleet';
+
 export interface QueueItem {
   id: string;
   chip: Chip;
@@ -42,7 +64,25 @@ export interface QueueItem {
   body?: string;
   at: string;
   rank: number;
+  source: string;
+  destination: QueueDestination;
+  severity?: string;
+  priorityReason?: string | null;
+  recordType: 'alert' | 'event';
   ackId?: string;
+}
+
+function destinationForFeed(type: string): QueueDestination {
+  const value = type.toLowerCase();
+  if (value.includes('panic') || value.includes('sos')) return '/panic-center';
+  if (value.includes('voice')) return '/guardian';
+  if (value.includes('capture') || value.includes('photo')) return '/surveillance';
+  if (value.includes('geofence') || value.includes('corridor') || value.includes('deviation')) return '/alerts';
+  if (value.includes('convoy')) return '/convoys';
+  if (value.includes('incident')) return '/incidents';
+  if (value.includes('crew') || value.includes('field')) return '/field-officers';
+  if (value.includes('alert')) return '/alerts';
+  return '/fleet';
 }
 
 function LockCorner({ pos }: { pos: 'tl' | 'tr' | 'bl' | 'br' }) {
@@ -66,9 +106,12 @@ function SectionHeader({ children, count }: { children: React.ReactNode; count?:
   );
 }
 
-interface PriorityQueueProps { onSelect?: (item: QueueItem) => void }
+interface PriorityQueueProps {
+  onSelect?: (item: QueueItem) => void;
+  showNextDelivery?: boolean;
+}
 
-const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQueueProps) {
+const PriorityQueue = React.memo(function PriorityQueue({ onSelect, showNextDelivery = true }: PriorityQueueProps) {
   const nav = useNavigate();
   const qc = useQueryClient();
   const alerts = useDashboardStore((s) => s.alerts);
@@ -79,7 +122,7 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
   const convoys = useDashboardStore((s) => s.convoys);
   const { setAlerts, removeAlert } = useDashboardStore.getState();
 
-  useQuery({
+  const alertsQuery = useQuery({
     queryKey: ['dashboard-alerts-ops'],
     queryFn: async () => { const r = await api.get<{ data: DashboardAlert[] }>('/dashboard/alerts?limit=10'); setAlerts(r.data.data ?? []); return r.data.data; },
     staleTime: 30000,
@@ -91,26 +134,49 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
     onSuccess: (_, id) => { removeAlert(id); qc.invalidateQueries({ queryKey: ['alerts-unread-count'] }); },
   });
 
+  const operationalAlerts = alerts.filter((alert) => !isAmbientWeatherRecord(alert));
   const items: QueueItem[] = [
-    ...alerts.map((a): QueueItem => ({
+    ...operationalAlerts.map((a): QueueItem => ({
       id: `a-${a.id}`,
-      chip: chipFor(a.type, a.severity),
+      chip: chipFor(a.event_code || a.type, a.severity),
       title: shortenIds(a.title),
       ...(a.summary && a.summary.trim() !== a.title.trim() ? { body: shortenIds(a.summary) } : {}),
+      ...(a.priority_reason ? { priorityReason: a.priority_reason } : {}),
+      source: a.source || 'Dashboard alert register',
       at: a.occurred_at,
       rank: SEV_RANK[a.severity] ?? 3,
+      destination: '/alerts',
+      severity: a.severity,
+      recordType: 'alert',
       ...(!a.acknowledged ? { ackId: a.id } : {}),
     })),
     ...feedItems
-      .filter((f) => !alerts.some((a) => a.id === f.id))
+      .filter((f) => !operationalAlerts.some((a) => a.id === f.id))
+      .filter((f) => !isAmbientWeatherRecord(f))
       .map((f): QueueItem => ({
         id: `f-${f.id}`,
         chip: chipFor(f.type, f.severity),
         title: shortenIds(f.message),
         at: f.timestamp,
         rank: SEV_RANK[f.severity ?? f.type] ?? 3,
+        source: 'Realtime session event',
+        destination: destinationForFeed(f.type),
+        severity: f.severity,
+        recordType: 'event',
       })),
   ].sort((x, y) => x.rank - y.rank || new Date(y.at).getTime() - new Date(x.at).getTime());
+
+  const [filter, setFilter] = React.useState<'all' | 'critical' | 'high' | 'other'>('all');
+  const visibleItems = items.filter((item) => filter === 'all'
+    || (filter === 'critical' && item.severity === 'critical')
+    || (filter === 'high' && item.severity === 'high')
+    || (filter === 'other' && item.severity !== 'critical' && item.severity !== 'high'));
+  const filterCounts = {
+    all: items.length,
+    critical: items.filter((item) => item.severity === 'critical').length,
+    high: items.filter((item) => item.severity === 'high').length,
+    other: items.filter((item) => item.severity !== 'critical' && item.severity !== 'high').length,
+  };
 
   const nextDelivery = overview?.next_delivery ?? null;
   const focusConvoy = nextDelivery ? convoys.find((c) => c.id === nextDelivery.convoy_id) ?? null : convoys[0] ?? null;
@@ -118,13 +184,20 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
   return (
     <aside className='d-console-queue' style={{ background: 'var(--d-carbon)', borderLeft: '1px solid var(--d-rim2)', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none', minHeight: 0 }}>
       <SectionHeader count={items.length + (panic ? 1 : 0)}>PRIORITY QUEUE</SectionHeader>
+      <nav className='ccxq-filters' aria-label='Filter priority response records'>
+        {(['all', 'critical', 'high', 'other'] as const).map((key) => (
+          <button key={key} type='button' className={filter === key ? 'ccxq-filter is-active' : 'ccxq-filter'} aria-pressed={filter === key} onClick={() => setFilter(key)}>
+            <span>{key === 'other' ? 'OTHER' : key.toUpperCase()}</span><b>{filterCounts[key]}</b>
+          </button>
+        ))}
+      </nav>
 
       {panic && (
-        <div style={{ padding: '0 14px 10px' }}>
-          <div style={{ position: 'relative', padding: '10px 12px', background: 'rgba(255,59,92,.08)', border: '1px solid var(--d-fire)', borderRadius: 8, animation: 'd-crit 1.8s ease-in-out infinite' }}>
+        <div className='ccxq-panic-wrap' style={{ padding: '0 14px 10px' }}>
+          <div className='ccxq-panic-card' style={{ position: 'relative', padding: '10px 12px', background: 'rgba(255,59,92,.08)', border: '1px solid var(--d-fire)', borderRadius: 8, animation: 'd-crit 1.8s ease-in-out infinite' }}>
             <LockCorner pos='tl' /><LockCorner pos='tr' /><LockCorner pos='bl' /><LockCorner pos='br' />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '.12em', color: '#fff', background: 'var(--d-fire)', borderRadius: 4, padding: '1px 6px' }}>SOS</span>
+              <span className='ccxq-panic-badge'><Siren size={12} strokeWidth={2.1} aria-hidden='true' /> SOS</span>
               <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, color: 'var(--d-fire)', letterSpacing: '.06em' }}>PANIC ACTIVE</span>
               <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>{relTime(panic.triggered_at)}</span>
             </div>
@@ -135,10 +208,10 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
       )}
 
       {voiceNote && (
-        <div style={{ padding: '0 14px 10px' }}>
-          <button type='button' onClick={() => nav({ to: '/guardian' })} style={{ width: '100%', textAlign: 'left', padding: '9px 12px', background: 'rgba(55,230,255,.06)', border: '1px solid rgba(55,230,255,.4)', borderRadius: 8, cursor: 'pointer' }}>
+        <div className='ccxq-voice-wrap' style={{ padding: '0 14px 10px' }}>
+          <button className='ccxq-voice-card' type='button' onClick={() => nav({ to: '/guardian' })} style={{ width: '100%', textAlign: 'left', padding: '9px 12px', background: 'rgba(55,230,255,.06)', border: '1px solid rgba(55,230,255,.4)', borderRadius: 8, cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <span style={{ fontSize: 8, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '.1em', color: '#37e6ff', border: '1px solid rgba(55,230,255,.5)', borderRadius: 4, padding: '1px 5px' }}>VOICE NOTE</span>
+              <span className='ccxq-voice-badge'><Mic size={12} strokeWidth={1.9} aria-hidden='true' /> VOICE NOTE</span>
               <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>{relTime(voiceNote.createdAt)}</span>
             </div>
             <div style={{ fontSize: 12, color: 'var(--d-t1)', lineHeight: 1.35 }}>{voiceNote.deviceName} → dispatch{voiceNote.durationMs ? ` · ${Math.round(voiceNote.durationMs / 1000)}s clip` : ''}</div>
@@ -148,29 +221,33 @@ const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQu
 
       <div style={{ padding: '0 14px 10px' }}><Suspense fallback={null}><ResponseCrewPanel /></Suspense></div>
 
-      <div style={{ flex: 1, padding: '0 14px' }}>
-        {items.length === 0 && !panic && !voiceNote && <div style={{ fontSize: 12, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', padding: '10px 2px' }}>All clear — awaiting new operational events.</div>}
-        {items.map((it) => (
-          <div key={it.id} style={{ padding: '11px 11px', marginBottom: 8, background: 'linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.015))', borderRadius: 10, border: '1px solid var(--d-rim2)', borderLeft: `4px solid rgb(${it.chip.hue})` }}>
-            <button type='button' onClick={() => onSelect?.(it)} disabled={!onSelect} style={{ width: '100%', display: 'block', padding: 0, margin: 0, background: 'none', border: 0, color: 'inherit', textAlign: 'left', cursor: onSelect ? 'pointer' : 'default' }} aria-label={`Open ${it.title}`}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.1em', color: `rgb(${it.chip.hue})`, border: `1px solid rgba(${it.chip.hue},.5)`, borderRadius: 5, padding: '2px 6px', flexShrink: 0 }}>{it.chip.label}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--d-t3)', flexShrink: 0 }}>{relTime(it.at)}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--d-t1)', lineHeight: 1.3 }}>{it.title}</div>
-                  {it.body && <div style={{ fontSize: 12, color: 'var(--d-t2)', lineHeight: 1.4, marginTop: 4 }}>{it.body}</div>}
-                </div>
-                {onSelect && <span aria-hidden='true' style={{ color: `rgb(${it.chip.hue})`, fontSize: 18, lineHeight: 1 }}>›</span>}
-              </div>
+      <div className='ccxq-record-list'>
+        {alertsQuery.isError && <div className='ccxq-source-warning' role='status'>Alert register unavailable. Previously received session events may still be visible; no all-clear state can be inferred.</div>}
+        {visibleItems.length === 0 && !panic && !voiceNote && <div className='ccxq-empty'>{items.length > 0 ? 'No records match this filter.' : alertsQuery.isPending ? 'Loading the alert response window…' : alertsQuery.isError ? 'No verified alert register is available.' : 'No alert records were returned in the current response window. This is not a global all-clear.'}</div>}
+        {visibleItems.map((it) => (
+          <article key={it.id} className={'ccxq-record ccxq-record--' + (it.severity || 'unclassified')} style={{ borderLeftColor: `rgb(${it.chip.hue})` }}>
+            <button type='button' className='ccxq-record__select' onClick={() => onSelect?.(it)} disabled={!onSelect} aria-label={`Open ${it.title}`}>
+              <span className='ccxq-record__meta'>
+                <span className='ccxq-record__type'><span>{it.chip.label}</span></span>
+                <span className='ccxq-record__source'>{it.recordType === 'alert' ? 'ALERT REGISTER' : 'SESSION EVENT'}</span>
+                <time dateTime={it.at}>{relTime(it.at)}</time>
+              </span>
+              <span className='ccxq-record__title'>{it.title}</span>
+              {it.body && <span className='ccxq-record__body'>{it.body}</span>}
+              {it.priorityReason && (
+                <span className='ccxq-record__priority'>
+                  <strong>WHY {(it.severity || 'PRIORITY').toUpperCase()}</strong>
+                  <span>{it.priorityReason}</span>
+                </span>
+              )}
+              <span className='ccxq-record__footer'><span>{it.source}</span>{onSelect && <ArrowUpRight size={13} aria-hidden='true' />}</span>
             </button>
-            {it.ackId && <button type='button' onClick={() => ackMut.mutate(it.ackId!)} disabled={ackMut.isPending} style={{ marginTop: 8, border: '1px solid var(--d-rim2)', borderRadius: 5, background: 'transparent', color: 'var(--d-t2)', fontSize: 10, padding: '4px 10px', fontWeight: 700, letterSpacing: '.08em', cursor: ackMut.isPending ? 'wait' : 'pointer' }}>{ackMut.isPending ? 'ACK…' : 'ACKNOWLEDGE'}</button>}
-          </div>
+            {it.ackId && <button type='button' className='ccxq-record__ack' onClick={() => ackMut.mutate(it.ackId!)} disabled={ackMut.isPending}>{ackMut.isPending ? 'ACKNOWLEDGING…' : 'ACKNOWLEDGE'}</button>}
+          </article>
         ))}
       </div>
 
-      {(nextDelivery || focusConvoy) && (
+      {showNextDelivery && (nextDelivery || focusConvoy) && (
         <div style={{ borderTop: '1px solid var(--d-rim2)', padding: '10px 14px 14px', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{ width: 3, height: 12, background: '#37e6ff', borderRadius: 2, flexShrink: 0 }} />

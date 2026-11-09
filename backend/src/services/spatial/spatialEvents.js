@@ -28,13 +28,32 @@ function clamp01(n) {
 }
 
 function severityFor(type) {
-  if (type === 'CORRIDOR_EXIT' || type === 'POSITION_JUMP') return 'high';
-  if (type === 'INCIDENT_NEAR_CONVOY' || type === 'HAZARD_NEAR_ROUTE' || type === 'EXTERNAL_INCIDENT_NEAR_ROUTE' || type === 'EXTERNAL_HAZARD_NEAR_ROUTE' || type === 'TRAFFIC_CLOSURE') return 'high';
-  if (type === 'TRAFFIC_CONGESTION' || type === 'VESSEL_APPROACHING_DESTINATION') return 'medium';
-  if (type === 'NATURAL_HAZARD_NEAR_ROUTE') return 'high';
-  if (type === 'ENVIRONMENTAL_DETERIORATION') return 'medium';
-  if (type === 'STALE_TELEMETRY' || type === 'GPS_GAP') return 'medium';
+  if (type === 'CORRIDOR_EXIT' || type === 'INCIDENT_NEAR_CONVOY' ||
+      type === 'HAZARD_NEAR_ROUTE' || type === 'EXTERNAL_INCIDENT_NEAR_ROUTE' ||
+      type === 'EXTERNAL_HAZARD_NEAR_ROUTE' || type === 'TRAFFIC_CLOSURE' ||
+      type === 'NATURAL_HAZARD_NEAR_ROUTE') return 'high';
+  if (type === 'ROUTE_DEVIATION' || type === 'POSITION_JUMP' ||
+      type === 'STALE_TELEMETRY' || type === 'GPS_GAP' ||
+      type === 'UNEXPECTED_STOP' || type === 'LONG_DWELL' ||
+      type === 'TRAFFIC_CONGESTION' || type === 'VESSEL_APPROACHING_DESTINATION') return 'medium';
+  if (type === 'ENVIRONMENTAL_DETERIORATION') return 'medium'; // Legacy only; ambient weather is never emitted as an alert.
   return 'low';
+}
+
+const NON_ALERTING_EVENT_TYPES = new Set([
+  'CORRIDOR_REENTRY',
+  'TELEMETRY_RECOVERED',
+  'HEADING_ANOMALY',
+  'CHECKPOINT_APPROACH',
+  'CHECKPOINT_PASS',
+]);
+
+function shouldCreateSpatialAlert(event) {
+  if (!event) return false;
+  if (event.eventType === 'ENVIRONMENTAL_DETERIORATION') return false;
+  if (NON_ALERTING_EVENT_TYPES.has(String(event.eventType || ''))) return false;
+  // Match the persisted event default: an omitted severity is MEDIUM, not LOW.
+  return String(event.severity || 'medium').toLowerCase() !== 'low';
 }
 
 
@@ -280,16 +299,22 @@ function detectSpatialEvents(context, options) {
       : vehicle.convoyId || null;
 
     if (relation === 'OFF_ROUTE') {
+      const positionQuality = String(vehicle.quality && vehicle.quality.freshnessClass || 'UNKNOWN').toUpperCase();
+      const positionAgeMs = Number(vehicle.freshnessMs);
+      const positionFresh = ['LIVE', 'FRESH', 'CURRENT'].includes(positionQuality)
+        && (!Number.isFinite(positionAgeMs) || positionAgeMs <= cfg.staleMs);
       events.push(makeEvent({
         type: 'CORRIDOR_EXIT',
         vehicle,
         convoyId,
+        severity: positionFresh ? 'high' : 'medium',
         previousState: previousRelation || 'UNKNOWN',
         newState: 'OUTSIDE_CORRIDOR',
         evidence: [
           { metric: 'cross_track_km', value: Number(route.crossTrackKm) },
           { metric: 'corridor_km', value: Number(route.corridorKm) },
-          { metric: 'telemetry_freshness', value: vehicle.quality && vehicle.quality.freshnessClass || 'UNKNOWN' }
+          { metric: 'telemetry_freshness', value: positionQuality },
+          { metric: 'telemetry_age_ms', value: Number.isFinite(positionAgeMs) ? positionAgeMs : null }
         ]
       }));
     } else if (previousRelation === 'OFF_ROUTE' && relation === 'ON_ROUTE') {
@@ -334,7 +359,7 @@ function detectSpatialEvents(context, options) {
         type: 'STALE_TELEMETRY',
         vehicle,
         convoyId,
-        severity: ageMs > 30 * 60 * 1000 ? 'high' : 'medium',
+        severity: 'medium',
         previousState: 'FRESH',
         newState: 'STALE',
         evidence: [
@@ -363,7 +388,7 @@ function detectSpatialEvents(context, options) {
         type: 'GPS_GAP',
         vehicle,
         convoyId,
-        severity: gapMs > 30 * 60 * 1000 ? 'high' : 'medium',
+        severity: 'medium',
         previousState: 'CONTINUOUS',
         newState: 'GAP',
         evidence: [
@@ -382,7 +407,7 @@ function detectSpatialEvents(context, options) {
         vehicle,
         convoyId,
         eventKey: 'POSITION_JUMP:vehicle:' + String(vehicle.id) + ':' + Math.floor(now / cfg.eventBucketMs),
-        severity: 'high',
+        severity: 'medium',
         evidence: [
           { metric: 'implied_speed_kmh', value: impliedKmh },
           { metric: 'threshold_kmh', value: cfg.jumpMaxKmh },
@@ -414,7 +439,7 @@ function detectSpatialEvents(context, options) {
         type: stationaryMs >= cfg.longDwellMs ? 'LONG_DWELL' : 'UNEXPECTED_STOP',
         vehicle,
         convoyId,
-        severity: stationaryMs >= cfg.longDwellMs ? 'high' : 'medium',
+        severity: 'medium',
         evidence: [
           { metric: 'stationary_duration_ms', value: stationaryMs },
           { metric: 'speed_kmh', value: Number(vehicle.speedKmh) || 0 }
@@ -502,7 +527,14 @@ function detectSpatialEvents(context, options) {
       newState: 'NEAR',
       observedAt: relation.observedAt || null,
       detectedAt: new Date().toISOString(),
-      severity: relation.severity || 'high',
+      severity: (() => {
+        const ruleSeverity = severityFor(type);
+        const supplied = String(relation.severity || '').toLowerCase();
+        const rank = { critical: 0, high: 1, medium: 2, low: 3 };
+        // A source may downgrade a rule but cannot inflate a medium event to HIGH.
+        if (!(supplied in rank)) return ruleSeverity;
+        return rank[supplied] > rank[ruleSeverity] ? supplied : ruleSeverity;
+      })(),
       confidence: clamp01(relation.confidence == null ? 0.7 : relation.confidence),
       operationalConfidence: clamp01(relation.operationalConfidence == null ? 0.7 : relation.operationalConfidence),
       evidence: (relation.evidence || []).concat(
@@ -516,31 +548,8 @@ function detectSpatialEvents(context, options) {
     });
   }
 
-  for (const env of (context && context.environment || [])) {
-    const hazards = Array.isArray(env.attributes && env.attributes.hazards) ? env.attributes.hazards : [];
-    if (!hazards.length) continue;
-    const anchorVehicle = context && context.operational && context.operational.vehicles && context.operational.vehicles[0];
-    events.push({
-      eventKey: 'ENVIRONMENTAL_DETERIORATION:' + String(env.id),
-      eventType: 'ENVIRONMENTAL_DETERIORATION',
-      subjectType: anchorVehicle ? 'vehicle' : (context && context.mission && context.mission.convoyId ? 'convoy' : 'context'),
-      subjectId: String(anchorVehicle ? anchorVehicle.id : (context && context.mission && context.mission.convoyId || 'context')),
-      convoyId: context && context.mission && context.mission.convoyId || null,
-      relatedEntities: [{ id: env.id, type: 'weather' }].concat(anchorVehicle ? [{ id: anchorVehicle.id, type: 'vehicle' }] : []),
-      previousState: null,
-      newState: 'DEGRADED',
-      observedAt: env.observedAt || null,
-      detectedAt: new Date().toISOString(),
-      severity: env.attributes && env.attributes.severity === 'high' ? 'high' : 'medium',
-      confidence: 0.8,
-      operationalConfidence: 0.7,
-      evidence: hazards.map(function(h) { return { metric: 'weather_hazard', value: h }; }),
-      sourceReferences: [env.provenance && env.provenance.sourceReference || env.id],
-      uncertainty: ['Weather context does not by itself determine road safety.'],
-      ruleVersion: 'spatial-v2',
-      status: 'open'
-    });
-  }
+  // Ambient weather observations are context, not operational alerts.
+  // Only a route-related hazard relation above can promote weather into this stream.
 
   return events;
 }
@@ -706,6 +715,7 @@ async function persistSpatialEvents(db, events, options) {
     // Occurrence events are already resolved in the spatial_events ledger, but
     // still create the normal Sonalit alert exactly once at first persistence.
     if (!wasCreated) continue;
+    if (!shouldCreateSpatialAlert(event)) continue;
 
     const alertType = alertTypeFor(event.eventType);
     const evidenceText = (event.evidence || []).slice(0, 3).map(function(e) {
@@ -759,6 +769,12 @@ async function persistSpatialEvents(db, events, options) {
                 spatialAlertSemanticKey,
                 spatialEventKey: event.eventKey,
                 eventType: event.eventType,
+                evidence: event.evidence || [],
+                relatedEntities: event.relatedEntities || [],
+                sourceReferences: event.sourceReferences || [],
+                confidence: event.confidence,
+                operationalConfidence: event.operationalConfidence,
+                uncertainty: event.uncertainty || [],
                 ruleVersion: event.ruleVersion || 'spatial-v2'
               })
             ]
@@ -807,6 +823,8 @@ async function persistSpatialEvents(db, events, options) {
 module.exports = {
   detectSpatialEvents,
   persistSpatialEvents,
+  severityFor,
+  shouldCreateSpatialAlert,
   reconcileSpatialEvents,
   DEFAULTS,
   EVENT_MODES,

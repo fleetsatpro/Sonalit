@@ -1,193 +1,901 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Activity, AlertTriangle, Clock3, Crosshair, Radio, Route, ShieldCheck, Siren, Truck, Users } from 'lucide-react';
+import {
+  Activity,
+  AlertOctagon,
+  ArrowRight,
+  ArrowUpRight,
+  CalendarClock,
+  Clock3,
+  Crosshair,
+  MapPin,
+  Radio,
+  RefreshCw,
+  Route,
+  ShieldAlert,
+  Siren,
+  Truck,
+  Wifi,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import { api } from '../lib/api.js';
-import { useDashboardStore } from '../stores/dashboardStore.js';
-import type { DashboardOverview } from '../stores/dashboardStore.js';
+import { getSnapshot, subscribe as subscribeConnectivity } from '../lib/offline/connectivity.js';
+import { useDashboardStore, type DashboardOverview, type ConvoyUpdate } from '../stores/dashboardStore.js';
 import PriorityQueue, { type QueueItem } from '../components/dashboard/PriorityQueue.js';
-import EventsTicker from '../components/dashboard/EventsTicker.js';
-import '../styles/command-centre-gold.css';
+import '../styles/command-centre.css';
 
 const TacticalMap = lazy(() => import('../components/dashboard/TacticalMap.js'));
 
-function formatTime(iso?: string | null) {
-  if (!iso) return '—';
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+type CommandConvoy = {
+  id: string;
+  name: string;
+  status: string;
+  origin: string | null;
+  destination: string | null;
+  eta: string | null;
+  truck_count: number;
+  checkpoints: Array<{ name: string; status: string; reached_at: string | null }>;
+};
+
+type CommandConvoyResponse = {
+  data?: CommandConvoy[];
+  data_quality?: { checkpoints_ready?: boolean; snapshot_at?: string };
+};
+
+type CommandTimelineResponse = {
+  data?: CommandMilestone[];
+  data_quality?: { state?: 'complete' | 'partial'; failed_sources?: string[]; snapshot_at?: string };
+};
+
+type CommandVehicle = {
+  id: string;
+  registration: string;
+  convoy_id: string | null;
+  status: string;
+  speed_kmh: number;
+  last_ping_at: string | null;
+};
+
+type CommandMilestone = {
+  type: 'arrival' | 'checkpoint' | 'shift' | string;
+  label: string;
+  time: string;
+  convoy_id?: string | null;
+  fraction: number;
+};
+
+type MapSnapshot = {
+  data_quality?: { state?: 'complete' | 'partial'; failed_sources?: string[]; snapshot_at?: string };
+  vehicles?: unknown[];
+  convoys?: unknown[];
+  alert_zones?: unknown[];
+  geofences?: unknown[];
+  riskzones?: unknown[];
+};
+
+function ageLabel(milliseconds: number): string {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return '—';
+  const seconds = Math.floor(milliseconds / 1000);
+  if (seconds < 60) return seconds + 's';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+  if (seconds < 86400) return Math.floor(seconds / 3600) + 'h';
+  return Math.floor(seconds / 86400) + 'd';
 }
 
-function formatAge(iso?: string | null) {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(ms)) return '—';
-  const sec = Math.max(0, Math.floor(ms / 1000));
-  if (sec < 60) return `${sec}s`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
-  return `${Math.floor(sec / 3600)}h`;
+function timeLabel(value?: string | null): string {
+  if (!value) return '—';
+  const stamp = new Date(value);
+  return Number.isNaN(stamp.getTime())
+    ? '—'
+    : stamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-function Metric({ icon: Icon, label, value, detail, tone = 'normal' }: { icon: React.ElementType; label: string; value: string | number; detail?: string; tone?: 'normal' | 'warn' | 'critical' }) {
+function dateTimeLabel(value?: string | null): string {
+  if (!value) return '—';
+  const stamp = new Date(value);
+  return Number.isNaN(stamp.getTime())
+    ? '—'
+    : stamp.toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function positionBand(vehicle: CommandVehicle, now: number): 'fresh' | 'delayed' | 'lost' {
+  if (!vehicle.last_ping_at) return 'lost';
+  const stamp = new Date(vehicle.last_ping_at).getTime();
+  if (!Number.isFinite(stamp)) return 'lost';
+  const age = Math.max(0, now - stamp);
+  if (age <= 5 * 60_000) return 'fresh';
+  if (age <= 15 * 60_000) return 'delayed';
+  return 'lost';
+}
+
+function convoyTone(status: string): string {
+  const value = status.toLowerCase();
+  if (value === 'delayed') return 'warning';
+  if (value === 'active' || value === 'in_transit') return 'moving';
+  return 'neutral';
+}
+
+function timelineIcon(type: string) {
+  if (type === 'arrival') return Truck;
+  if (type === 'checkpoint') return MapPin;
+  return CalendarClock;
+}
+
+function milestoneDestination(type: string): string {
+  return type === 'shift' ? '/shifts' : '/convoys';
+}
+
+function PanelState({
+  title,
+  message,
+  action,
+  onAction,
+  tone = 'neutral',
+}: {
+  title: string;
+  message: string;
+  action?: string;
+  onAction?: () => void;
+  tone?: 'neutral' | 'error';
+}) {
   return (
-    <div className={`cc-metric cc-metric--${tone}`}>
-      <Icon size={14} />
-      <div className='cc-metric__copy'>
-        <span>{label}</span>
-        <strong>{value}</strong>
-        {detail && <small>{detail}</small>}
+    <div className={'ccx-state ccx-state--' + tone} role={tone === 'error' ? 'alert' : 'status'}>
+      <span className='ccx-state__mark' aria-hidden='true'>
+        {tone === 'error' ? <AlertOctagon size={17} /> : <Activity size={17} />}
+      </span>
+      <div className='ccx-state__copy'>
+        <strong>{title}</strong>
+        <span>{message}</span>
       </div>
+      {action && onAction && (
+        <button type='button' className='ccx-retry' onClick={onAction}>
+          <RefreshCw size={13} /> {action}
+        </button>
+      )}
     </div>
   );
 }
 
-function ObjectDrawer({ item, onClose }: { item: QueueItem; onClose: () => void }) {
-  const nav = useNavigate();
+type MetricGlyphKind = 'gps' | 'convoy' | 'incident' | 'alert';
+
+function MetricGlyph({ kind }: { kind: MetricGlyphKind }) {
+  const id = 'ccx-glyph-' + kind;
   return (
-    <div className='cc-drawer-backdrop' role='presentation' onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <aside className='cc-drawer' role='dialog' aria-modal='true' aria-label='Operational event detail'>
-        <header>
-          <div>
-            <span className='cc-kicker'>LIVE OBJECT / {item.chip.label}</span>
-            <h2>{item.title}</h2>
-          </div>
-          <button type='button' onClick={onClose} aria-label='Close event'>×</button>
-        </header>
-        <div className='cc-drawer__signal'>
-          <span style={{ background: `rgb(${item.chip.hue})` }} />
-          <div><small>OBSERVED</small><strong>{formatAge(item.at)}</strong></div>
-          <div><small>QUEUE RANK</small><strong>{item.rank <= 0 ? 'CRITICAL' : item.rank === 1 ? 'HIGH' : 'STANDARD'}</strong></div>
-        </div>
-        <p>{item.body || 'No additional operator context has been attached to this event yet.'}</p>
-        <div className='cc-drawer__facts'>
-          <div><span>SOURCE</span><b>LIVE OPERATIONS FEED</b></div>
-          <div><span>STATUS</span><b>REQUIRES OPERATOR REVIEW</b></div>
-          <div><span>EVENT TIME</span><b>{new Date(item.at).toLocaleString()}</b></div>
-        </div>
-        <div className='cc-drawer__actions'>
-          <button type='button' onClick={() => nav({ to: '/alerts' as any })}>OPEN ALERTS</button>
-          <button type='button' onClick={() => nav({ to: '/intelligence' as any })}>OPEN INTELLIGENCE</button>
-          <button type='button' onClick={onClose}>RETURN TO MAP</button>
-        </div>
-      </aside>
+    <svg className={'ccx-glyph ccx-glyph--' + kind} viewBox='0 0 64 64' aria-hidden='true' focusable='false'>
+      <defs>
+        <linearGradient id={id + '-main'} x1='8' y1='7' x2='54' y2='57' gradientUnits='userSpaceOnUse'>
+          {kind === 'gps' && <><stop stopColor='#76F2FF' /><stop offset='1' stopColor='#1596B5' /></>}
+          {kind === 'convoy' && <><stop stopColor='#F8DB9C' /><stop offset='1' stopColor='#A8752D' /></>}
+          {kind === 'incident' && <><stop stopColor='#FFE0A0' /><stop offset='1' stopColor='#B7782D' /></>}
+          {kind === 'alert' && <><stop stopColor='#FF9CAC' /><stop offset='1' stopColor='#B5264D' /></>}
+        </linearGradient>
+      </defs>
+
+      {kind === 'gps' && (
+        <g>
+          <rect x='10' y='16' width='12' height='31' rx='2' fill={'url(#' + id + '-main)'} />
+          <rect x='42' y='16' width='12' height='31' rx='2' fill={'url(#' + id + '-main)'} />
+          <path d='M13 22h6M13 29h6M13 36h6M13 43h6M45 22h6M45 29h6M45 36h6M45 43h6' stroke='#08202A' strokeOpacity='.55' strokeWidth='2' strokeLinecap='round' />
+          <path d='M23 25 32 17l9 8v14l-9 8-9-8z' fill={'url(#' + id + '-main)'} stroke='#D9FBFF' strokeOpacity='.8' strokeWidth='1.4' />
+          <circle cx='32' cy='32' r='5.4' fill='#071923' stroke='#B8F7FF' strokeWidth='2.2' />
+          <path d='M38 14q8-7 15 0M41 8q11-10 19 0' fill='none' stroke='#65E9F7' strokeWidth='3' strokeLinecap='round' />
+          <path d='m32 39 0 10m-5-5 5 5 5-5' fill='none' stroke='#F8DB9C' strokeWidth='2.6' strokeLinecap='round' strokeLinejoin='round' />
+        </g>
+      )}
+
+      {kind === 'convoy' && (
+        <g>
+          <path d='M5 14h30v21H5z' fill={'url(#' + id + '-main)'} />
+          <path d='M35 21h13l10 10v4H35z' fill={'url(#' + id + '-main)'} />
+          <path d='M38 24h8l6 6H38z' fill='#14202B' fillOpacity='.88' />
+          <path d='M9 19h21v11H9z' fill='#15212B' fillOpacity='.85' />
+          <path d='M5 37h52v5H5z' fill='#D2A65E' />
+          <circle cx='17' cy='43' r='5.5' fill='#0B1420' stroke='#F5D99F' strokeWidth='2.6' />
+          <circle cx='45' cy='43' r='5.5' fill='#0B1420' stroke='#F5D99F' strokeWidth='2.6' />
+          <path d='M13 52h38' stroke='#65E7D1' strokeWidth='3' strokeLinecap='round' />
+          <path d='m8 9 9-5 9 5M45 9l7-4 7 4' fill='none' stroke='#65E7D1' strokeWidth='2.5' strokeLinecap='round' strokeLinejoin='round' />
+        </g>
+      )}
+
+      {kind === 'incident' && (
+        <g>
+          <path d='M32 5 53 13v15c0 14-8.8 23-21 30C19.8 51 11 42 11 28V13z' fill={'url(#' + id + '-main)'} stroke='#FFE6B4' strokeOpacity='.8' strokeWidth='1.7' />
+          <path d='M32 13 46 18v10c0 10-5.6 17-14 23-8.4-6-14-13-14-23V18z' fill='#221B15' fillOpacity='.63' />
+          <path d='M32 21v15' stroke='#FFF6E5' strokeWidth='4.5' strokeLinecap='round' />
+          <circle cx='32' cy='43' r='2.8' fill='#FFF6E5' />
+          <path d='m8 15 5 3m43-3-5 3' stroke='#F7D18B' strokeWidth='2.8' strokeLinecap='round' />
+        </g>
+      )}
+
+      {kind === 'alert' && (
+        <g>
+          <path d='M18 39v-7c0-8 5.8-14 14-14s14 6 14 14v7z' fill={'url(#' + id + '-main)'} stroke='#FFD7DF' strokeWidth='1.6' />
+          <path d='M14 40h36v6H14z' fill='#E85B76' />
+          <path d='M10 48h44v6H10z' fill='#7E203D' />
+          <path d='M32 4v8M9 14l6 6m40-6-6 6M4 31h8m40 0h8' stroke='#FF8DA1' strokeWidth='3.4' strokeLinecap='round' />
+          <path d='M24 27q8-7 16 0' fill='none' stroke='#FFF2F4' strokeWidth='2.5' strokeLinecap='round' />
+          <circle cx='32' cy='32' r='3.4' fill='#FFF2F4' />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function MetricReadout({
+  symbol,
+  label,
+  value,
+  detail,
+  tone = 'default',
+}: {
+  symbol: MetricGlyphKind;
+  label: string;
+  value: string | number;
+  detail: string;
+  tone?: 'default' | 'warning' | 'critical';
+}) {
+  return (
+    <div className={'ccx-metric ccx-metric--' + tone}>
+      <span className='ccx-metric__icon' aria-hidden='true'><MetricGlyph kind={symbol} /></span>
+      <span className='ccx-metric__copy'>
+        <small>{label}</small>
+        <strong>{value}</strong>
+        <em>{detail}</em>
+      </span>
     </div>
+  );
+}
+
+function MovementRegister({
+  convoys,
+  isLoading,
+  isError,
+  hasSnapshot,
+  onRetry,
+  onOpen,
+  checkpointsReady,
+}: {
+  convoys: CommandConvoy[];
+  isLoading: boolean;
+  isError: boolean;
+  hasSnapshot: boolean;
+  onRetry: () => void;
+  onOpen: () => void;
+  checkpointsReady: boolean;
+}) {
+  return (
+    <section className='ccx-panel ccx-movement-panel' aria-labelledby='ccx-movement-title'>
+      <header className='ccx-panel-head'>
+        <div>
+          <span className='ccx-eyebrow'>MOVEMENT REGISTER / 01</span>
+          <h2 id='ccx-movement-title'>Active movements</h2>
+        </div>
+        <button type='button' className='ccx-head-link' onClick={onOpen} aria-label='Open convoy register'>
+          REGISTER <ArrowUpRight size={13} />
+        </button>
+      </header>
+      {!checkpointsReady && <div className='ccx-partial-note'>Checkpoint source unavailable — movement progress is not assessed.</div>}
+      <div className='ccx-movement-list'>
+        {isLoading && (
+          <div className='ccx-skeleton-list' aria-label='Loading active movements'>
+            <span /><span /><span />
+          </div>
+        )}
+        {!isLoading && isError && !hasSnapshot && (
+          <PanelState
+            title='Movement register unavailable'
+            message='The convoy endpoint did not return a usable response.'
+            action='RETRY'
+            onAction={onRetry}
+            tone='error'
+          />
+        )}
+        {!isLoading && isError && hasSnapshot && <div className='ccx-partial-note'>Latest refresh failed — showing the last received movement register.</div>}
+        {!isLoading && !isError && convoys.length === 0 && (
+          <PanelState
+            title='No active movements'
+            message='No active, in-transit or delayed convoy records were returned.'
+          />
+        )}
+        {!isLoading && isError && hasSnapshot && convoys.length === 0 && <PanelState title='Last received register was empty' message='The latest refresh failed. The last successful response contained no active convoy records.' />}
+        {!isLoading && (!isError || hasSnapshot) && convoys.map((convoy) => {
+          const completed = convoy.checkpoints.filter((point) => point.status === 'done').length;
+          const total = convoy.checkpoints.length;
+          const tone = convoyTone(convoy.status);
+          return (
+            <button
+              type='button'
+              key={convoy.id}
+              className='ccx-movement'
+              onClick={onOpen}
+              aria-label={'Open convoy register for ' + convoy.name}
+            >
+              <span className={'ccx-movement__status ccx-movement__status--' + tone}>
+                <i aria-hidden='true' />
+                {convoy.status.replace(/_/g, ' ').toUpperCase()}
+              </span>
+              <strong className='ccx-movement__name'>{convoy.name}</strong>
+              <span className='ccx-movement__route'>
+                <span>{convoy.origin || 'Origin not recorded'}</span>
+                <ArrowRight size={12} aria-hidden='true' />
+                <span>{convoy.destination || 'Destination not recorded'}</span>
+              </span>
+              <span className='ccx-movement__meta'>
+                <span><Truck size={12} /> {convoy.truck_count} {convoy.truck_count === 1 ? 'vehicle' : 'vehicles'}</span>
+                <span><Clock3 size={12} /> ETA {timeLabel(convoy.eta)}</span>
+              </span>
+              {checkpointsReady && total > 0 && (
+                <span className='ccx-checkpoints' aria-label={completed + ' of ' + total + ' checkpoints reached'}>
+                  <span className='ccx-checkpoints__track'><i style={{ width: (completed / total * 100) + '%' }} /></span>
+                  <small>{completed}/{total} CHECKPOINTS</small>
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function FleetSignal({
+  vehicles,
+  isLoading,
+  isError,
+  hasSnapshot,
+  updatedAt,
+  now,
+  onRetry,
+  onOpen,
+}: {
+  vehicles: CommandVehicle[];
+  isLoading: boolean;
+  isError: boolean;
+  hasSnapshot: boolean;
+  updatedAt: number;
+  now: number;
+  onRetry: () => void;
+  onOpen: () => void;
+}) {
+  const counts = useMemo(() => {
+    const result = { fresh: 0, delayed: 0, lost: 0, flagged: 0 };
+    for (const vehicle of vehicles) {
+      result[positionBand(vehicle, now)] += 1;
+      if (vehicle.status === 'alert') result.flagged += 1;
+    }
+    return result;
+  }, [vehicles, now]);
+
+  return (
+    <section className='ccx-panel ccx-fleet-panel' aria-labelledby='ccx-fleet-title'>
+      <header className='ccx-panel-head ccx-panel-head--compact'>
+        <div>
+          <span className='ccx-eyebrow'>POSITION INTEGRITY / 02</span>
+          <h2 id='ccx-fleet-title'>Fleet signal</h2>
+        </div>
+        <button type='button' className='ccx-icon-link' onClick={onOpen} aria-label='Open vehicle GPS register'>
+          <Crosshair size={15} />
+        </button>
+      </header>
+      {isLoading && <div className='ccx-fleet-loading'><span /><span /><span /></div>}
+      {!isLoading && isError && !hasSnapshot && (
+        <PanelState
+          title='Position register unavailable'
+          message='Vehicle signal data could not be loaded.'
+          action='RETRY'
+          onAction={onRetry}
+          tone='error'
+        />
+      )}
+      {!isLoading && isError && hasSnapshot && <div className='ccx-partial-note'>Latest refresh failed — showing the last received position register.</div>}
+      {!isLoading && (!isError || hasSnapshot) && (
+        <>
+          <div className='ccx-signal-stack'>
+            <div className='ccx-signal-row ccx-signal-row--fresh'>
+              <span><i /> Fresh fixes <small>≤ 5 min</small></span>
+              <strong>{counts.fresh}</strong>
+            </div>
+            <div className='ccx-signal-row ccx-signal-row--delayed'>
+              <span><i /> Delayed fixes <small>5–15 min</small></span>
+              <strong>{counts.delayed}</strong>
+            </div>
+            <div className='ccx-signal-row ccx-signal-row--lost'>
+              <span><i /> No recent fix <small>{'>'} 15 min / none</small></span>
+              <strong>{counts.lost}</strong>
+            </div>
+          </div>
+          <div className='ccx-fleet-foot'>
+            <span>{counts.flagged} vehicle alert flags</span>
+            <span>{updatedAt > 0 ? 'received ' + ageLabel(now - updatedAt) + ' ago' : 'no snapshot yet'}</span>
+          </div>
+          {vehicles.length === 0 && (
+            <p className='ccx-fleet-empty'>{isError ? 'The last successful vehicle snapshot contained no records; refresh is currently unavailable.' : 'No vehicle records were returned for this organisation.'}</p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function MilestoneTimeline({
+  items,
+  isLoading,
+  isError,
+  hasSnapshot,
+  onRetry,
+  onOpen,
+  partialSources,
+}: {
+  items: CommandMilestone[];
+  isLoading: boolean;
+  isError: boolean;
+  hasSnapshot: boolean;
+  onRetry: () => void;
+  onOpen: (type: string) => void;
+  partialSources: string[];
+}) {
+  return (
+    <section className='ccx-panel ccx-timeline-panel' aria-labelledby='ccx-timeline-title'>
+      <header className='ccx-panel-head ccx-panel-head--timeline'>
+        <div>
+          <span className='ccx-eyebrow'>FORWARD LOOK / 24 HOURS</span>
+          <h2 id='ccx-timeline-title'>Upcoming milestones</h2>
+        </div>
+        <span className='ccx-timeline-window'>NEXT 24H</span>
+      </header>
+      {isLoading && <div className='ccx-timeline-loading'><span /><span /><span /></div>}
+      {!isLoading && isError && !hasSnapshot && (
+        <PanelState
+          title='Timeline unavailable'
+          message='Upcoming arrivals, checkpoints and shift changes could not be retrieved.'
+          action='RETRY'
+          onAction={onRetry}
+          tone='error'
+        />
+      )}
+      {!isLoading && !isError && items.length === 0 && partialSources.length === 0 && (
+        <PanelState
+          title='No scheduled milestones'
+          message='There are no recorded arrivals, checkpoints or shift changes in the next 24 hours.'
+        />
+      )}
+      {!isLoading && isError && hasSnapshot && <div className='ccx-partial-note'>Latest refresh failed — showing the last received schedule.</div>}
+      {!isLoading && (!isError || hasSnapshot) && partialSources.length > 0 && (
+        <div className='ccx-partial-note'>Partial schedule: {partialSources.join(', ')} did not return a verified result.</div>
+      )}
+      {!isLoading && !isError && items.length === 0 && partialSources.length > 0 && (
+        <PanelState title='Schedule not fully assessed' message='No milestone can be confirmed because one or more schedule sources did not return a verified result.' />
+      )}
+      {!isLoading && isError && hasSnapshot && items.length === 0 && <PanelState title='Last received schedule contained no milestones' message='The latest refresh failed. The previous successful response contained no milestone rows.' />}
+      {!isLoading && (!isError || hasSnapshot) && items.length > 0 && (
+        <div className='ccx-timeline-list'>
+          {items.slice(0, 6).map((item, index) => {
+            const Icon = timelineIcon(item.type);
+            return (
+              <button
+                type='button'
+                className='ccx-milestone'
+                key={item.type + '-' + item.time + '-' + index}
+                onClick={() => onOpen(item.type)}
+              >
+                <span className='ccx-milestone__marker'><Icon size={15} /></span>
+                <span className='ccx-milestone__body'>
+                  <strong>{item.label}</strong>
+                  <small>{item.type === 'shift' ? 'SHIFT HANDOVER' : item.type === 'checkpoint' ? 'CHECKPOINT' : 'CONVOY ARRIVAL'}</small>
+                </span>
+                <span className='ccx-milestone__time'>{timeLabel(item.time)}</span>
+                <ArrowUpRight className='ccx-milestone__open' size={13} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RecordDrawer({ item, onClose }: { item: QueueItem; onClose: () => void }) {
+  const navigate = useNavigate();
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+      const nodes = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+      ));
+      if (nodes.length === 0) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previous?.focus();
+    };
+  }, [onClose]);
+
+  const openSource = () => {
+    onClose();
+    void navigate({ to: item.destination as any });
+  };
+
+  return createPortal(
+    <div
+      className='ccx-drawer-backdrop'
+      role='presentation'
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <aside
+        className='ccx-drawer'
+        role='dialog'
+        aria-modal='true'
+        aria-labelledby='ccx-drawer-title'
+        ref={dialogRef}
+      >
+        <header className='ccx-drawer-head'>
+          <div>
+            <span className='ccx-eyebrow'>OPERATIONAL RECORD / {item.chip.label}</span>
+            <h2 id='ccx-drawer-title'>{item.title}</h2>
+          </div>
+          <button ref={closeRef} type='button' onClick={onClose} className='ccx-drawer-close' aria-label='Close record detail'>
+            <X size={18} />
+          </button>
+        </header>
+        <div className='ccx-drawer-grid'>
+          <div>
+            <small>SEVERITY</small>
+            <strong className={'ccx-severity ccx-severity--' + (item.severity || 'unclassified').toLowerCase()}>{(item.severity || 'Unclassified').toUpperCase()}</strong>
+          </div>
+          <div>
+            <small>OBSERVED</small>
+            <strong>{ageLabel(Date.now() - new Date(item.at).getTime())} ago</strong>
+          </div>
+          <div>
+            <small>RECORD SOURCE</small>
+            <strong>{item.source}</strong>
+          </div>
+          <div>
+            <small>EVENT TIME</small>
+            <strong>{dateTimeLabel(item.at)}</strong>
+          </div>
+        </div>
+        {item.priorityReason && (
+          <div className='ccx-drawer-priority'>
+            <span className='ccx-eyebrow'>WHY {String(item.severity || 'PRIORITY').toUpperCase()}</span>
+            <p>{item.priorityReason}</p>
+          </div>
+        )}
+        <div className='ccx-drawer-evidence'>
+          <span className='ccx-eyebrow'>AVAILABLE CONTEXT</span>
+          <p>{item.body || 'No additional operator note was attached to this record.'}</p>
+        </div>
+        <div className='ccx-drawer-action-note'>
+          {item.ackId
+            ? 'Acknowledgement is available on the originating alert record in the response lane.'
+            : 'No acknowledgement action is attached to this event type in the current response lane.'}
+        </div>
+        <footer className='ccx-drawer-actions'>
+          <button type='button' className='ccx-drawer-primary' onClick={openSource}>
+            OPEN SOURCE MODULE <ArrowUpRight size={14} />
+          </button>
+          <button type='button' className='ccx-drawer-secondary' onClick={onClose}>RETURN TO COMMAND</button>
+        </footer>
+      </aside>
+    </div>,
+    document.body
   );
 }
 
 export default function CommandCentre() {
-  const nav = useNavigate();
-  const { setOverview } = useDashboardStore.getState();
-  const overview = useDashboardStore((s) => s.overview);
-  const alerts = useDashboardStore((s) => s.alerts);
-  const convoys = useDashboardStore((s) => s.convoys);
-  const incidents = useDashboardStore((s) => s.incidents);
-  const panic = useDashboardStore((s) => s.panicState);
-  const [selected, setSelected] = React.useState<QueueItem | null>(null);
+  const navigate = useNavigate();
+  const setOverview = useDashboardStore((state) => state.setOverview);
+  const setConvoys = useDashboardStore((state) => state.setConvoys);
+  const panic = useDashboardStore((state) => state.panicState);
+  const [selected, setSelected] = useState<QueueItem | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [connectivity, setConnectivity] = useState(() => getSnapshot());
 
-  useQuery({
+  const overviewQuery = useQuery<DashboardOverview>({
     queryKey: ['command-centre-overview'],
-    queryFn: async () => {
-      try {
-        const response = await api.get<DashboardOverview>('/dashboard/overview');
-        setOverview(response.data);
-        return response.data;
-      } catch {
-        return null;
-      }
-    },
-    staleTime: 30000,
-    refetchInterval: 60000,
+    queryFn: async () => (await api.get<DashboardOverview>('/dashboard/overview')).data,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 1,
   });
 
-  const activeConvoys = overview?.kpi?.convoys_active ?? convoys.filter((c) => c.status === 'active' || c.status === 'in_transit').length;
-  const liveVehicles = overview?.kpi?.vehicles_live ?? 0;
-  const openIssues = overview?.kpi?.incidents_open ?? incidents.filter((i) => i.status !== 'resolved' && i.status !== 'closed').length;
-  const priority = alerts.filter((a) => a.severity === 'critical' || a.severity === 'high').length;
-  const level = overview?.threat?.level ?? 'secure';
-  const posture = level === 'critical' ? 'CRITICAL' : level === 'elevated' ? 'ELEVATED' : 'SECURE';
-  const nextDelivery = overview?.next_delivery;
-  const shift = formatTime(overview?.shift_started_at);
+  const convoysQuery = useQuery<CommandConvoyResponse>({
+    queryKey: ['command-centre-convoys'],
+    queryFn: async () => {
+      const response = await api.get<CommandConvoyResponse>('/dashboard/convoys');
+      return response.data;
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  const vehiclesQuery = useQuery<CommandVehicle[]>({
+    queryKey: ['dashboard-vehicles'],
+    queryFn: async () => {
+      const response = await api.get<{ data?: CommandVehicle[] }>('/dashboard/vehicles');
+      return response.data.data ?? [];
+    },
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    retry: 1,
+  });
+
+  const timelineQuery = useQuery<CommandTimelineResponse>({
+    queryKey: ['command-centre-timeline'],
+    queryFn: async () => {
+      const response = await api.get<CommandTimelineResponse>('/dashboard/timeline');
+      return response.data;
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  const mapQuery = useQuery<MapSnapshot>({
+    queryKey: ['dashboard-map'],
+    queryFn: async () => (await api.get<MapSnapshot>('/dashboard/map')).data,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  useEffect(() => {
+    if (overviewQuery.data) setOverview(overviewQuery.data);
+  }, [overviewQuery.data, setOverview]);
+
+  useEffect(() => {
+    if (convoysQuery.data?.data) {
+      const records: ConvoyUpdate[] = convoysQuery.data.data.map((item) => ({
+        id: item.id,
+        name: item.name,
+        status: item.status,
+      }));
+      setConvoys(records);
+    }
+  }, [convoysQuery.data, setConvoys]);
+
+  useEffect(() => subscribeConnectivity(setConnectivity), []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const closeRecord = useCallback(() => setSelected(null), []);
+  const activePanic = panic?.status === 'active';
+  const overview = overviewQuery.data ?? null;
+  const overviewAge = overviewQuery.dataUpdatedAt > 0 ? Math.max(0, now - overviewQuery.dataUpdatedAt) : null;
+  const overviewStale = overviewAge != null && overviewAge > 120_000;
+  const threat = overview?.threat.level ?? null;
+  const criticalPictureReady = overview?.data_quality?.critical_ready !== false;
+  const kpiPictureReady = overview?.data_quality?.kpi_ready !== false;
+  const confirmedCritical = threat === 'critical';
+  const posture = activePanic ? 'PANIC ACTIVE' : confirmedCritical ? 'CRITICAL' : !overview || !criticalPictureReady ? 'UNASSESSED' : overviewStale || overviewQuery.isRefetchError ? 'STALE SNAPSHOT' : threat === 'elevated' ? 'ELEVATED' : 'SECURE';
+  const postureTone = activePanic || confirmedCritical ? 'critical' : criticalPictureReady && threat === 'elevated' ? 'warning' : !overview || !criticalPictureReady || overviewStale || overviewQuery.isRefetchError ? 'unknown' : 'secure';
+  const apiTone = !connectivity.apiReachable
+    ? connectivity.state === 'OFFLINE' ? 'offline' : 'unknown'
+    : connectivity.state === 'DEGRADED' ? 'degraded' : 'online';
+  const overviewAgeText = overviewAge == null
+    ? overviewQuery.isPending ? 'awaiting first response' : 'no successful response'
+    : overviewQuery.isRefetchError
+      ? 'refresh failed · last response ' + ageLabel(overviewAge) + ' ago'
+      : overview?.data_quality?.state === 'partial'
+        ? 'partial source set · ' + (overview.data_quality.failed_sources.join(', ') || 'source unavailable') + ' · received ' + ageLabel(overviewAge) + ' ago'
+        : 'browser received snapshot ' + ageLabel(overviewAge) + ' ago';
+
+  const convoyRecords = convoysQuery.data?.data ?? [];
+  const checkpointsReady = convoysQuery.data?.data_quality?.checkpoints_ready !== false;
+  const vehicleRecords = vehiclesQuery.data ?? [];
+  const milestones = timelineQuery.data?.data ?? [];
+  const timelineQuality = timelineQuery.data?.data_quality ?? null;
+
+  const refreshAll = () => {
+    void Promise.all([
+      overviewQuery.refetch(),
+      convoysQuery.refetch(),
+      vehiclesQuery.refetch(),
+      timelineQuery.refetch(),
+      mapQuery.refetch(),
+    ]);
+  };
 
   return (
-    <main className='cc-v3'>
-      <section className='cc-topline'>
-        <div className='cc-brand'>
-          <div className='cc-brand__sig'><span />SNL</div>
-          <div><span className='cc-kicker'>OPERATIONS / GLOBAL COMMAND</span><h1>Command Centre</h1></div>
+    <div className='ccx-command'>
+      <header className='ccx-header'>
+        <div className='ccx-identity'>
+          <span className='ccx-brand-mark'><Crosshair size={22} strokeWidth={1.7} /></span>
+          <div>
+            <span className='ccx-eyebrow'>SONALIT / OPERATIONS CONTROL</span>
+            <h1>Command Centre</h1>
+            <p>East Africa · Common operating picture</p>
+          </div>
         </div>
-        <div className='cc-posture'><span className={`cc-state-dot cc-state-dot--${posture.toLowerCase()}`} /> <b>{posture}</b><small>{openIssues} OPEN ISSUES</small></div>
-        <div className='cc-topline__right'>
-          <span className='cc-live'><i /> LIVE FABRIC</span>
-          <span className='cc-clock'><Clock3 size={13} /> SHIFT {shift}</span>
-          <button type='button' onClick={() => nav({ to: '/panic-center' as any })} className={panic ? 'cc-panic cc-panic--live' : 'cc-panic'}><Siren size={14} /> {panic ? 'PANIC ACTIVE' : 'PANIC CENTER'}</button>
+
+        <div className={'ccx-posture ccx-posture--' + postureTone}>
+          <span className='ccx-posture__beam' />
+          <div>
+            <small>THREAT POSTURE</small>
+            <strong>{posture}</strong>
+            <em>{overviewAgeText}</em>
+          </div>
         </div>
+
+        <div className='ccx-header-actions'>
+          <div className='ccx-connection' aria-live='polite'>
+            <span className={'ccx-connection__item ccx-connection__item--' + apiTone}>
+              {apiTone === 'offline' ? <WifiOff size={14} /> : <Wifi size={14} />}
+              <span>API {apiTone.toUpperCase()}</span>
+            </span>
+            <span className={'ccx-connection__item ' + (connectivity.realtimeConnected ? 'ccx-connection__item--online' : 'ccx-connection__item--offline')}>
+              <Radio size={14} />
+              <span>STREAM {connectivity.realtimeConnected ? 'CONNECTED' : 'NOT CONNECTED'}</span>
+            </span>
+          </div>
+          <button type='button' className='ccx-refresh' onClick={refreshAll} aria-label='Refresh all command centre data' title='Refresh operating picture'>
+            <RefreshCw size={15} />
+            <span>REFRESH</span>
+          </button>
+          <button
+            type='button'
+            className={activePanic ? 'ccx-panic ccx-panic--active' : 'ccx-panic'}
+            onClick={() => void navigate({ to: '/panic-center' as any })}
+          >
+            <Siren size={15} /> {activePanic ? 'PANIC ACTIVE' : 'PANIC CENTRE'}
+          </button>
+        </div>
+      </header>
+
+      <section className='ccx-metrics' aria-label='Operational summary'>
+        <MetricReadout
+          symbol='gps'
+          label='GPS reporting'
+          value={overview && kpiPictureReady ? overview.kpi.vehicles_live : '—'}
+          detail='Last fix ≤ 5 min'
+        />
+        <MetricReadout
+          symbol='convoy'
+          label='Active convoys'
+          value={overview && kpiPictureReady ? overview.kpi.convoys_active : '—'}
+          detail='Movements underway'
+        />
+        <MetricReadout
+          symbol='incident'
+          label='Open incidents'
+          value={overview && kpiPictureReady ? overview.kpi.incidents_open : '—'}
+          detail='Unresolved cases'
+          tone={overview?.kpi.incidents_open ? 'warning' : 'default'}
+        />
+        <MetricReadout
+          symbol='alert'
+          label='Open alerts'
+          value={overview && criticalPictureReady ? overview.threat.alerts_open : '—'}
+          detail='Unresolved + panic events'
+          tone={overview?.threat.alerts_open ? 'critical' : 'default'}
+        />
       </section>
 
-      <section className='cc-toolbar' aria-label='Operational controls'>
-        <Metric icon={Truck} label='LIVE VEHICLES' value={liveVehicles} detail='tracking now' />
-        <Metric icon={Route} label='ACTIVE CONVOYS' value={activeConvoys} detail='in movement' />
-        <Metric icon={AlertTriangle} label='PRIORITY' value={priority} detail='high + critical' tone={priority > 0 ? 'warn' : 'normal'} />
-        <Metric icon={ShieldCheck} label='OPEN ISSUES' value={openIssues} detail='unresolved' tone={openIssues > 0 ? 'warn' : 'normal'} />
-        <Metric icon={Radio} label='COMMS' value='LIVE' detail='operator channels' />
-        <div className='cc-toolbar__actions'>
-          <button type='button' onClick={() => nav({ to: '/alerts' as any })}>ALERTS <b>{priority}</b></button>
-          <button type='button' onClick={() => nav({ to: '/messages' as any })}>MESSAGES</button>
-          <button type='button' onClick={() => nav({ to: '/intelligence' as any })}>INTELLIGENCE</button>
+      <section className='ccx-command-grid' aria-label='Operational workspaces'>
+        <div className='ccx-movement-column'>
+          <MovementRegister
+            convoys={convoyRecords}
+            isLoading={convoysQuery.isPending}
+            isError={convoysQuery.isError}
+            hasSnapshot={convoysQuery.data !== undefined}
+            onRetry={() => void convoysQuery.refetch()}
+            onOpen={() => void navigate({ to: '/convoys' as any })}
+            checkpointsReady={checkpointsReady}
+          />
+          <FleetSignal
+            vehicles={vehicleRecords}
+            isLoading={vehiclesQuery.isPending}
+            isError={vehiclesQuery.isError}
+            hasSnapshot={vehiclesQuery.data !== undefined}
+            updatedAt={vehiclesQuery.dataUpdatedAt}
+            now={now}
+            onRetry={() => void vehiclesQuery.refetch()}
+            onOpen={() => void navigate({ to: '/gps' as any })}
+          />
         </div>
-      </section>
 
-      <section className='cc-main'>
-        <div className='cc-map'>
-          <header className='cc-map__header'>
-            <div><span className='cc-kicker'><Crosshair size={12} /> MOVEMENT PICTURE</span><h2>East Africa / Live theatre</h2></div>
-            <div className='cc-map__legend'><span><i className='legend-dot legend-dot--green' /> MOVING</span><span><i className='legend-dot legend-dot--amber' /> EXCEPTION</span><span><i className='legend-dot legend-dot--red' /> CRITICAL</span></div>
-          </header>
-          <div className='cc-map__body'>
-            <Suspense fallback={<div className='cc-map__loading'><Activity size={18} /><span>CONNECTING TO MOVEMENT FABRIC…</span></div>}>
+        <section className='ccx-panel ccx-map-panel' aria-label='East Africa operational map'>
+          <div className='ccx-map-meta'>
+            <div>
+              <span className='ccx-eyebrow'>SPATIAL OPERATING PICTURE / 03</span>
+              <h2>Regional theatre</h2>
+            </div>
+            <div className='ccx-map-freshness' aria-live='polite'>
+              <span className={'ccx-map-freshness__dot ' + (mapQuery.data && !mapQuery.isRefetchError && now - mapQuery.dataUpdatedAt < 120_000 ? 'is-present' : 'is-missing')} />
+              <span>{mapQuery.dataUpdatedAt > 0 ? 'Map snapshot ' + ageLabel(now - mapQuery.dataUpdatedAt) + ' ago' : mapQuery.isPending ? 'Waiting for map data' : 'No map snapshot'}</span>
+              {mapQuery.isRefetchError && <strong>REFRESH FAILED</strong>}
+            </div>
+          </div>
+          <div className='ccx-map-stage'>
+            <Suspense fallback={<div className='ccx-map-loading'><Activity size={19} /> Preparing regional map</div>}>
               <TacticalMap fill />
             </Suspense>
-            <div className='cc-map__hud cc-map__hud--tl'><b>OPS-01</b><span>GLOBAL MOVEMENT</span></div>
-            <div className='cc-map__hud cc-map__hud--tr'><span className='cc-live'><i /> STREAM</span><span>60s REFRESH</span></div>
-            <div className='cc-map__hud cc-map__hud--bl'><span>MAP: TACTICAL / OSM</span><span>GEOFENCE + RISK LAYERS</span></div>
-            <div className='cc-map__hud cc-map__hud--br'><span>CLICK EVENT → DETAIL</span></div>
-            <div className='cc-map__crosshair'><span /><i /></div>
+            {mapQuery.isError && !mapQuery.data && (
+              <div className='ccx-map-error'>
+                <AlertOctagon size={17} />
+                <span>Map data could not be loaded. The basemap alone is not an operational position feed.</span>
+                <button type='button' onClick={() => void mapQuery.refetch()}>RETRY</button>
+              </div>
+            )}
           </div>
-        </div>
+          <div className='ccx-map-foot'>
+            <span><i className='ccx-map-key ccx-map-key--moving' /> Reported positions</span>
+            <span><i className='ccx-map-key ccx-map-key--warning' /> Warning / alert states</span>
+            <span><i className='ccx-map-key ccx-map-key--panic' /> Panic</span>
+            <span className='ccx-map-foot__note'>Map and vehicle streams have independent refresh states</span>
+            {mapQuery.data?.data_quality?.state === 'partial' && <span className='ccx-map-data-warning'>PARTIAL MAP DATA · {(mapQuery.data.data_quality.failed_sources ?? []).join(', ') || 'one or more layers unavailable'}</span>}
+          </div>
+        </section>
 
-        <aside className='cc-queue'>
-          <div className='cc-queue__head'>
-            <div><span className='cc-kicker'>RESPONSE LANE</span><h2>Priority queue</h2></div>
-            <span className='cc-count'>{priority > 0 ? `${priority} PRIORITY` : 'CLEAR'}</span>
+        <aside className='ccx-panel ccx-response-panel' aria-labelledby='ccx-response-title'>
+          <header className='ccx-panel-head ccx-response-head'>
+            <div>
+              <span className='ccx-eyebrow'>DECISION & RESPONSE / 04</span>
+              <h2 id='ccx-response-title'>Priority response</h2>
+              <p>Select a record to inspect its available context and source.</p>
+            </div>
+            <span className='ccx-response-mark'><AlertOctagon size={17} /></span>
+          </header>
+          <div className='ccx-response-content'>
+            <PriorityQueue onSelect={setSelected} showNextDelivery={false} />
           </div>
-          <div className='cc-queue__body'><PriorityQueue onSelect={setSelected} /></div>
+          <footer className='ccx-response-foot'>
+            <button type='button' onClick={() => void navigate({ to: '/alerts' as any })}>
+              OPEN ALERT REGISTER <ArrowUpRight size={13} />
+            </button>
+          </footer>
         </aside>
       </section>
 
-      <section className='cc-bottom'>
-        <div className='cc-bottom__mission'>
-          <div><span className='cc-kicker'>NEXT OPERATIONAL MILESTONE</span><strong>{nextDelivery?.convoy_name ?? convoys[0]?.name ?? 'AWAITING ASSIGNMENT'}</strong></div>
-          <div><span>ETA</span><b>{nextDelivery ? formatTime(nextDelivery.eta) : '—'}</b></div>
-          <div><span>STATUS</span><b>{nextDelivery ? 'TRACKED' : 'STANDBY'}</b></div>
-          <div><span>RISK</span><b>{level.toUpperCase()}</b></div>
+      <MilestoneTimeline
+        items={milestones}
+        isLoading={timelineQuery.isPending}
+        isError={timelineQuery.isError}
+        hasSnapshot={timelineQuery.data !== undefined}
+        onRetry={() => void timelineQuery.refetch()}
+        onOpen={(type) => void navigate({ to: milestoneDestination(type) as any })}
+        partialSources={timelineQuality?.state === 'partial' ? (timelineQuality.failed_sources ?? []) : []}
+      />
+
+      {overviewQuery.isError && !overview && (
+        <div className='ccx-page-warning' role='alert'>
+          <AlertOctagon size={15} />
+          <span>The overview request failed. Threat posture and summary values remain unassessed until a verified response is received.</span>
+          <button type='button' onClick={() => void overviewQuery.refetch()}>RETRY OVERVIEW</button>
         </div>
-        <div className='cc-events'><EventsTicker /></div>
-      </section>
+      )}
 
-      {selected && <ObjectDrawer item={selected} onClose={() => setSelected(null)} />}
-
-      <style>{`
-        .cc-v3{--cc-border:rgba(255,255,255,.09);--cc-muted:#81909a;--cc-text:#edf3f5;--cc-well:#071115;--cc-panel:#0b171b;position:relative;display:flex;flex-direction:column;gap:8px;height:100%;min-height:0;padding:9px 10px 8px;background:#050b0d;color:var(--cc-text);font-family:Inter,system-ui,sans-serif;overflow:hidden}
-        .cc-v3:before{content:'';position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:32px 32px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.8),transparent 95%)}
-        .cc-kicker{display:inline-flex;align-items:center;gap:5px;color:#7d8c95;font-size:8px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
-        .cc-topline{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:54px;padding:0 8px 7px;border-bottom:1px solid var(--cc-border)}
-        .cc-brand{display:flex;align-items:center;gap:11px;min-width:220px}.cc-brand__sig{display:grid;place-items:center;position:relative;width:38px;height:38px;border:1px solid rgba(50,223,174,.35);font:800 10px/1 'JetBrains Mono',monospace;letter-spacing:.08em;color:#a7fff0;background:#061315}.cc-brand__sig span{position:absolute;top:-1px;left:5px;right:5px;height:2px;background:#2edeb0}.cc-brand h1{margin:2px 0 0;font-size:20px;line-height:1;font-weight:700;letter-spacing:-.03em}.cc-posture{display:flex;align-items:center;gap:8px;padding:8px 12px;border-left:1px solid var(--cc-border);border-right:1px solid var(--cc-border);font-size:11px}.cc-posture small{margin-left:6px;color:var(--cc-muted);font:800 8px 'JetBrains Mono',monospace;letter-spacing:.1em}.cc-state-dot{width:7px;height:7px;border-radius:50%;background:#28dfa9}.cc-state-dot--elevated{background:#f2b84b}.cc-state-dot--critical{background:#ff4d6b;box-shadow:0 0 12px rgba(255,77,107,.45)}.cc-topline__right{display:flex;align-items:center;gap:10px;margin-left:auto}.cc-live{display:inline-flex;align-items:center;gap:6px;color:#89a0aa;font:800 8px 'JetBrains Mono',monospace;letter-spacing:.1em}.cc-live i{width:6px;height:6px;border-radius:50%;background:#2edeb0;box-shadow:0 0 8px rgba(46,222,176,.6)}.cc-clock{display:flex;align-items:center;gap:5px;color:#71818a;font:700 9px 'JetBrains Mono',monospace}.cc-panic{display:flex;align-items:center;gap:6px;border:1px solid rgba(255,77,107,.3);background:rgba(255,77,107,.05);color:#ff6c86;border-radius:4px;padding:7px 10px;font:800 8px 'JetBrains Mono',monospace;letter-spacing:.08em;cursor:pointer}.cc-panic--live{background:#7d1329;color:#fff;border-color:#ff5572}
-        .cc-toolbar{position:relative;z-index:1;display:flex;align-items:stretch;gap:0;min-height:52px;border:1px solid var(--cc-border);background:rgba(11,23,27,.9);overflow:hidden}.cc-metric{display:flex;align-items:center;gap:9px;min-width:120px;padding:7px 12px;border-right:1px solid var(--cc-border)}.cc-metric>svg{color:#6c8a95}.cc-metric--warn>svg{color:#f2b84b}.cc-metric--critical>svg{color:#ff4d6b}.cc-metric__copy{display:grid;gap:1px}.cc-metric span,.cc-metric small{font:800 7px 'JetBrains Mono',monospace;color:#6f7e86;letter-spacing:.1em}.cc-metric strong{font:800 15px/1 'JetBrains Mono',monospace;color:#eef7f8}.cc-metric small{font-size:7px;font-weight:600;letter-spacing:.03em}.cc-toolbar__actions{display:flex;align-items:center;gap:6px;margin-left:auto;padding:7px}.cc-toolbar__actions button{height:34px;padding:0 10px;border:1px solid var(--cc-border);background:#071115;color:#a9b6bc;border-radius:4px;font:800 8px 'JetBrains Mono',monospace;letter-spacing:.08em;cursor:pointer}.cc-toolbar__actions button:hover{border-color:rgba(50,223,174,.35);color:#efffff}.cc-toolbar__actions b{color:#f2b84b}
-        .cc-main{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) 335px;gap:8px;flex:1;min-height:0}.cc-map,.cc-queue{min-height:0;border:1px solid var(--cc-border);background:var(--cc-panel);overflow:hidden}.cc-map{display:flex;flex-direction:column}.cc-map__header{display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-bottom:1px solid var(--cc-border);background:#091417}.cc-map__header h2,.cc-queue__head h2{margin:2px 0 0;font-size:13px;font-weight:700;letter-spacing:-.02em}.cc-map__legend{display:flex;gap:12px;color:#76858c;font:800 7px 'JetBrains Mono',monospace}.cc-map__legend span{display:flex;align-items:center;gap:4px}.legend-dot{width:5px;height:5px;border-radius:50%}.legend-dot--green{background:#2edeb0}.legend-dot--amber{background:#f2b84b}.legend-dot--red{background:#ff4d6b}.cc-map__body{position:relative;flex:1;min-height:0}.cc-map__body>div:first-child{height:100%}.cc-map__loading{height:100%;display:grid;place-items:center;align-content:center;gap:8px;color:#66767e;font:800 9px 'JetBrains Mono',monospace}.cc-map__hud{position:absolute;z-index:3;display:flex;gap:10px;padding:5px 7px;background:rgba(3,9,11,.78);border:1px solid rgba(255,255,255,.08);color:#8ea0a7;font:800 7px 'JetBrains Mono',monospace;letter-spacing:.08em}.cc-map__hud b{color:#dce8ea}.cc-map__hud--tl{top:9px;left:9px}.cc-map__hud--tr{top:9px;right:9px}.cc-map__hud--bl{bottom:9px;left:9px}.cc-map__hud--br{bottom:9px;right:9px}.cc-map__crosshair{position:absolute;z-index:2;left:50%;top:50%;width:24px;height:24px;transform:translate(-50%,-50%);opacity:.35;pointer-events:none}.cc-map__crosshair:before,.cc-map__crosshair:after{content:'';position:absolute;background:#2edeb0}.cc-map__crosshair:before{width:1px;height:100%;left:50%}.cc-map__crosshair:after{height:1px;width:100%;top:50%}.cc-map__crosshair span{position:absolute;inset:7px;border:1px solid #2edeb0;border-radius:50%}.cc-queue{display:flex;flex-direction:column}.cc-queue__head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--cc-border);background:#091417}.cc-count{font:800 7px 'JetBrains Mono',monospace;color:#f2b84b;letter-spacing:.08em}.cc-queue__body{flex:1;min-height:0;overflow:auto}.cc-queue__body .d-console-queue{height:100%;border-left:0!important;background:transparent!important}.cc-queue__body .d-console-queue>div:first-child{display:none}.cc-queue__body .d-console-queue>div{padding-left:10px!important;padding-right:10px!important}
-        .cc-bottom{position:relative;z-index:1;display:grid;grid-template-columns:minmax(320px, .8fr) minmax(0,1.2fr);gap:8px;min-height:47px}.cc-bottom__mission,.cc-events{border:1px solid var(--cc-border);background:#091417;min-width:0}.cc-bottom__mission{display:grid;grid-template-columns:minmax(0,1fr) 64px 76px 76px;align-items:center}.cc-bottom__mission>div{padding:7px 10px;border-right:1px solid var(--cc-border);display:grid;gap:2px;min-width:0}.cc-bottom__mission>div:last-child{border-right:0}.cc-bottom__mission strong{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cc-bottom__mission span{font:800 7px 'JetBrains Mono',monospace;color:#6f7e86;letter-spacing:.08em}.cc-bottom__mission b{font:800 9px 'JetBrains Mono',monospace}.cc-events{overflow:hidden;padding:0 8px}.cc-events>*{height:100%;margin:0!important;border:0!important;background:transparent!important}
-        .cc-drawer-backdrop{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.58);display:flex;justify-content:flex-end}.cc-drawer{width:min(430px,100%);height:100%;padding:18px;background:#071014;border-left:1px solid rgba(255,255,255,.1);box-shadow:-25px 0 70px rgba(0,0,0,.4);overflow:auto}.cc-drawer header{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--cc-border);padding-bottom:14px}.cc-drawer h2{margin:6px 0 0;font-size:22px;line-height:1.15}.cc-drawer header button{width:32px;height:32px;background:transparent;border:1px solid var(--cc-border);color:#87979f;font-size:21px;cursor:pointer}.cc-drawer__signal{display:grid;grid-template-columns:12px 1fr 1fr;gap:10px;padding:14px 0}.cc-drawer__signal>span{width:8px;height:100%;min-height:34px}.cc-drawer__signal small,.cc-drawer__facts span{display:block;font:800 7px 'JetBrains Mono',monospace;color:#66767e;letter-spacing:.1em}.cc-drawer__signal strong{display:block;margin-top:2px;font:800 11px 'JetBrains Mono',monospace}.cc-drawer p{color:#a7b3b8;font-size:13px;line-height:1.55;border-top:1px solid var(--cc-border);border-bottom:1px solid var(--cc-border);padding:15px 0}.cc-drawer__facts{display:grid;gap:10px;padding:14px 0}.cc-drawer__facts b{display:block;margin-top:3px;font-size:10px}.cc-drawer__actions{display:grid;gap:7px;margin-top:8px}.cc-drawer__actions button{height:38px;border:1px solid var(--cc-border);background:#0b181d;color:#d4e0e3;font:800 9px 'JetBrains Mono',monospace;letter-spacing:.08em;cursor:pointer}.cc-drawer__actions button:first-child{border-color:rgba(242,184,75,.35);color:#f2c66e}
-        @media (max-width:1050px){.cc-main{grid-template-columns:minmax(0,1fr) 300px}.cc-metric{min-width:100px}.cc-metric__copy small{display:none}.cc-posture{display:none}}
-        @media (max-width:820px){.cc-v3{overflow:auto}.cc-topline__right .cc-clock{display:none}.cc-toolbar{overflow:auto}.cc-main{grid-template-columns:1fr;min-height:620px}.cc-queue{min-height:310px}.cc-bottom{grid-template-columns:1fr}.cc-bottom__mission{min-height:47px}}
-        @media (max-width:560px){.cc-brand h1{font-size:17px}.cc-brand{min-width:0}.cc-topline__right .cc-live{display:none}.cc-panic{padding:7px}.cc-toolbar__actions{display:none}.cc-metric{min-width:105px}.cc-map__legend{display:none}.cc-bottom__mission{grid-template-columns:1fr 60px 65px 65px}}
-      `}</style>
-    </main>
+      {selected && <RecordDrawer item={selected} onClose={closeRecord} />}
+    </div>
   );
 }
