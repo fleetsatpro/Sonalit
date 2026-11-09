@@ -4,11 +4,9 @@ import { useNavigate } from '@tanstack/react-router';
 import {
   Activity,
   AlertOctagon,
-  ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
   CalendarClock,
-  CheckCircle2,
   Clock3,
   Crosshair,
   MapPin,
@@ -39,6 +37,16 @@ type CommandConvoy = {
   eta: string | null;
   truck_count: number;
   checkpoints: Array<{ name: string; status: string; reached_at: string | null }>;
+};
+
+type CommandConvoyResponse = {
+  data?: CommandConvoy[];
+  data_quality?: { checkpoints_ready?: boolean; snapshot_at?: string };
+};
+
+type CommandTimelineResponse = {
+  data?: CommandMilestone[];
+  data_quality?: { state?: 'complete' | 'partial'; failed_sources?: string[]; snapshot_at?: string };
 };
 
 type CommandVehicle = {
@@ -521,8 +529,8 @@ export default function CommandCentre() {
   const convoysQuery = useQuery<CommandConvoy[]>({
     queryKey: ['command-centre-convoys'],
     queryFn: async () => {
-      const response = await api.get<{ data?: CommandConvoy[] }>('/dashboard/convoys');
-      return response.data.data ?? [];
+      const response = await api.get<CommandConvoyResponse>('/dashboard/convoys');
+      return response.data;
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
@@ -543,8 +551,8 @@ export default function CommandCentre() {
   const timelineQuery = useQuery<CommandMilestone[]>({
     queryKey: ['command-centre-timeline'],
     queryFn: async () => {
-      const response = await api.get<{ data?: CommandMilestone[] }>('/dashboard/timeline');
-      return response.data.data ?? [];
+      const response = await api.get<CommandTimelineResponse>('/dashboard/timeline');
+      return response.data;
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
@@ -587,8 +595,10 @@ export default function CommandCentre() {
   const overviewAge = overviewQuery.dataUpdatedAt > 0 ? Math.max(0, now - overviewQuery.dataUpdatedAt) : null;
   const overviewStale = overviewAge != null && overviewAge > 120_000;
   const threat = overview?.threat.level ?? null;
-  const posture = activePanic ? 'PANIC ACTIVE' : !overview ? 'UNASSESSED' : overviewStale ? 'STALE SNAPSHOT' : threat === 'critical' ? 'CRITICAL' : threat === 'elevated' ? 'ELEVATED' : 'SECURE';
-  const postureTone = activePanic || threat === 'critical' ? 'critical' : threat === 'elevated' ? 'warning' : !overview || overviewStale || overviewQuery.isRefetchError ? 'unknown' : 'secure';
+  const criticalPictureReady = overview?.data_quality?.critical_ready !== false;
+  const kpiPictureReady = overview?.data_quality?.kpi_ready !== false;
+  const posture = activePanic ? 'PANIC ACTIVE' : !overview || !criticalPictureReady ? 'UNASSESSED' : overviewStale ? 'STALE SNAPSHOT' : threat === 'critical' ? 'CRITICAL' : threat === 'elevated' ? 'ELEVATED' : 'SECURE';
+  const postureTone = activePanic || (criticalPictureReady && threat === 'critical') ? 'critical' : criticalPictureReady && threat === 'elevated' ? 'warning' : !overview || !criticalPictureReady || overviewStale || overviewQuery.isRefetchError ? 'unknown' : 'secure';
   const apiTone = !connectivity.apiReachable
     ? connectivity.state === 'OFFLINE' ? 'offline' : 'unknown'
     : connectivity.state === 'DEGRADED' ? 'degraded' : 'online';
@@ -598,9 +608,11 @@ export default function CommandCentre() {
       ? 'refresh failed · last response ' + ageLabel(overviewAge) + ' ago'
       : 'browser received snapshot ' + ageLabel(overviewAge) + ' ago';
 
-  const convoyRecords = convoysQuery.data ?? [];
+  const convoyRecords = convoysQuery.data?.data ?? [];
+  const checkpointsReady = convoysQuery.data?.data_quality?.checkpoints_ready !== false;
   const vehicleRecords = vehiclesQuery.data ?? [];
-  const milestones = timelineQuery.data ?? [];
+  const milestones = timelineQuery.data?.data ?? [];
+  const timelineQuality = timelineQuery.data?.data_quality ?? null;
 
   const refreshAll = () => {
     void Promise.all([
@@ -662,26 +674,26 @@ export default function CommandCentre() {
         <MetricReadout
           icon={Truck}
           label='VEHICLES REPORTING'
-          value={overview ? overview.kpi.vehicles_live : '—'}
+          value={overview && kpiPictureReady ? overview.kpi.vehicles_live : '—'}
           detail='GPS fixes received in the last 5 min'
         />
         <MetricReadout
           icon={Route}
           label='ACTIVE CONVOYS'
-          value={overview ? overview.kpi.convoys_active : '—'}
+          value={overview && kpiPictureReady ? overview.kpi.convoys_active : '—'}
           detail='Active movement records'
         />
         <MetricReadout
           icon={ShieldAlert}
           label='OPEN INCIDENTS'
-          value={overview ? overview.kpi.incidents_open : '—'}
+          value={overview && kpiPictureReady ? overview.kpi.incidents_open : '—'}
           detail='Incident records with open status'
           tone={overview?.kpi.incidents_open ? 'warning' : 'default'}
         />
         <MetricReadout
           icon={AlertOctagon}
           label='OPEN ALERTS + PANIC'
-          value={overview ? overview.threat.alerts_open : '—'}
+          value={overview && criticalPictureReady ? overview.threat.alerts_open : '—'}
           detail='Unresolved alerts and panic events'
           tone={overview?.threat.alerts_open ? 'critical' : 'default'}
         />
@@ -695,6 +707,7 @@ export default function CommandCentre() {
             isError={convoysQuery.isError}
             onRetry={() => void convoysQuery.refetch()}
             onOpen={() => void navigate({ to: '/convoys' as any })}
+            checkpointsReady={checkpointsReady}
           />
           <FleetSignal
             vehicles={vehicleRecords}
@@ -765,6 +778,7 @@ export default function CommandCentre() {
         isError={timelineQuery.isError}
         onRetry={() => void timelineQuery.refetch()}
         onOpen={(type) => void navigate({ to: milestoneDestination(type) as any })}
+        partialSources={timelineQuality?.state === 'partial' ? (timelineQuality.failed_sources ?? []) : []}
       />
 
       {overviewQuery.isError && !overview && (
