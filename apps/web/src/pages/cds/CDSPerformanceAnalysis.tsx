@@ -499,9 +499,13 @@ function PeriodComparisonChart({ data, days }: { data: CDSAnalyticsPayload; days
         <div>
           <div className="cpa-v2__kicker"><span>02A</span> PERIOD-OVER-PERIOD / EVENT COUNTS</div>
           <h3>Activity vs previous period</h3>
-          <p>Equal-length windows. Each event family is compared with its own prior-period count.</p>
+          <p>Current {days}-day window vs the immediately preceding {days} days. Each event family is compared with its own prior-period count.</p>
         </div>
         <span className="cpa-v2__tag">CURRENT / PRIOR</span>
+      </div>
+      <div className="cpa-v2__comparison-legend" aria-label="Chart legend">
+        <span><i className="is-current" />Current period</span>
+        <span><i className="is-previous" />Previous period</span>
       </div>
       {rows.length ? (
         <div className="cpa-v2__rechart cpa-v2__rechart--bar" role="img" aria-label="Grouped horizontal bar chart comparing current and previous period event counts">
