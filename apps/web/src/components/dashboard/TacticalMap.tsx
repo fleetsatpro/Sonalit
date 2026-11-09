@@ -525,7 +525,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
 
   const selectedVehicle = vehicles?.find(v => v.id === selectedVehicleId) ?? vehicles?.[0] ?? null;
   const panicActive = useDashboardStore((s) => s.panicState?.status === 'active');
-  // Radar color: red during panic, cyan normally
+  // Location reticle color: red during panic, cyan otherwise
   const rc  = panicActive ? '255,30,30'  : '34,232,255';
 
   // Resize map when container size changes (e.g. expand/collapse)
