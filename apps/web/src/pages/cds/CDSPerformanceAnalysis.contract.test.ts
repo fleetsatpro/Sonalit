@@ -130,6 +130,29 @@ describe('CDS Performance Analysis v2 contract', () => {
     expect(component).toContain('sort((a, b) => Number(b.containers_handled) - Number(a.containers_handled))');
   });
 
+  it('promotes a full-width chart stage with data-derived trend context and ranked bar labels', () => {
+    for (const marker of [
+      'PEAK BUCKET',
+      'AVERAGE / BUCKET',
+      'ACTIVE DAYS',
+      'ReferenceLine',
+      'LabelList',
+      'dateRangeLabel(peakBucket.start, peakBucket.end)',
+      'averagePerBucket',
+      'activeDays',
+      'cpa-v2__chart-pair',
+      'cpa-v2__analysis-grid--hero-chart',
+    ]) expect(component).toContain(marker);
+    for (const marker of [
+      '.cpa-v2__chart-intelligence',
+      '.cpa-v2__chart-pair',
+      '.cpa-v2__analysis-grid--hero-chart',
+      '.cpa-v2__rechart--line',
+      'cpa-chart-intel-rise',
+    ]) expect(visual).toContain(marker);
+    expect(component.indexOf('cpa-v2__analysis-grid--hero-chart')).toBeLessThan(component.indexOf('cpa-v2__chart-pair'));
+  });
+
   it('styles data tooltips and respects reduced-motion preferences in chart rendering', () => {
     expect(component).toContain("window.matchMedia('(prefers-reduced-motion: reduce)')");
     for (const marker of [
