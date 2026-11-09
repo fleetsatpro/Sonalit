@@ -807,3 +807,31 @@
 @media (prefers-reduced-motion:reduce) {
   .cpa-v2__chart-intelligence > div {animation:none!important}
 }
+
+.cpa-v2__comparison-legend {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:13px;
+  padding:0 17px 5px;
+}
+.cpa-v2__comparison-legend>span {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  color:rgba(175,198,220,.72);
+  font-size:8px;
+  font-weight:650;
+}
+.cpa-v2__comparison-legend i {
+  width:7px;
+  height:7px;
+  border-radius:2px;
+  box-shadow:0 0 10px rgba(158,197,226,.16);
+}
+.cpa-v2__comparison-legend i.is-current {background:linear-gradient(135deg,#b89053,#f5dfae)}
+.cpa-v2__comparison-legend i.is-previous {background:linear-gradient(135deg,#426c88,#79a8c8)}
+.cpa-v2__comparison-chart .cpa-v2__chart-footnote {padding-top:11px}
+@media (max-width:720px) {
+  .cpa-v2__comparison-legend {padding-right:13px;padding-left:13px}
+}
