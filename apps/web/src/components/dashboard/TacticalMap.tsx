@@ -1,6 +1,7 @@
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js'
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
@@ -371,6 +372,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
       canvasContextAttributes: spatialCanvasContextAttributes,
       transformRequest: trafficTransformRequest,
     });
+    bindDenseMapLabels(map);
     map.on('error', () => {});
     const syncWorldViewport = () => {
       const center = map.getCenter();
