@@ -14,8 +14,8 @@ describe('map style provider contracts', () => {
   });
 
   it('caps raster imagery and reference overlays to overzoom available tiles', () => {
-    expect(source).toContain("maxzoom: 16, attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics'");
-    expect(source).toContain("maxzoom: 14, attribution: '© Esri Reference Overlay'");
+    expect(source).toContain("maxzoom: 19, attribution: '© Esri, Vantor, Earthstar Geographics, GIS User Community'");
+    expect(source).toContain("maxzoom: 19, attribution: '© Esri Reference Overlay'");
   });
 
   it('uses a documented alternate OpenFreeMap style rather than claiming an independent provider', () => {

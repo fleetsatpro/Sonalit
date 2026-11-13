@@ -56,9 +56,9 @@ interface Props {
 type MapMode = 'map' | 'satellite' | 'earth' | 'hybrid';
 
 const MAP_URL        = 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
-const SAT_URL        = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-const REF_PLACES_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
-const REF_ROADS_URL  = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
+const SAT_URL        = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const REF_PLACES_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+const REF_ROADS_URL  = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
 const GIBS_TRUE_COLOR_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/' + new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10) + '/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg';
 
 const NEXT_MODE:  Record<MapMode, MapMode>  = { map: 'satellite', satellite: 'earth', earth: 'hybrid', hybrid: 'map' };
@@ -264,7 +264,7 @@ export default function CesiumLiveMap({
           GIBS_TRUE_COLOR_URL,
           'NASA EOSDIS GIBS',
           9,
-          7,
+          18,
         ),
       );
       viewer.imageryLayers.addImageryProvider(
@@ -278,9 +278,9 @@ export default function CesiumLiveMap({
       viewer.imageryLayers.addImageryProvider(
         createAiCesiumImageryProvider(
           SAT_URL,
-          '© Esri, Maxar, Earthstar Geographics',
-          23,
-          14,
+          '© Esri, Vantor, Earthstar Geographics, GIS User Community',
+          19,
+          18,
         ),
       );
       if (mapMode === 'hybrid') {

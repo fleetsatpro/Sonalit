@@ -299,7 +299,7 @@ function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: str
   viewer.imageryLayers.removeAll();
   const add = (url: string, credit: string, maximumLevel = 19, tune?: (layer: Cesium.ImageryLayer) => void) => {
     const provider = url === SATELLITE_URL
-      ? createAiCesiumImageryProvider(url, credit, maximumLevel, 14)
+      ? createAiCesiumImageryProvider(url, credit, maximumLevel, 18)
       : new Cesium.UrlTemplateImageryProvider({
           url,
           credit: new Cesium.Credit(credit, false),
@@ -320,10 +320,10 @@ function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: str
       layer.gamma = 0.9;
     });
   } else {
-    add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 16);
-    if (mode === 'hybrid') add(ROADS_URL, 'Esri', 14);
+    add(SATELLITE_URL, 'Esri, Vantor, Earthstar Geographics, GIS User Community', 19);
+    if (mode === 'hybrid') add(ROADS_URL, 'Esri', 19);
     // Place names and administrative labels remain visible in satellite mode too.
-    add(PLACES_URL, 'Esri', 14);
+    add(PLACES_URL, 'Esri', 19);
   }
 }
 

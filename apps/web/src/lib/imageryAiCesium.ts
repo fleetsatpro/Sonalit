@@ -21,7 +21,7 @@ async function toBitmap(image: CesiumImage) {
 
 export function wrapCesiumImageryProvider<T extends Cesium.ImageryProvider>(
   provider: T,
-  minimumLevel = 14,
+  minimumLevel = 18,
 ): T {
   const original = provider.requestImage.bind(provider)
   const patchable = provider as T & {

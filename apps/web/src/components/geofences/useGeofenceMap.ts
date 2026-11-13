@@ -264,7 +264,7 @@ export function useGeofenceMap(opts: Options) {
           title: [vehicle.registration, status.toUpperCase(), speed].filter(Boolean).join(' · '),
         });
         element.addEventListener('click', event => { event.stopPropagation(); opts.onVehiclePicked(vehicle.id); });
-        operationalMarkersRef.current.push(new maplibregl.Marker({ element, anchor: 'left', offset: [-20, 0] }).setLngLat([vehicle.lng, vehicle.lat]).addTo(m));
+        operationalMarkersRef.current.push(new maplibregl.Marker({ element, anchor: 'center' }).setLngLat([vehicle.lng, vehicle.lat]).addTo(m));
       };
       const placeDevice = (device: MapDevice) => {
         const state = device.panic_active ? 'sos' : (device.status || 'unknown');
@@ -284,7 +284,7 @@ export function useGeofenceMap(opts: Options) {
             .setText([device.name, device.model || device.assignment_type || 'GPS device', state.toUpperCase(), device.last_seen ? 'Last seen ' + device.last_seen : 'Last seen unavailable'].join(' · '))
             .addTo(m);
         });
-        operationalMarkersRef.current.push(new maplibregl.Marker({ element, anchor: 'left', offset: [-20, 0] }).setLngLat([device.lng, device.lat]).addTo(m));
+        operationalMarkersRef.current.push(new maplibregl.Marker({ element, anchor: 'center' }).setLngLat([device.lng, device.lat]).addTo(m));
       };
       opts.visibleVehicles.forEach(placeVehicle);
       opts.devices.forEach(placeDevice);

@@ -27,14 +27,14 @@ const SATELLITE_STYLE: maplibregl.StyleSpecification = {
       type: 'raster',
       tiles: ['sonalit-ai://satellite/{z}/{y}/{x}'],
       tileSize: 256,
-      maxzoom: 16,
-      attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics',
+      maxzoom: 19,
+      attribution: '© Esri, Vantor, Earthstar Geographics, GIS User Community',
     },
     ref: {
       type: 'raster',
       tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}'],
       tileSize: 256,
-      maxzoom: 14,
+      maxzoom: 19,
     },
   },
   layers: [
@@ -953,7 +953,7 @@ export default function FleetMap({
           const current = vehiclesRef.current.find(item => item.id === v.id)
           if (current) onSelectRef.current(current)
         })
-        const marker = new maplibregl.Marker({ element: el, anchor: 'left', offset: [-20, 0] }).setLngLat([v.lng!, v.lat!]).addTo(map)
+        const marker = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([v.lng!, v.lat!]).addTo(map)
         markersRef.current.set(v.id, marker)
       }
     }

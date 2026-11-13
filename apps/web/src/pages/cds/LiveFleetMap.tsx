@@ -157,7 +157,7 @@ export function LiveFleetMap({ trips, selectedId, onSelect, track }: LiveFleetMa
           event.stopPropagation();
           onSelectRef.current(t.id);
         });
-        marker = new maplibregl.Marker({ element: el, anchor: 'left', offset: [-20, 0] }).setLngLat([lng, lat]).addTo(m);
+        marker = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(m);
         markers.current.set(t.id, marker);
       } else {
         marker.setLngLat([lng, lat]);

@@ -25,6 +25,13 @@ describe('shared operational map markers', () => {
     expect(source).toContain("bearing.hidden = !Number.isFinite(heading)");
   });
 
+  it('keeps the GPS anchor at the marker centre and floats labels outside the hit target', () => {
+    expect(source).toContain('width:42px;height:42px');
+    expect(source).toContain('position:absolute;z-index:4;left:var(--sml-marker-label-left)');
+    expect(source).toContain("const markerSize = selected ? 36 : zoom < 5.8 ? 22 : zoom < 8.5 ? 27 : zoom < 11.2 ? 31 : 36");
+    expect(source).toContain("button.style.setProperty('--sml-marker-label-left'");
+  });
+
   it('adapts label density to map zoom and preserves reduced-motion preferences', () => {
     expect(source).toContain("zoom < 7.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full'");
     expect(source).toContain('@media(prefers-reduced-motion:reduce)');
