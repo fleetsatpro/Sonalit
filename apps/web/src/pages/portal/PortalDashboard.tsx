@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import { bindDenseMapLabels } from '../../lib/mapLabels.js';
+import { createOperationalDeviceMarker, setOperationalMarkerDensity } from '../../lib/operationalMapMarkers.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PortalShell, Badge, ProgressBar, fmtDateTime, relativeTime } from '../../components/portal/PortalPrimitives.js';
 
@@ -118,16 +119,16 @@ function OverviewMap({ shipments, selected, onSelect }: {
     const bounds = new maplibregl.LngLatBounds();
     located.forEach(s => {
       const freshnessState = freshness(s);
-      const el = document.createElement('button');
-      el.type = 'button';
-      el.title = s.reference;
       const alerting = s.exception_count > 0 || s.seal_status === 'compromised';
-      el.style.cssText = 'width:18px;height:18px;border-radius:999px;border:2px solid rgba(255,255,255,.85);background:' +
-        (alerting ? '#ef4444' : '#f97316') +
-        ';box-shadow:0 0 0 5px rgba(249,115,22,.12),0 0 18px rgba(249,115,22,.45);cursor:pointer;';
-      if (freshnessState === 'stale' || freshnessState === 'offline') el.style.opacity = '.6';
-      el.onclick = () => onSelect(s.convoy_id);
-      markers.current.push(new maplibregl.Marker({ element: el })
+      const detail = [alerting ? 'ATTENTION' : statusLabel(s.status), freshnessState.toUpperCase()].join(' · ');
+      const el = createOperationalDeviceMarker({
+        kind: 'vehicle', identity: s.reference,
+        state: alerting ? 'alert' : freshnessState,
+        detail, zoom: m.getZoom(),
+        title: [s.reference, detail, s.origin, s.destination].filter(Boolean).join(' · '),
+      });
+      el.addEventListener('click', () => onSelect(s.convoy_id));
+      markers.current.push(new maplibregl.Marker({ element: el, anchor: 'left', offset: [-20, 0] })
         .setLngLat([s.current_location!.lng, s.current_location!.lat])
         .addTo(m));
       bounds.extend([s.current_location!.lng, s.current_location!.lat]);
