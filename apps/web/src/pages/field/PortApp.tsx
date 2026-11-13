@@ -124,6 +124,7 @@ export default function PortApp() {
             initialViewState={initialView}
             style={{ width: '100%', height: '100%', minHeight: 400 }}
             mapStyle={OSM_STYLE as unknown as maplibregl.StyleSpecification}
+             onLoad={event => { bindDenseMapLabels(event.target); }}
           >
             <NavigationControl position="top-right" showCompass={false} />
             {withGps.map(r => (
