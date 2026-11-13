@@ -304,9 +304,18 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
   return marker
 }
 
+function formatFixAge(secondsAgo: number): string {
+  if (!Number.isFinite(secondsAgo) || secondsAgo < 0) return 'AGE N/A';
+  if (secondsAgo < 60) return Math.floor(secondsAgo) + 's';
+  if (secondsAgo < 3600) return Math.floor(secondsAgo / 60) + 'm';
+  if (secondsAgo < 86400) return Math.floor(secondsAgo / 3600) + 'h';
+  return Math.floor(secondsAgo / 86400) + 'd';
+}
+
 function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
   const isOfficer = v.kind === 'guardian';
-  const state = v.panic_active || v.status === 'sos'
+  const isSos = v.panic_active || v.status === 'sos';
+  const state = isSos
     ? 'sos'
     : isOfficer && v.status !== 'offline'
       ? 'online'
@@ -316,26 +325,37 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
     : v.status === 'idle' || v.status === 'stop'
       ? 'STATIONARY'
       : v.status === 'offline' ? 'NO RECENT FIX' : 'SOS';
+  const gpsAge = formatFixAge(v.secondsAgo);
   const healthTimestamp = v.health_recorded_at ? Date.parse(v.health_recorded_at) : Number.NaN;
   const healthAgeMs = Date.now() - healthTimestamp;
   const healthAge = Number.isFinite(healthAgeMs) && healthAgeMs >= 0
     ? healthAgeMs < 60_000 ? Math.round(healthAgeMs / 1000) + 's' : healthAgeMs < 3_600_000 ? Math.floor(healthAgeMs / 60_000) + 'm' : Math.floor(healthAgeMs / 3_600_000) + 'h'
     : 'age n/a';
-  const health = isOfficer && v.battery_level != null
-    ? ' · BAT ' + Math.round(v.battery_level) + '% · HEALTH ' + healthAge
+  const batteryDetail = isOfficer && v.battery_level != null
+    ? ' · BAT ' + Math.round(v.battery_level) + '%'
     : '';
-  const detail = isOfficer
-    ? (v.status === 'offline' ? 'OFFLINE' : (v.status === 'move' ? 'ONLINE · ' + activity : 'ONLINE · STATIONARY')) + health
-    : (v.status === 'move' ? activity : state.toUpperCase().replaceAll('_', ' '));
+  const detail = isSos
+    ? 'SOS · ALERT ACTIVE'
+    : v.status === 'offline'
+      ? 'OFFLINE · GPS ' + gpsAge
+      : isOfficer
+        ? (v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
+        : v.status === 'move'
+          ? 'MOVING · ' + activity
+          : state.toUpperCase().replaceAll('_', ' ');
+  const identity = isOfficer ? (v.officer_name || v.registration || 'Field officer') : (v.registration || 'Vehicle');
+  const healthSummary = isOfficer && v.battery_level != null
+    ? 'BAT ' + Math.round(v.battery_level) + '% · HEALTH ' + healthAge + ' AGO'
+    : '';
   return {
     kind: isOfficer ? 'guardian' as const : 'vehicle' as const,
-    identity: isOfficer ? (v.officer_name || v.registration || 'Field officer') : (v.registration || 'Vehicle'),
+    identity,
     state,
     detail,
     heading: v.heading,
     selected,
     zoom,
-    title: [isOfficer ? (v.officer_name || 'Field officer') : v.registration, state.toUpperCase(), activity, v.location_desc].filter(Boolean).join(' · '),
+    title: [identity, state.toUpperCase(), activity, 'GPS FIX ' + gpsAge + ' AGO', healthSummary, v.location_desc].filter(Boolean).join(' · '),
   };
 }
 interface Props {
