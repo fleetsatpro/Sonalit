@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Camera, ShieldAlert, X, RefreshCw, ExternalLink, MapPin, Search, LayoutGrid, Map as MapIcon, Crosshair, Siren, Sparkles, Users, Car, Loader, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
@@ -483,6 +484,7 @@ function CaptureMap({ captures, onPick, selectedId }: { captures: Capture[]; onP
   useEffect(() => {
     if (!el.current || mapRef.current) return;
     const map = new maplibregl.Map({ container: el.current, style: SAT_STYLE, center: [37, 3], zoom: 4, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes });
+    bindDenseMapLabels(map);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.on('load', () => setReady(true));
     mapRef.current = map;
