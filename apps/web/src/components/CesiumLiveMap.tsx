@@ -227,6 +227,13 @@ export default function CesiumLiveMap({
           7,
         ),
       );
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: REF_PLACES_URL,
+          credit: new Cesium.Credit('© Esri Reference Overlay', false),
+          maximumLevel: 19,
+        }),
+      );
     } else {
       viewer.imageryLayers.addImageryProvider(
         createAiCesiumImageryProvider(
