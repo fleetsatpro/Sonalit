@@ -4,6 +4,7 @@ import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Crosshair, Minus, Plus, ShieldAlert, Target, Truck } from 'lucide-react';
 import { SAT_STYLE, STREET_STYLE } from '../../lib/mapStyles.js';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import type { GlobeMember, LatLng, RiskZone } from './CorridorWorldScene.js';
 import '../../styles/spatial-command.css';
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js';
