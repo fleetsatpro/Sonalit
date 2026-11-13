@@ -8,8 +8,6 @@ type LabelStyleLayer = {
   paint?: Record<string, unknown>;
 };
 
-const appliedStyle = new WeakMap<maplibregl.Map, string>();
-
 const PLACE_LABEL = /(country|continent|admin|state|province|region|city|town|village|settlement|place|capital|locality|suburb|neighbou?rhood)/i;
 const ROAD_LABEL = /(road|street|motorway|highway|transportation|railway|rail|ferry|route|shield)/i;
 const WATER_LABEL = /(water|river|lake|ocean|sea|canal)/i;
@@ -24,13 +22,6 @@ export function enhanceDenseMapLabels(map: maplibregl.Map): void {
   if (map.isStyleLoaded() !== true) return;
 
   const style = map.getStyle();
-  const styleKey = JSON.stringify({
-    name: style.name ?? '',
-    sources: Object.keys(style.sources ?? {}).sort(),
-    layers: (style.layers ?? []).map(layer => [layer.id, layer.type, (layer as unknown as LabelStyleLayer)['source-layer'] ?? '']),
-  });
-  if (appliedStyle.get(map) === styleKey) return;
-  appliedStyle.set(map, styleKey);
 
   for (const rawLayer of style.layers ?? []) {
     if (rawLayer.type !== 'symbol') continue;
