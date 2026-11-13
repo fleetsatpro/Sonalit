@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { AlertTriangle, ArrowLeft, Lock, Shield, Truck } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   PortalShell, Badge, MapShell, TruckRow, EscortPanel, fmtDateTime,
@@ -59,6 +60,7 @@ function ConvoyClusterMap({ vehicles }: { vehicles: Vehicle[] }) {
       center, zoom: located.length > 1 ? 8 : 10,
       attributionControl: false,
     });
+    bindDenseMapLabels(map);
     mapRef.current = map;
 
     map.on('load', () => {
