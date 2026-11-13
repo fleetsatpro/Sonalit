@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../lib/spatialRendering.js';
 
@@ -133,6 +134,7 @@ export default function PortalMap({
       zoom: 5,
       attributionControl: false,
     });
+    bindDenseMapLabels(map);
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
     mapRef.current = map;
 
