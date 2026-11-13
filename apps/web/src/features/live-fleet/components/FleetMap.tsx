@@ -27,12 +27,14 @@ const SATELLITE_STYLE: maplibregl.StyleSpecification = {
       type: 'raster',
       tiles: ['sonalit-ai://satellite/{z}/{y}/{x}'],
       tileSize: 256,
+      maxzoom: 16,
       attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics',
     },
     ref: {
       type: 'raster',
       tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}'],
       tileSize: 256,
+      maxzoom: 14,
     },
   },
   layers: [
