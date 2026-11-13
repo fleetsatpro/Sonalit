@@ -84,10 +84,11 @@ function makePoint(color: Cesium.Color, size: number): Cesium.PointGraphics {
 
 const DEVICE_IMAGE = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(operationalMarkerSvg('vehicle'));
 const GUARDIAN_IMAGE = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(operationalMarkerSvg('guardian'));
+const TRACKER_IMAGE = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(operationalMarkerSvg('tracker'));
 
-function makeDeviceBillboard(kind: 'vehicle' | 'guardian', color: Cesium.Color, heading: number | null): Cesium.BillboardGraphics {
+function makeDeviceBillboard(kind: 'vehicle' | 'guardian' | 'tracker', color: Cesium.Color, heading: number | null): Cesium.BillboardGraphics {
   return new Cesium.BillboardGraphics({
-    image: kind === 'guardian' ? GUARDIAN_IMAGE : DEVICE_IMAGE,
+    image: kind === 'guardian' ? GUARDIAN_IMAGE : kind === 'tracker' ? TRACKER_IMAGE : DEVICE_IMAGE,
     width: 34,
     height: 34,
     color,
@@ -327,11 +328,12 @@ export default function CesiumLiveMap({
       const label = loc.vehicle_id
         ? (vehicleMap.get(loc.vehicle_id) ?? loc.device_id.slice(0, 8))
         : loc.device_id.slice(0, 8);
+      const markerKind = loc.vehicle_id ? 'vehicle' as const : 'tracker' as const;
 
       if (existing) {
         (existing.position as Cesium.ConstantPositionProperty).setValue(pos);
         existing.point = makePoint(isSelected ? GREEN : ORANGE, isSelected ? 8 : 6);
-        existing.billboard = makeDeviceBillboard('vehicle', isSelected ? GREEN : ORANGE, loc.heading);
+        existing.billboard = makeDeviceBillboard(markerKind, isSelected ? GREEN : ORANGE, loc.heading);
         existing.label = makeDeviceLabel(label, isSelected ? GREEN : ORANGE, isSelected);
       } else {
         const entity = viewer.entities.add({
@@ -510,8 +512,10 @@ export default function CesiumLiveMap({
     for (const device of devices) {
       if (device.last_lat == null || device.last_lng == null) continue;
       const pos = Cesium.Cartesian3.fromDegrees(device.last_lng, device.last_lat, 0);
-      const color = device.panic_active ? RED : GREEN;
-      const labelText = device.panic_active ? 'SOS · ' + device.name : device.name;
+      const state = String(device.status || 'unknown').toLowerCase();
+      const offline = state === 'offline' || state === 'stale' || state === 'unavailable';
+      const color = device.panic_active ? RED : offline ? Cesium.Color.fromCssColorString('#94a3b8') : GREEN;
+      const labelText = device.panic_active ? 'SOS · ' + device.name : offline ? 'OFFLINE · ' + device.name : device.name;
       const cesiumId = `guardian_${device.id}`;
       const entity = viewer.entities.add({
         id: cesiumId,
@@ -519,6 +523,7 @@ export default function CesiumLiveMap({
         point: makePoint(color, 7),
         billboard: makeDeviceBillboard('guardian', color, null),
         label: makeDeviceLabel(labelText, color, false),
+        description: [device.name, state.toUpperCase(), device.last_seen ? 'Last seen ' + device.last_seen : 'Last seen unavailable', device.last_speed == null ? '' : 'Last reported speed ' + device.last_speed].filter(Boolean).join(' · '),
       });
       guardianRef.current.set(device.id, entity);
       registry?.register({
