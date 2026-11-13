@@ -1,5 +1,6 @@
 import maplibregl from 'maplibre-gl';
 import { bindDenseMapLabels } from '../../lib/mapLabels.js';
+import { createOperationalDeviceMarker, setOperationalMarkerDensity, updateOperationalDeviceMarker } from '../../lib/operationalMapMarkers.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { STREET_STYLE, SAT_STYLE } from '../../lib/mapStyles.js';
@@ -66,24 +67,6 @@ const num = (v: number | string | null): number | null => {
 
 export const positioned = (t: LiveTrip): boolean => num(t.lat) != null && num(t.lng) != null;
 
-let stylesInjected = false;
-function injectStyles() {
-  if (stylesInjected) return;
-  stylesInjected = true;
-  const s = document.createElement('style');
-  s.textContent = `
-    .cds-fleet-pin{cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
-    .cds-fleet-dot{width:13px;height:13px;border-radius:50%;border:2px solid rgba(0,0,0,.55);position:relative}
-    .cds-fleet-pin[data-sel="1"] .cds-fleet-dot{width:17px;height:17px}
-    .cds-fleet-pin[data-live="1"] .cds-fleet-dot::after{content:'';position:absolute;inset:-6px;border-radius:50%;
-      border:1.5px solid currentColor;opacity:0;animation:cds-fleet-pulse 2.2s ease-out infinite}
-    @keyframes cds-fleet-pulse{0%{transform:scale(.55);opacity:.75}100%{transform:scale(1.5);opacity:0}}
-    .cds-fleet-tag{font:600 9.5px/1.1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;
-      white-space:nowrap;padding:2px 5px;border-radius:5px;background:rgba(8,9,11,.82);
-      border:1px solid rgba(255,255,255,.14);color:#fff}
-  `;
-  document.head.appendChild(s);
-}
 
 export function LiveFleetMap({ trips, selectedId, onSelect, track }: LiveFleetMapProps) {
   const holder = useRef<HTMLDivElement | null>(null);
@@ -93,10 +76,11 @@ export function LiveFleetMap({ trips, selectedId, onSelect, track }: LiveFleetMa
   // Refit only when the set of positioned trips changes, so a 20s refetch that
   // moves a lorry 200m does not yank the operator's pan and zoom back.
   const fitKey = useRef('');
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
   const [basemap, setBasemap] = useState<'street' | 'satellite'>('street');
 
   useEffect(() => {
-    injectStyles();
     if (!holder.current || map.current) return;
     const m = new maplibregl.Map({
       container: holder.current,
@@ -140,14 +124,14 @@ export function LiveFleetMap({ trips, selectedId, onSelect, track }: LiveFleetMa
     });
   }, [basemap]);
 
-  // Markers: one per positioned trip, reused across refetches so the pins do not
-  // flicker every poll.
+  // A single shared vehicle symbol keeps identity, freshness and heading consistent across Sonalit.
   useEffect(() => {
     const m = map.current;
     if (!m) return;
 
     const seen = new Set<string>();
     const pts: [number, number][] = [];
+    const zoom = m.getZoom();
 
     for (const t of trips) {
       const lat = num(t.lat), lng = num(t.lng);
@@ -155,33 +139,38 @@ export function LiveFleetMap({ trips, selectedId, onSelect, track }: LiveFleetMa
       seen.add(t.id);
       pts.push([lng, lat]);
 
+      const selected = t.id === selectedId;
+      const isFresh = t.position_is_live === true;
+      const movement = t.phase === 'moving'
+        ? (num(t.speed) != null && num(t.speed)! > 0 ? Math.round(num(t.speed)!) + ' km/h · MOVING' : 'MOVING')
+        : t.phase === 'at_port' ? 'PORT OPERATIONS' : 'STAGED';
+      const options = {
+        kind: 'vehicle' as const,
+        identity: t.vehicle_reg || t.trip_number,
+        state: isFresh ? t.phase : 'stale',
+        freshness: isFresh ? 'live' : 'stale',
+        detail: movement,
+        heading: num(t.heading),
+        selected,
+        zoom,
+        title: [t.vehicle_reg || t.trip_number, isFresh ? 'LIVE FIX' : 'STALE FIX', movement, t.destination].filter(Boolean).join(' · '),
+      };
+
       let marker = markers.current.get(t.id);
       if (!marker) {
-        const el = document.createElement('div');
-        el.className = 'cds-fleet-pin';
-        el.innerHTML = '<div class="cds-fleet-dot"></div><div class="cds-fleet-tag"></div>';
-        el.addEventListener('click', e => { e.stopPropagation(); onSelect(t.id); });
-        marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(m);
+        const el = createOperationalDeviceMarker(options);
+        el.addEventListener('click', event => {
+          event.stopPropagation();
+          onSelectRef.current(t.id);
+        });
+        marker = new maplibregl.Marker({ element: el, anchor: 'left', offset: [-20, 0] }).setLngLat([lng, lat]).addTo(m);
         markers.current.set(t.id, marker);
       } else {
         marker.setLngLat([lng, lat]);
+        updateOperationalDeviceMarker(marker.getElement() as HTMLButtonElement, options);
       }
-
-      const el = marker.getElement();
-      const color = PHASE_COLOR[t.phase];
-      el.style.color = color;
-      el.dataset['sel'] = t.id === selectedId ? '1' : '0';
-      // Only a genuinely live fix pulses. A stale one is drawn hollow, because a
-      // solid pulsing dot over a two-hour-old position is the map lying.
-      el.dataset['live'] = t.position_is_live ? '1' : '0';
-      const dot = el.querySelector<HTMLElement>('.cds-fleet-dot');
-      if (dot) {
-        dot.style.background = t.position_is_live ? color : 'transparent';
-        dot.style.borderColor = t.position_is_live ? 'rgba(0,0,0,.55)' : color;
-        dot.style.boxShadow = t.id === selectedId ? `0 0 0 3px ${color}55` : (t.position_is_live ? `0 0 10px ${color}88` : 'none');
-      }
-      const tag = el.querySelector<HTMLElement>('.cds-fleet-tag');
-      if (tag) tag.textContent = t.vehicle_reg || t.trip_number;
+      const el = marker.getElement() as HTMLButtonElement;
+      el.style.zIndex = selected ? '90' : (isFresh ? '35' : '12');
     }
 
     for (const [id, marker] of markers.current) {
@@ -195,7 +184,20 @@ export function LiveFleetMap({ trips, selectedId, onSelect, track }: LiveFleetMa
         (b, p) => b.extend(p), new maplibregl.LngLatBounds(pts[0], pts[0]));
       m.fitBounds(bounds, { padding: 56, maxZoom: 13, duration: 600 });
     }
-  }, [trips, selectedId, onSelect]);
+  }, [trips, selectedId]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    const refreshDensity = () => {
+      for (const [id, marker] of markers.current) {
+        setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement, m.getZoom(), id === selectedId);
+      }
+    };
+    m.on('zoom', refreshDensity);
+    refreshDensity();
+    return () => { m.off('zoom', refreshDensity); };
+  }, [selectedId]);
 
   // Selected trip's recent track.
   useEffect(() => {
