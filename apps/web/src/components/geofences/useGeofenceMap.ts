@@ -4,7 +4,7 @@ import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import { createOperationalDeviceMarker, setOperationalMarkerDensity } from '../../lib/operationalMapMarkers.js';
 import { geoCircle } from '../../lib/geoMath.js';
 import { STREET_STYLE, SAT_STYLE } from '../../lib/mapStyles.js';
-import { STATUS_COLOR, EA_CENTER, EA_ZOOM } from './types.js';
+import { EA_CENTER, EA_ZOOM } from './types.js';
 import type { MapVehicle, MapDevice, MapGeofence, Geofence } from './types.js';
 import type { CorridorSignalOverlay } from './geofenceSegmentSignals.js';
 
