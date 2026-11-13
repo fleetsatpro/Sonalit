@@ -6,6 +6,7 @@ import {
   TimerReset, Truck, Waves, XCircle,
 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PortalShell, Badge, ProgressBar, fmtDateTime, relativeTime } from '../../components/portal/PortalPrimitives.js';
 
@@ -100,6 +101,7 @@ function OverviewMap({ shipments, selected, onSelect }: {
       zoom: 3.2,
       attributionControl: false,
     });
+    bindDenseMapLabels(m);
     map.current = m;
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     return () => { m.remove(); map.current = null; };
