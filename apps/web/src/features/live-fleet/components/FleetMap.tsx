@@ -314,8 +314,13 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
     : v.status === 'idle' || v.status === 'stop'
       ? 'STATIONARY'
       : v.status === 'offline' ? 'NO RECENT FIX' : 'SOS';
+  const healthTimestamp = v.health_recorded_at ? Date.parse(v.health_recorded_at) : Number.NaN;
+  const healthAgeMs = Date.now() - healthTimestamp;
+  const healthAge = Number.isFinite(healthAgeMs) && healthAgeMs >= 0
+    ? healthAgeMs < 60_000 ? Math.round(healthAgeMs / 1000) + 's' : healthAgeMs < 3_600_000 ? Math.floor(healthAgeMs / 60_000) + 'm' : Math.floor(healthAgeMs / 3_600_000) + 'h'
+    : 'age n/a';
   const health = isOfficer && v.battery_level != null
-    ? ' · BAT ' + Math.round(v.battery_level) + '%'
+    ? ' · BAT ' + Math.round(v.battery_level) + '% · HEALTH ' + healthAge
     : '';
   const detail = isOfficer
     ? (v.status === 'offline' ? 'OFFLINE' : (v.status === 'move' ? 'ONLINE · ' + activity : 'ONLINE · STATIONARY')) + health
