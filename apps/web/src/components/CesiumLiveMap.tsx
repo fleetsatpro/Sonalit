@@ -104,7 +104,7 @@ function makeDeviceLabel(text: string, color: Cesium.Color, selected: boolean): 
   return new Cesium.LabelGraphics({
     text,
     font: selected ? '700 13px Inter, sans-serif' : '650 12px Inter, sans-serif',
-    fillColor: Cesium.Color.fromCssColorString('#f3f7fb'),
+    fillColor: color.withAlpha(0.98),
     outlineColor: Cesium.Color.fromCssColorString('#030914'),
     outlineWidth: 3,
     style: Cesium.LabelStyle.FILL_AND_OUTLINE,
