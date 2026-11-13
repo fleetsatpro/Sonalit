@@ -1,6 +1,7 @@
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js'
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
+import { STREET_STYLE, SAT_STYLE } from '../../lib/mapStyles.js';
 import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
@@ -43,26 +44,6 @@ function geoCircle(lat: number, lng: number, radiusKm: number, steps = 48): [num
   }
   return pts;
 }
-
-const STREET_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-  sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
-  layers: [{ id: 'osm-tiles', type: 'raster', source: 'osm' as const, paint: { 'raster-opacity': 1 } }],
-};
-// Satellite imagery + Esri reference layer (place names, country/admin boundaries, major roads)
-const SAT_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-  sources: {
-    sat: { type: 'raster', tiles: ['sonalit-ai://satellite/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics' },
-    'sat-ref': { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: '© Esri Reference Overlay' },
-  },
-  layers: [
-    { id: 'sat-tiles', type: 'raster', source: 'sat' as const, paint: { 'raster-opacity': 1 } },
-    { id: 'sat-ref-tiles', type: 'raster', source: 'sat-ref' as const, paint: { 'raster-opacity': 1 } },
-  ],
-};
 
 // Status → color. Drives both vehicle and device markers.
 // alert/panic = red, warn = amber, moving = green, idle = gray, offline = dim gray
