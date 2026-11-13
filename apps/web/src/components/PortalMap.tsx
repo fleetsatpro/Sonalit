@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import { bindDenseMapLabels } from '../lib/mapLabels.js';
+import { createOperationalDeviceMarker, setOperationalMarkerDensity, updateOperationalDeviceMarker } from '../lib/operationalMapMarkers.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../lib/spatialRendering.js';
 
@@ -67,30 +68,6 @@ function boundsOf(pts: LatLng[]): maplibregl.LngLatBoundsLike {
   return [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]];
 }
 
-let stylesInjected = false;
-function injectStyles() {
-  if (stylesInjected) return; stylesInjected = true;
-  const s = document.createElement('style');
-  s.textContent = `
-    .pvm-vehicle{width:32px;height:32px;position:relative;display:flex;align-items:center;justify-content:center}
-    .pvm-vehicle::before{content:'';position:absolute;width:44px;height:44px;border-radius:50%;
-      border:2px solid #f97316;opacity:0;animation:pvm-pulse 2s ease-out infinite}
-    @keyframes pvm-pulse{0%{transform:scale(.6);opacity:.8}100%{transform:scale(1.5);opacity:0}}
-  `;
-  document.head.appendChild(s);
-}
-
-function mkVehicleEl(): HTMLDivElement {
-  injectStyles();
-  const el = document.createElement('div');
-  el.className = 'pvm-vehicle';
-  el.innerHTML = `<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="16" cy="16" r="14" fill="#0c1a2e" stroke="#f97316" stroke-width="2"/>
-    <polygon points="16,6 24,24 16,20 8,24" fill="#f97316"/>
-  </svg>`;
-  return el;
-}
-
 function mkCircleEl(color: string): HTMLDivElement {
   const el = document.createElement('div');
   el.style.cssText = `width:14px;height:14px;background:${color};border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px ${color}88`;
@@ -135,6 +112,11 @@ export default function PortalMap({
       attributionControl: false,
     });
     bindDenseMapLabels(map);
+    const refreshMarkerDensity = () => {
+      const marker = vehicleMarkerRef.current;
+      if (marker) setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement, map.getZoom(), true);
+    };
+    map.on('zoom', refreshMarkerDensity);
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
     mapRef.current = map;
 
@@ -160,6 +142,7 @@ export default function PortalMap({
       vehicleMarkerRef.current?.remove();
       originMarkerRef.current?.remove();
       destMarkerRef.current?.remove();
+      map.off('zoom', refreshMarkerDensity);
       map.remove();
       mapRef.current = null;
       initialFitRef.current = false;
@@ -238,10 +221,19 @@ export default function PortalMap({
 
     const lngLat: maplibregl.LngLatLike = [currentLocation.lng, currentLocation.lat];
 
+    const markerOptions = {
+      kind: 'vehicle' as const,
+      identity: 'Tracked vehicle',
+      state: noSignal ? 'stale' : 'online',
+      detail: noSignal ? 'NO RECENT GPS FIX' : status.toUpperCase().replaceAll('_', ' '),
+      heading,
+      selected: true,
+      zoom: map.getZoom(),
+      title: ['Tracked vehicle', noSignal ? 'STALE POSITION' : 'POSITION RECEIVED', status.toUpperCase()].join(' · '),
+    };
     if (!vehicleMarkerRef.current) {
-      const el = mkVehicleEl();
-      el.style.transform = `rotate(${heading ?? 0}deg)`;
-      vehicleMarkerRef.current = new maplibregl.Marker({ element: el, rotationAlignment: 'viewport' })
+      const el = createOperationalDeviceMarker(markerOptions);
+      vehicleMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'left', offset: [-20, 0] })
         .setLngLat(lngLat).addTo(map);
       if (!initialFitRef.current) {
         map.flyTo({ center: lngLat, zoom: 10, duration: 800 });
@@ -249,9 +241,9 @@ export default function PortalMap({
       }
     } else {
       vehicleMarkerRef.current.setLngLat(lngLat);
+      updateOperationalDeviceMarker(vehicleMarkerRef.current.getElement() as HTMLButtonElement, markerOptions);
       const el = vehicleMarkerRef.current.getElement();
       el.style.transition = animatePosition ? 'transform 0.4s ease' : 'none';
-      el.style.transform = `rotate(${heading ?? 0}deg)`;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLocation, heading, animatePosition]);
