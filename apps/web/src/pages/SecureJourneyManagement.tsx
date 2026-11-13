@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { DARK_STREET_STYLE, STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
@@ -226,6 +227,7 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
     const container=containerRef.current;
     if(!container||mapRef.current)return;
     const map=new maplibregl.Map({container,style:DARK_STREET_STYLE,center:[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
+    bindDenseMapLabels(map);
      container.dataset.sjmMapState='loading';
     map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'bottom-right');
     map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
@@ -333,6 +335,7 @@ function IntakeMapPicker({onPick,targetKey}:{onPick:(point:{lat:number;lng:numbe
   const container=containerRef.current;
   if(!container||mapRef.current)return;
   const map=new maplibregl.Map({container,style:STREET_STYLE,center:[37.5,-1.3],zoom:4.7,attributionControl:false,maxPitch:35});
+  bindDenseMapLabels(map);
   map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'top-right');
   map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
   map.on('click',(event)=>{
