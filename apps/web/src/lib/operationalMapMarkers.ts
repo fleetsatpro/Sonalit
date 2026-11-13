@@ -137,7 +137,7 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
 export function setOperationalMarkerDensity(button: HTMLButtonElement, zoom: number, selected = false): void {
   button.dataset.density = zoom < 7.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
   button.dataset.selected = selected ? 'true' : 'false';
-  const markerSize = selected ? 36 : zoom < 5.8 ? 22 : zoom < 8.5 ? 27 : zoom < 11.2 ? 31 : 36;
+  const markerSize = selected ? 36 : zoom < 5.8 ? 18 : zoom < 8.5 ? 23 : zoom < 11.2 ? 29 : 36;
   button.style.setProperty('--sml-marker-size', markerSize + 'px');
   button.style.setProperty('--sml-marker-label-left', (21 + markerSize / 2 + 6) + 'px');
   button.style.setProperty('--sml-bearing-origin', (markerSize / 2 + 7) + 'px');

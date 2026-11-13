@@ -18,6 +18,7 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain("next === 'dark' ? STREET_STYLE");
     expect(source).not.toContain('World_Street_Map/MapServer/tile/');
     expect(source).toContain("anchor: 'center'");
+    expect(source).toContain('subpixelPositioning: true');
     expect(source).not.toContain("anchor: 'left', offset: [-20, 0]");
     expect(source).toContain('maxzoom: 19');
     expect(source).not.toContain('maxzoom: 16');

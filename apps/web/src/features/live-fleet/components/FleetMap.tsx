@@ -953,7 +953,7 @@ export default function FleetMap({
           const current = vehiclesRef.current.find(item => item.id === v.id)
           if (current) onSelectRef.current(current)
         })
-        const marker = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([v.lng!, v.lat!]).addTo(map)
+        const marker = new maplibregl.Marker({ element: el, anchor: 'center', subpixelPositioning: true }).setLngLat([v.lng!, v.lat!]).addTo(map)
         markersRef.current.set(v.id, marker)
       }
     }

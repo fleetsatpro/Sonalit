@@ -11,15 +11,15 @@ export const STREET_STYLE = 'https://tiles.openfreemap.org/styles/liberty' as co
 // GPS Live page's FleetMap uses) rather than server.arcgisonline.com — the
 // latter is a legacy alias that stops serving usable imagery past its lower
 // native zoom, so deep zoom-ins fell back to blurry over-zoomed tiles. An
-// World Imagery's standard cache reaches level 19; selected advanced areas
-// extend farther. Level 19 preserves native detail without requesting
-// unsupported global overzoom tiles.
+// explicit maxzoom stops MapLibre from requesting tile levels the service
+// doesn't have, so it cleanly upsamples the deepest real tile instead of
+// showing broken/blank ones.
 export const SAT_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: {
-    sat: { type: 'raster', tiles: ['sonalit-ai://satellite/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: '© Esri, Vantor, Earthstar Geographics, GIS User Community' },
-    'sat-ref': { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: '© Esri Reference Overlay' },
+    sat: { type: 'raster', tiles: ['sonalit-ai://satellite/{z}/{y}/{x}'], tileSize: 256, maxzoom: 16, attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics' },
+    'sat-ref': { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 14, attribution: '© Esri Reference Overlay' },
   },
   layers: [
     { id: 'sat-tiles', type: 'raster', source: 'sat' as const, paint: { 'raster-opacity': 1 } },
