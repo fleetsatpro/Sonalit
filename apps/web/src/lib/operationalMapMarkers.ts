@@ -135,6 +135,6 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
 }
 
 export function setOperationalMarkerDensity(button: HTMLButtonElement, zoom: number, selected = false): void {
-  button.dataset.density = zoom < 6.2 ? 'overview' : zoom < 9.2 ? 'regional' : 'full';
+  button.dataset.density = zoom < 7.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
   button.dataset.selected = selected ? 'true' : 'false';
 }
