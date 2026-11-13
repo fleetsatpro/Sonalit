@@ -64,11 +64,15 @@ function ConvoyClusterMap({ vehicles }: { vehicles: Vehicle[] }) {
     mapRef.current = map;
 
     map.on('load', () => {
-      const features: GeoJSON.Feature[] = located.map(v => ({
-        type: 'Feature',
-        properties: { reg: v.registration, mine: v.carries_my_cargo },
-        geometry: { type: 'Point', coordinates: [v.current_lng!, v.current_lat!] },
-      }));
+      const features: GeoJSON.Feature[] = located.map(v => {
+        const ageMs = v.last_ping_at ? Date.now() - new Date(v.last_ping_at).getTime() : Number.POSITIVE_INFINITY;
+        const freshness = !Number.isFinite(ageMs) || ageMs < 0 ? 'offline' : ageMs < 120_000 ? 'live' : ageMs < 900_000 ? 'recent' : 'stale';
+        return {
+          type: 'Feature',
+          properties: { reg: v.registration, mine: v.carries_my_cargo, freshness, speed: v.speed_kmh, heading: v.heading_deg },
+          geometry: { type: 'Point', coordinates: [v.current_lng!, v.current_lat!] },
+        };
+      });
 
       map.addSource('vehicles', {
         type: 'geojson',
@@ -101,6 +105,26 @@ function ConvoyClusterMap({ vehicles }: { vehicles: Vehicle[] }) {
           'circle-radius': 7,
           'circle-stroke-width': 2,
           'circle-stroke-color': ['case', ['get', 'mine'], '#fb923c', '#64748b'],
+        },
+      });
+      map.addLayer({
+        id: 'unclustered-vehicle-label',
+        type: 'symbol',
+        source: 'vehicles',
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          'text-field': ['get', 'reg'],
+          'text-font': ['Open Sans Semibold', 'Arial Unicode MS Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 8, 9, 13, 12],
+          'text-offset': [0, 1.45],
+          'text-anchor': 'top',
+          'text-optional': true,
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#f4f7fb',
+          'text-halo-color': '#07111d',
+          'text-halo-width': 1.6,
         },
       });
     });
