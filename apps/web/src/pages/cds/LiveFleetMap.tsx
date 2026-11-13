@@ -1,4 +1,5 @@
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { STREET_STYLE, SAT_STYLE } from '../../lib/mapStyles.js';
@@ -107,6 +108,7 @@ export function LiveFleetMap({ trips, selectedId, onSelect, track }: LiveFleetMa
       zoom: 5,
       attributionControl: { compact: true },
     });
+    bindDenseMapLabels(m);
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     m.on('load', () => {
       ready.current = true;
