@@ -195,7 +195,7 @@ function CesiumDrive({ points, snapped, provider, confidence }:
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         label: {
-          text: `⏸ ${fmtDuration(st.durationMs)}`, font: '600 12px sans-serif',
+          text: `STOP · ${fmtDuration(st.durationMs)}`, font: '700 11px Inter, sans-serif',
           fillColor: Cesium.Color.WHITE, showBackground: true,
           backgroundColor: Cesium.Color.fromCssColorString('#7f1d1d').withAlpha(0.85),
           pixelOffset: new Cesium.Cartesian2(0, -20), disableDepthTestDistance: Number.POSITIVE_INFINITY,
