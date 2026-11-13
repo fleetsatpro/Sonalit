@@ -133,7 +133,7 @@ export function reconStyle(render: OpticalReconResult['render']): maplibregl.Sty
         id: 'recon-reference',
         type: 'raster',
         source: 'ref',
-        paint: { 'raster-opacity': 0.82 },
+        paint: { 'raster-opacity': 1 },
       },
     ],
   }
