@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PortalShell, fmtDateTime, relativeTime } from '../../components/portal/PortalPrimitives.js';
 
@@ -176,6 +177,7 @@ function MovementAtlas({ shipments, onOpen }: { shipments: Shipment[]; onOpen: (
       zoom: 2.2,
       attributionControl: false,
     });
+    bindDenseMapLabels(map);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     mapRef.current = map;
     return () => {
