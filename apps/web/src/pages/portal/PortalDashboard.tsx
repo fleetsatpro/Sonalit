@@ -44,6 +44,7 @@ function isActive(s: ShipmentSummary): boolean {
 function freshness(s: ShipmentSummary): 'live' | 'recent' | 'stale' | 'offline' {
   if (!s.last_ping_at) return 'offline';
   const age = Date.now() - new Date(s.last_ping_at).getTime();
+  if (!Number.isFinite(age) || age < 0) return 'offline';
   if (age < 120000) return 'live';
   if (age < 900000) return 'recent';
   if (age < 3600000) return 'stale';
