@@ -104,8 +104,10 @@ function OverviewMap({ shipments, selected, onSelect }: {
     });
     bindDenseMapLabels(m);
     map.current = m;
+    const refreshDensity = () => markers.current.forEach(marker => setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement, m.getZoom()));
+    m.on('zoom', refreshDensity);
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-    return () => { m.remove(); map.current = null; };
+    return () => { m.off('zoom', refreshDensity); m.remove(); map.current = null; };
   }, []);
 
   useEffect(() => {
@@ -124,7 +126,7 @@ function OverviewMap({ shipments, selected, onSelect }: {
       const el = createOperationalDeviceMarker({
         kind: 'vehicle', identity: s.reference,
         state: alerting ? 'alert' : freshnessState,
-        detail, zoom: m.getZoom(),
+        detail, zoom: m.getZoom(), selected: s.convoy_id === selected,
         title: [s.reference, detail, s.origin, s.destination].filter(Boolean).join(' · '),
       });
       el.addEventListener('click', () => onSelect(s.convoy_id));
