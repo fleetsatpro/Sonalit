@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Clock3, MessageCircle, PlaneLanding, PlaneTakeoff, RefreshCw, ShieldCheck, Users, LogOut } from 'lucide-react';
 import { api } from '../lib/api.js';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { STREET_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair } from '../lib/coordinatePair.js';
@@ -71,6 +72,7 @@ function FieldRouteMap({mission,detail,loading,error}:{mission:Mission;detail?:M
  useEffect(()=>{
   const container=containerRef.current;if(!container||mapRef.current)return;
   const map=new maplibregl.Map({container,style:STREET_STYLE,center:origin||[37.5,-1.3],zoom:5,attributionControl:false});
+  bindDenseMapLabels(map);
   map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'bottom-right');
   map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
   map.on('load',()=>setMapReady(true));mapRef.current=map;
