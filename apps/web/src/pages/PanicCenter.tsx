@@ -471,6 +471,7 @@ export default function PanicCenter() {
           <Map
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
             initialViewState={initialViewState}
+             onLoad={event => { bindDenseMapLabels(event.target); }}
             style={{ width: '100%', height: '100%' }}
           >
             <NavigationControl position="top-right" />
