@@ -26,7 +26,7 @@ describe('shared operational map markers', () => {
   });
 
   it('adapts label density to map zoom and preserves reduced-motion preferences', () => {
-    expect(source).toContain("zoom < 6.2 ? 'overview' : zoom < 9.2 ? 'regional' : 'full'");
+    expect(source).toContain("zoom < 7.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full'");
     expect(source).toContain('@media(prefers-reduced-motion:reduce)');
     expect(source).toContain("data-selected=\"true\"");
   });
