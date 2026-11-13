@@ -167,7 +167,7 @@ export default function CesiumLiveMap({
       const cartoProvider = new Cesium.UrlTemplateImageryProvider({
         url: MAP_URL,
         credit: new Cesium.Credit('© Carto, © OpenStreetMap contributors', false),
-        maximumLevel: 19,
+        maximumLevel: 14,
       });
 
       viewer = new Cesium.Viewer(containerRef.current, {

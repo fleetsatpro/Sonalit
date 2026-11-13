@@ -58,7 +58,7 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     const esri = createAiCesiumImageryProvider(
       'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       'Esri, Maxar, Earthstar Geographics',
-      19,
+      16,
       14,
     );
     const viewer = new Cesium.Viewer(containerRef.current, {
@@ -72,7 +72,7 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
         url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
         credit: new Cesium.Credit('© Esri Reference Overlay', false),
-        maximumLevel: 19,
+        maximumLevel: 14,
         enablePickFeatures: false,
       }));
     viewer.scene.globe.enableLighting = true;

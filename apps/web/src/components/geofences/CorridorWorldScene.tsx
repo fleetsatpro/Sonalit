@@ -313,17 +313,17 @@ function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: str
   };
 
   if (mode === 'dark') {
-    add(STREET_URL, 'Esri, HERE, Garmin, © OpenStreetMap contributors', 19, layer => {
+    add(STREET_URL, 'Esri, HERE, Garmin, © OpenStreetMap contributors', 16, layer => {
       layer.brightness = 0.34;
       layer.contrast = 1.12;
       layer.saturation = 0.35;
       layer.gamma = 0.9;
     });
   } else {
-    add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 19);
-    if (mode === 'hybrid') add(ROADS_URL, 'Esri', 19);
+    add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 16);
+    if (mode === 'hybrid') add(ROADS_URL, 'Esri', 14);
     // Place names and administrative labels remain visible in satellite mode too.
-    add(PLACES_URL, 'Esri', 19);
+    add(PLACES_URL, 'Esri', 14);
   }
 }
 
