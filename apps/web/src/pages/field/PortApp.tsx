@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { usePortQueue, useUnclampBookingContainer } from '../cds/hooks.js';
