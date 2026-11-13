@@ -945,6 +945,19 @@ export default function FleetMap({
     }
   }, [vehicles, selectedId])
 
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const refreshDensity = () => {
+      for (const [id, marker] of markersRef.current) {
+        setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement, map.getZoom(), id === selectedIdRef.current)
+      }
+    }
+    map.on('zoom', refreshDensity)
+    refreshDensity()
+    return () => { map.off('zoom', refreshDensity) }
+  }, [mapReady])
+
   // fly to selected (one-shot, when selection changes)
   useEffect(() => {
     const map = mapRef.current; if (!map || !selectedId) return
