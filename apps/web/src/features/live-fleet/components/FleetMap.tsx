@@ -3,6 +3,7 @@ import { STREET_STYLE } from '../../../lib/mapStyles.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
+import { bindDenseMapLabels } from '../../../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
 import {
@@ -450,6 +451,7 @@ export default function FleetMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     const m = new maplibregl.Map({ container: containerRef.current, style: STREET_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
+    bindDenseMapLabels(m);
     m.on('style.load', () => {
       setMapReady(true)
       syncWorldViewport()
