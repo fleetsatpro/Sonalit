@@ -28,6 +28,7 @@ const STATE_META: Record<string, { key: OperationalMarkerState; label: string; c
   active: { key: 'online', label: 'ONLINE', color: '#32d6a0' },
   online: { key: 'online', label: 'ONLINE', color: '#32d6a0' },
   live: { key: 'online', label: 'LIVE', color: '#32d6a0' },
+  recent: { key: 'delayed', label: 'RECENT', color: '#6fc9dc' },
   idle: { key: 'idle', label: 'IDLE', color: '#e9b85c' },
   stop: { key: 'stopped', label: 'STOPPED', color: '#aab6c5' },
   stopped: { key: 'stopped', label: 'STOPPED', color: '#aab6c5' },
