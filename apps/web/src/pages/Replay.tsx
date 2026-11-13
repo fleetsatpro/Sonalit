@@ -36,7 +36,7 @@ const SAT_STYLE: maplibregl.StyleSpecification = {
   },
   layers: [
     { id: 'sat', type: 'raster', source: 'sat' },
-    { id: 'ref', type: 'raster', source: 'ref', paint: { 'raster-opacity': 0.7 } },
+    { id: 'ref', type: 'raster', source: 'ref', paint: { 'raster-opacity': 1 } },
   ],
 };
 
