@@ -8,8 +8,19 @@ describe('map style provider contracts', () => {
     expect(source).toContain("export const DARK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/dark' as const;");
   });
 
-  it('uses a distinct keyless provider for the map fallback', () => {
-    expect(source).toContain("export const FALLBACK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/liberty' as const;");
+  it('uses OpenFreeMap Liberty as the shared vector street basemap', () => {
+    expect(source).toContain("export const STREET_STYLE = 'https://tiles.openfreemap.org/styles/liberty' as const;");
+    expect(source).not.toContain('/World_Street_Map/MapServer/tile/');
+  });
+
+  it('caps raster imagery and reference overlays to overzoom available tiles', () => {
+    expect(source).toContain("maxzoom: 16, attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics'");
+    expect(source).toContain("maxzoom: 14, attribution: '© Esri Reference Overlay'");
+  });
+
+  it('uses a documented alternate OpenFreeMap style rather than claiming an independent provider', () => {
+    expect(source).toContain("export const FALLBACK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/bright' as const;");
+    expect(source).toContain('not an independent network provider');
   });
 
   it('does not use unauthenticated CARTO raster endpoints that return key-required watermarks', () => {
