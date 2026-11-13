@@ -115,7 +115,7 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
   injectStyles();
   const status = operationalMarkerState(options.state);
   const freshness = options.freshness ? operationalMarkerState(options.freshness).key : status.key;
-  const heading = Number(options.heading);
+  const heading = options.heading == null ? Number.NaN : Number(options.heading);
   button.dataset.kind = options.kind;
   button.dataset.state = status.key;
   button.dataset.freshness = freshness;
