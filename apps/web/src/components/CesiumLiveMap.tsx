@@ -340,7 +340,7 @@ export default function CesiumLiveMap({
           id: loc.device_id,
           position: pos,
           point: makePoint(isSelected ? GREEN : ORANGE, isSelected ? 8 : 6),
-          billboard: makeDeviceBillboard('vehicle', isSelected ? GREEN : ORANGE, loc.heading),
+          billboard: makeDeviceBillboard(markerKind, isSelected ? GREEN : ORANGE, loc.heading),
           label: makeDeviceLabel(label, isSelected ? GREEN : ORANGE, isSelected),
         });
         entitiesRef.current.set(loc.device_id, entity);
