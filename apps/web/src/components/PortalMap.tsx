@@ -246,7 +246,7 @@ export default function PortalMap({
       el.style.transition = animatePosition ? 'transform 0.4s ease' : 'none';
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLocation, heading, animatePosition]);
+  }, [currentLocation, heading, animatePosition, noSignal, status]);
 
   // ── Trail ────────────────────────────────────────────────────────────────────
   useEffect(() => {
