@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import maplibregl from 'maplibre-gl';
 import { bindDenseMapLabels } from '../../lib/mapLabels.js';
+import { createOperationalDeviceMarker, setOperationalMarkerDensity } from '../../lib/operationalMapMarkers.js';
 import { geoCircle } from '../../lib/geoMath.js';
 import { STREET_STYLE, SAT_STYLE } from '../../lib/mapStyles.js';
 import { STATUS_COLOR, EA_CENTER, EA_ZOOM } from './types.js';
@@ -40,6 +41,7 @@ export function useGeofenceMap(opts: Options) {
   const mapReadyRef = useRef(false);
   const mapStyleRef = useRef<'street' | 'satellite'>('street');
   const renderRef = useRef<(() => void) | null>(null);
+  const operationalMarkersRef = useRef<maplibregl.Marker[]>([]);
   const onViewportChangeRef = useRef(opts.onViewportChange);
   onViewportChangeRef.current = opts.onViewportChange;
   const corridorSignalOverlayRef = useRef(opts.corridorSignalOverlay);
@@ -88,11 +90,19 @@ export function useGeofenceMap(opts: Options) {
     map.on('load', redrawAfterStyleLoad);
     map.on('style.load', redrawAfterStyleLoad);
     map.on('moveend', publishViewport);
+    const refreshMarkerDensity = () => {
+      const zoom = map.getZoom();
+      operationalMarkersRef.current.forEach(marker => setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement, zoom));
+    };
+    map.on('zoom', refreshMarkerDensity);
     mapRef.current = map;
     return () => {
       map.off('load', redrawAfterStyleLoad);
       map.off('style.load', redrawAfterStyleLoad);
       map.off('moveend', publishViewport);
+      map.off('zoom', refreshMarkerDensity);
+      operationalMarkersRef.current.forEach(marker => marker.remove());
+      operationalMarkersRef.current = [];
       map.remove();
       mapRef.current = null;
       mapReadyRef.current = false;
@@ -124,18 +134,7 @@ export function useGeofenceMap(opts: Options) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.drawMode]);
 
-  useEffect(() => {
-    const m = mapRef.current;
-    if (!m) return;
-    const handler = (e: maplibregl.MapMouseEvent) => {
-      const feats = m.queryRenderedFeatures(e.point, { layers: ['gf-vehicles-dot'] });
-      const id = feats[0]?.properties?.['id'];
-      if (id) opts.onVehiclePicked(id);
-    };
-    m.on('click', 'gf-vehicles-dot', handler);
-    return () => { m.off('click', 'gf-vehicles-dot', handler); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.vehicles.length]);
+
 
   useEffect(() => {
     const m = mapRef.current;
@@ -143,6 +142,8 @@ export function useGeofenceMap(opts: Options) {
     const render = () => {
       ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-polygon-fill', 'gf-polygon-line', 'gf-polygon-label', 'gf-corridor-buffer-fill', 'gf-corridor-buffer-line', 'gf-corridor-buffer-distance', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-signal-shadow', 'gf-corridor-signal-glow', 'gf-corridor-signal-line', 'gf-corridor-signal-points-glow', 'gf-corridor-signal-points', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line', 'gf-draw-vertices']
         .forEach(id => { if (m.getLayer(id)) m.removeLayer(id); });
+      operationalMarkersRef.current.forEach(marker => marker.remove());
+      operationalMarkersRef.current = [];
       ['gf-zone-src', 'gf-polygon-src', 'gf-corridor-buffer-src', 'gf-corridor-src', 'gf-corridor-signal-src', 'gf-corridor-signal-points-src', 'gf-linear-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
 
       const circleFeatures: GeoJSON.Feature[] = [];
@@ -250,24 +251,43 @@ export function useGeofenceMap(opts: Options) {
         'text-allow-overlap': false, 'text-optional': true,
       }, paint: { 'text-color': '#a78bfa', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
 
-      const vehicleFeatures: GeoJSON.Feature[] = opts.visibleVehicles.map(v => ({ type: 'Feature', properties: { id: v.id, registration: v.registration, status: v.status }, geometry: { type: 'Point', coordinates: [v.lng, v.lat] } }));
-      m.addSource('gf-vehicles-src', { type: 'geojson', data: { type: 'FeatureCollection', features: vehicleFeatures } });
-      const statusColorExpr: maplibregl.ExpressionSpecification = ['match', ['get', 'status'], 'panic', STATUS_COLOR['panic']!, 'alert', STATUS_COLOR['alert']!, 'warn', STATUS_COLOR['warn']!, 'moving', STATUS_COLOR['moving']!, 'idle', STATUS_COLOR['idle']!, 'offline', STATUS_COLOR['offline']!, '#666666'];
-      m.addLayer({ id: 'gf-vehicles-glow', type: 'circle', source: 'gf-vehicles-src', paint: { 'circle-radius': 13, 'circle-color': statusColorExpr, 'circle-opacity': 0.2, 'circle-blur': 1 } });
-      m.addLayer({ id: 'gf-vehicles-dot', type: 'circle', source: 'gf-vehicles-src', paint: { 'circle-radius': 6, 'circle-color': statusColorExpr, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#000', 'circle-opacity': 0.95 } });
-      m.addLayer({ id: 'gf-vehicles-label', type: 'symbol', source: 'gf-vehicles-src', layout: {
-        'text-field': ['get', 'registration'], 'text-size': 9, 'text-offset': [0, 1.4], 'text-anchor': 'top', 'text-font': LABEL_FONT,
-        'text-allow-overlap': false, 'text-optional': true,
-      }, paint: { 'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
-
-      const deviceFeatures: GeoJSON.Feature[] = opts.devices.map(d => ({ type: 'Feature', properties: { id: d.id, name: d.name, status: d.status }, geometry: { type: 'Point', coordinates: [d.lng, d.lat] } }));
-      m.addSource('gf-devices-src', { type: 'geojson', data: { type: 'FeatureCollection', features: deviceFeatures } });
-      m.addLayer({ id: 'gf-devices-glow', type: 'circle', source: 'gf-devices-src', paint: { 'circle-radius': ['case', ['==', ['get', 'status'], 'panic'], 20, 9], 'circle-color': statusColorExpr, 'circle-opacity': ['case', ['==', ['get', 'status'], 'panic'], 0.35, 0.15], 'circle-blur': 1 } });
-      m.addLayer({ id: 'gf-devices-dot', type: 'circle', source: 'gf-devices-src', paint: { 'circle-radius': 4.5, 'circle-color': statusColorExpr, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#fff', 'circle-opacity': 0.95 } });
-      m.addLayer({ id: 'gf-devices-label', type: 'symbol', source: 'gf-devices-src', layout: {
-        'text-field': ['get', 'name'], 'text-size': 9, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-font': LABEL_FONT,
-        'text-allow-overlap': false, 'text-optional': true,
-      }, paint: { 'text-color': '#e9d5ff', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
+      const placeVehicle = (vehicle: MapVehicle) => {
+        const status = vehicle.status || 'unknown';
+        const speed = Number.isFinite(vehicle.speed_kmh) && vehicle.speed_kmh > 0 ? Math.round(vehicle.speed_kmh) + ' km/h' : '';
+        const element = createOperationalDeviceMarker({
+          kind: 'vehicle',
+          identity: vehicle.registration || 'Vehicle',
+          state: status,
+          detail: speed || status.toUpperCase().replaceAll('_', ' '),
+          heading: Number.isFinite(vehicle.heading) ? vehicle.heading : null,
+          zoom: m.getZoom(),
+          title: [vehicle.registration, status.toUpperCase(), speed].filter(Boolean).join(' · '),
+        });
+        element.addEventListener('click', event => { event.stopPropagation(); opts.onVehiclePicked(vehicle.id); });
+        operationalMarkersRef.current.push(new maplibregl.Marker({ element, anchor: 'left', offset: [-20, 0] }).setLngLat([vehicle.lng, vehicle.lat]).addTo(m));
+      };
+      const placeDevice = (device: MapDevice) => {
+        const state = device.panic_active ? 'sos' : (device.status || 'unknown');
+        const detail = device.model || device.assignment_type || 'GPS DEVICE';
+        const element = createOperationalDeviceMarker({
+          kind: 'tracker',
+          identity: device.name || device.model || 'Device',
+          state,
+          detail,
+          zoom: m.getZoom(),
+          title: [device.name, device.model, state.toUpperCase(), device.last_seen || 'Last fix unavailable'].filter(Boolean).join(' · '),
+        });
+        element.addEventListener('click', event => {
+          event.stopPropagation();
+          new maplibregl.Popup({ closeButton: false, closeOnClick: true, offset: 22 })
+            .setLngLat([device.lng, device.lat])
+            .setText([device.name, device.model || device.assignment_type || 'GPS device', state.toUpperCase(), device.last_seen ? 'Last seen ' + device.last_seen : 'Last seen unavailable'].join(' · '))
+            .addTo(m);
+        });
+        operationalMarkersRef.current.push(new maplibregl.Marker({ element, anchor: 'left', offset: [-20, 0] }).setLngLat([device.lng, device.lat]).addTo(m));
+      };
+      opts.visibleVehicles.forEach(placeVehicle);
+      opts.devices.forEach(placeDevice);
 
       const drawFeatures: GeoJSON.Feature[] = [];
       if (opts.drawMode === 'circle' && opts.drawCenter) drawFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [geoCircle(opts.drawCenter[0], opts.drawCenter[1], parseFloat(opts.drawRadiusM || '2000') / 1000)] } });
