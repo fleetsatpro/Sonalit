@@ -44,7 +44,7 @@ describe('Sonalit imagery AI UHD contract', () => {
     expect(mapLibre).toContain("const AI_PROTOCOL = 'sonalit-ai'")
     expect(mapLibre).toContain("maplibregl.addProtocol(AI_PROTOCOL, async (params, abortController)")
     expect(mapLibre).toContain("return { data: await blob.arrayBuffer() }")
-    expect(mapLibre).toContain("const aiMinZoom = parsed.kind === 'earth' ? 7 : 14")
+    expect(mapLibre).toContain("const aiMinZoom = parsed.kind === 'earth' ? Number.POSITIVE_INFINITY : 18")
     expect(mapLibre).toContain("return { data: enhanced }")
     expect(cesium).toContain('wrapCesiumImageryProvider')
     expect(cesium).toContain('createAiCesiumImageryProvider')
