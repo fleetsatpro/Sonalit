@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import { Play, Pause, SkipBack, Camera, Volume2, Siren, TriangleAlert } from 'lucide-react';
@@ -124,6 +125,7 @@ export default function Replay() {
   useEffect(() => {
     if (!mapEl.current || mapRef.current) return;
     const map = new maplibregl.Map({ container: mapEl.current, style: SAT_STYLE, center: [37, 3], zoom: 5, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes });
+    bindDenseMapLabels(map);
     mapRef.current = map;
     map.on('error', () => {});
     map.on('load', () => {
