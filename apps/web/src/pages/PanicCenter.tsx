@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
 import Map, { Marker, Popup, NavigationControl } from 'react-map-gl/maplibre';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import { AlertOctagon, MapPin, CheckCircle, Clock, Radio, ShieldAlert, UserCheck } from 'lucide-react';
 
 interface PanicEvent {
