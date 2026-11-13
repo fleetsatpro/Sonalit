@@ -11,7 +11,7 @@ import {
   trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
   bboxFromMap, useTrafficIncidents, useTrafficStatus,
 } from '../../../lib/trafficLayer.js'
-import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
+import type { LiveVehicle } from '../types/fleet.js'
 import '../../../styles/spatial-command.css'
 
 installOpticalReconMapLibreProtocol()
@@ -53,10 +53,6 @@ const EARTH_OBSERVATION_STYLE: maplibregl.StyleSpecification = {
     },
   },
   layers: [{ id: 'earth-layer', type: 'raster', source: 'earth' }],
-}
-
-const STATUS_COLOR: Record<LiveStatus, string> = {
-  move: '#16c784', idle: '#f59e0b', stop: '#475569', offline: '#3e4252', sos: '#ef4444',
 }
 
 interface Geofence {
@@ -157,15 +153,6 @@ const riskColorExpr: any = ['case',
   ['==', ['get', 'risk_level'], 'medium'], '#f97316',
   '#eab308',
 ]
-
-// Field officer (Guardian device) marker glyph — a person icon inside a
-// rounded-square badge, distinct from the plain dot used for vehicles so the
-// two are never confused at a glance on a busy map.
-const OFFICER_ICON = (color: string) =>
-  `<svg width="11" height="11" viewBox="0 0 24 24" fill="${color}" stroke="none" style="pointer-events:none">
-     <circle cx="12" cy="7.5" r="4.2"/>
-     <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
-   </svg>`
 
 function weatherConditionLabel(item: SpatialWorldEntity): string {
   return String(item.attributes?.conditions ?? 'weather').replaceAll('_', ' ').toUpperCase()
