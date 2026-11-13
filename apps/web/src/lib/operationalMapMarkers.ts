@@ -119,6 +119,7 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
   button.dataset.kind = options.kind;
   button.dataset.state = status.key;
   button.dataset.freshness = freshness;
+  button.dataset.headingAvailable = Number.isFinite(heading) ? 'true' : 'false';
   button.dataset.selected = options.selected ? 'true' : 'false';
   button.style.setProperty('--sml-accent', status.color);
   if (Number.isFinite(heading)) button.style.setProperty('--sml-heading', String(((heading % 360) + 360) % 360) + 'deg');
