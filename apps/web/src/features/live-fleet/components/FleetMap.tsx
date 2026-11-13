@@ -3,7 +3,8 @@ import { STREET_STYLE } from '../../../lib/mapStyles.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
-import { bindDenseMapLabels } from '../../../lib/mapLabels.js';
+import { bindDenseMapLabels } from '../../../lib/mapLabels.js'
+import { createOperationalDeviceMarker, setOperationalMarkerDensity, updateOperationalDeviceMarker } from '../../../lib/operationalMapMarkers.js'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
 import {
@@ -314,44 +315,35 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
   return marker
 }
 
-function makeEl(v: LiveVehicle): HTMLElement {
-  const isOfficer = v.kind === 'guardian'
-  // For a field officer, "online at all" is the signal that matters most —
-  // whether they're walking, stopped, or idle is secondary to dispatch
-  // knowing their device is actually reachable right now. So online officers
-  // glow green regardless of move/idle/stop sub-state; SOS and offline still
-  // take priority over that.
-  const color = (isOfficer && v.status !== 'offline' && v.status !== 'sos') ? '#16c784' : STATUS_COLOR[v.status]
-  const spd = Math.round(v.speed_kmh)
-  const reg = v.registration.length > 10 ? v.registration.slice(0, 10) : v.registration
-  const label = v.status === 'sos' ? 'SOS' : isOfficer && v.status !== 'offline' ? (v.status === 'move' ? `${spd} km/h` : 'ONLINE') : v.status === 'move' ? `${spd} km/h` : v.status === 'offline' ? 'OFF' : v.status.toUpperCase().slice(0, 4)
-  const pulse = (v.status === 'move' || v.status === 'idle')
-    ? `<div style="position:absolute;inset:-6px;border-radius:${isOfficer ? '7px' : '50%'};border:1.5px solid ${color}55;animation:lf-mping 2.2s ease-out infinite;pointer-events:none"></div>` : ''
-  const sos = v.status === 'sos'
-    ? `<div style="position:absolute;inset:-7px;border-radius:${isOfficer ? '8px' : '50%'};border:2px solid ${color}88;animation:lf-sos-ring .65s ease-in-out infinite;pointer-events:none"></div>` : ''
-  const glyph = isOfficer ? OFFICER_ICON(color) : `<div style="width:7px;height:7px;border-radius:50%;background:${color};box-shadow:0 0 5px ${color};pointer-events:none"></div>`
-  // Heading arrow — only for a moving officer with a real bearing. Sits just
-  // outside the badge, rotated to point the direction they're travelling
-  // (heading is a compass bearing, clockwise from north — same convention
-  // CSS rotate() uses, so no sign flip needed).
-  const arrow = (isOfficer && v.status === 'move' && v.heading != null)
-    ? `<div style="position:absolute;left:50%;top:50%;width:0;height:0;transform:translate(-50%,-50%) rotate(${v.heading}deg) translateY(-17px);border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid ${color};filter:drop-shadow(0 0 3px ${color}aa);pointer-events:none"></div>`
-    : ''
-  const wrap = document.createElement('div')
-  wrap.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none">
-      <div style="position:relative;overflow:visible;width:22px;height:22px;border-radius:${isOfficer ? '6px' : '50%'};background:rgba(5,7,13,.92);border:2px solid ${color};display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px ${color}44,0 2px 8px rgba(0,0,0,.8);pointer-events:all;cursor:pointer;${v.status==='sos'?'animation:lf-sos-marker .65s ease-in-out infinite':''}">
-        ${pulse}${sos}${arrow}
-        ${glyph}
-      </div>
-      <div style="display:flex;gap:3px;align-items:center;background:rgba(5,7,13,.95);border:1px solid ${color}44;border-radius:3px;padding:1px 6px;pointer-events:none;white-space:nowrap">
-        <span style="font-family:JetBrains Mono,IBM Plex Mono,monospace;font-size:9px;font-weight:700;color:#e8a830">${reg}</span>
-        <span style="font-family:JetBrains Mono,IBM Plex Mono,monospace;font-size:8px;color:${color};font-weight:600">${label}</span>
-      </div>
-    </div>`
-  return wrap
+function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
+  const isOfficer = v.kind === 'guardian';
+  const state = v.panic_active || v.status === 'sos'
+    ? 'sos'
+    : isOfficer && v.status !== 'offline'
+      ? 'online'
+      : v.status;
+  const activity = v.status === 'move'
+    ? (Number.isFinite(v.speed_kmh) ? Math.round(v.speed_kmh) + ' km/h' : 'MOVING')
+    : v.status === 'idle' || v.status === 'stop'
+      ? 'STATIONARY'
+      : v.status === 'offline' ? 'NO RECENT FIX' : 'SOS';
+  const health = isOfficer && v.battery_level != null
+    ? ' · BAT ' + Math.round(v.battery_level) + '%'
+    : '';
+  const detail = isOfficer
+    ? (v.status === 'offline' ? 'OFFLINE' : (v.status === 'move' ? 'ONLINE · ' + activity : 'ONLINE · STATIONARY')) + health
+    : (v.status === 'move' ? activity : state.toUpperCase().replaceAll('_', ' '));
+  return {
+    kind: isOfficer ? 'guardian' as const : 'vehicle' as const,
+    identity: isOfficer ? (v.officer_name || v.registration || 'Field officer') : (v.registration || 'Vehicle'),
+    state,
+    detail,
+    heading: v.heading,
+    selected,
+    zoom,
+    title: [isOfficer ? (v.officer_name || 'Field officer') : v.registration, state.toUpperCase(), activity, v.location_desc].filter(Boolean).join(' · '),
+  };
 }
-
 interface Props {
   vehicles: LiveVehicle[];
   selectedId: string | null;
@@ -385,6 +377,12 @@ export default function FleetMap({
   const onWeatherSelectRef = useRef(onWeatherSelect)
   const onNaturalEventSelectRef = useRef(onNaturalEventSelect)
   const onViewportChangeRef = useRef(onViewportChange)
+  const onSelectRef = useRef(onSelect)
+  const vehiclesRef = useRef(vehicles)
+  const selectedIdRef = useRef(selectedId)
+  onSelectRef.current = onSelect
+  vehiclesRef.current = vehicles
+  selectedIdRef.current = selectedId
   onWeatherSelectRef.current = onWeatherSelect
   onNaturalEventSelectRef.current = onNaturalEventSelect
   onViewportChangeRef.current = onViewportChange
@@ -923,24 +921,29 @@ export default function FleetMap({
     // row, and if it renders on top the operator sees (and taps) OFFLINE while
     // the online marker hides underneath.
     const zFor = (s: string) => (s === 'sos' ? '40' : s === 'move' ? '30' : s === 'offline' ? '10' : '20')
+    const zoom = map.getZoom()
     for (const v of positioned) {
+      const selected = v.id === selectedId
+      const options = markerOptions(v, selected, zoom)
       const existing = markersRef.current.get(v.id)
       if (existing) {
         existing.setLngLat([v.lng!, v.lat!])
-        const el = existing.getElement(); el.innerHTML = makeEl(v).innerHTML
+        const el = existing.getElement() as HTMLButtonElement
+        updateOperationalDeviceMarker(el, options)
         el.style.zIndex = zFor(v.status)
-        const inner = el.firstElementChild as HTMLElement | null
-        if (inner) inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) }, { once: true })
       } else {
-        const el = makeEl(v)
+        const el = createOperationalDeviceMarker(options)
         el.style.zIndex = zFor(v.status)
-        const inner = el.firstElementChild as HTMLElement | null
-        if (inner) inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) })
-        const marker = new maplibregl.Marker({ element: el, anchor: 'top' }).setLngLat([v.lng!, v.lat!]).addTo(map)
+        el.addEventListener('click', event => {
+          event.stopPropagation()
+          const current = vehiclesRef.current.find(item => item.id === v.id)
+          if (current) onSelectRef.current(current)
+        })
+        const marker = new maplibregl.Marker({ element: el, anchor: 'left', offset: [-20, 0] }).setLngLat([v.lng!, v.lat!]).addTo(map)
         markersRef.current.set(v.id, marker)
       }
     }
-  }, [vehicles, onSelect])
+  }, [vehicles, selectedId])
 
   // fly to selected (one-shot, when selection changes)
   useEffect(() => {
