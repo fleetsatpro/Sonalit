@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import { geoCircle } from '../../lib/geoMath.js';
 import { STREET_STYLE, SAT_STYLE } from '../../lib/mapStyles.js';
 import { STATUS_COLOR, EA_CENTER, EA_ZOOM } from './types.js';
@@ -47,6 +48,7 @@ export function useGeofenceMap(opts: Options) {
   useEffect(() => {
     if (!mapEl.current || mapRef.current) return;
     const map = new maplibregl.Map({ container: mapEl.current, style: STREET_STYLE, center: EA_CENTER, zoom: EA_ZOOM });
+    bindDenseMapLabels(map);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     const topRightCtrl = map.getContainer().querySelector<HTMLElement>('.maplibregl-ctrl-top-right');
     if (topRightCtrl) topRightCtrl.style.marginTop = '52px';
