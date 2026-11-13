@@ -108,6 +108,26 @@ function ConvoyClusterMap({ vehicles }: { vehicles: Vehicle[] }) {
         },
       });
       map.addLayer({
+        id: 'unclustered-registration-label',
+        type: 'symbol',
+        source: 'vehicles',
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          'text-field': ['get', 'reg'],
+          'text-font': ['Open Sans Semibold', 'Arial Unicode MS Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 8, 9, 13, 12],
+          'text-offset': [0, 1.45],
+          'text-anchor': 'top',
+          'text-optional': true,
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#f4f7fb',
+          'text-halo-color': '#07111d',
+          'text-halo-width': 1.6,
+        },
+      });
+      map.addLayer({
         id: 'unclustered-vehicle-label',
         type: 'symbol',
         source: 'vehicles',
