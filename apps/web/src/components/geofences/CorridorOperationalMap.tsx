@@ -157,7 +157,8 @@ export default function CorridorOperationalMap({ route, members, zones = [], foc
           ref={mapRef}
           initialViewState={initialView}
           mapStyle={styleFor(mapMode)}
-          onLoad={() => {
+          onLoad={event => {
+            bindDenseMapLabels(event.target);
             setMapReady(true);
             mapRef.current?.resize();
             requestAnimationFrame(() => fit());
