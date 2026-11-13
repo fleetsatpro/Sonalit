@@ -137,7 +137,7 @@ function OverviewMap({ shipments, selected, onSelect }: {
     });
     if (located.length > 1) m.fitBounds(bounds, { padding: 55, maxZoom: 6.5, duration: 450 });
     else m.easeTo({ center: [located[0].current_location!.lng, located[0].current_location!.lat], zoom: 6, duration: 450 });
-  }, [shipments, onSelect]);
+  }, [shipments, selected, onSelect]);
 
   return (
     <div className="relative h-[430px] sm:h-[520px] overflow-hidden rounded-2xl border border-white/[0.07] bg-[#08101a]">
