@@ -30,7 +30,7 @@ export const SAT_STYLE: maplibregl.StyleSpecification = {
   },
   layers: [
     { id: 'sat-tiles', type: 'raster', source: 'sat' as const, paint: { 'raster-opacity': 1 } },
-    { id: 'sat-ref-tiles', type: 'raster', source: 'sat-ref' as const, paint: { 'raster-opacity': 0.9 } },
+    { id: 'sat-ref-tiles', type: 'raster', source: 'sat-ref' as const, paint: { 'raster-opacity': 1 } },
   ],
 };
 
