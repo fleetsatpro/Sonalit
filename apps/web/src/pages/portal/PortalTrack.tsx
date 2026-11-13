@@ -160,7 +160,7 @@ function TrackMap({ convoyId, vehicles }: { convoyId: string; vehicles: Vehicle[
       markersRef.current = [];
       located.forEach(v => {
         const ageMs = v.last_ping_at ? Date.now() - new Date(v.last_ping_at).getTime() : Number.POSITIVE_INFINITY;
-        const state = ageMs < 120_000 ? 'online' : ageMs < 900_000 ? 'delayed' : ageMs < 3_600_000 ? 'stale' : 'offline';
+        const state = !Number.isFinite(ageMs) || ageMs < 0 ? 'offline' : ageMs < 120_000 ? 'online' : ageMs < 900_000 ? 'delayed' : ageMs < 3_600_000 ? 'stale' : 'offline';
         const speed = v.speed_kmh == null ? '' : Math.round(v.speed_kmh) + ' km/h';
         const identity = v.registration || 'Vehicle';
         const detail = [v.carries_my_cargo ? 'CARGO VEHICLE' : 'CONVOY VEHICLE', speed, state.toUpperCase()].filter(Boolean).join(' · ');
