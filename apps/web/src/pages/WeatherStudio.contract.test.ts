@@ -61,6 +61,15 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).not.toContain('wx-marker__particles');
   });
 
+  it('reports the actual OpenFreeMap basemap and never claims a different network provider', () => {
+    expect(page).toContain("useState<'openfreemap' | 'fallback'>('openfreemap')");
+    expect(page).toContain('OPENFREEMAP CARTOGRAPHY');
+    expect(page).toContain('ALTERNATE VECTOR STYLE');
+    expect(page).toContain('alternate OpenFreeMap vector style');
+    expect(page).not.toContain('ESRI CARTOGRAPHY');
+    expect(page).not.toContain('independent cartographic provider');
+  });
+
   it('is routed and discoverable through the app navigation', () => {
     expect(router).toContain("path:'/weather-studio'");
     expect(router).toContain("import('./pages/WeatherStudio.js')");
