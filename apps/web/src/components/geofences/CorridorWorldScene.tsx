@@ -321,10 +321,9 @@ function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: str
     });
   } else {
     add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 19);
-    if (mode === 'hybrid') {
-      add(ROADS_URL, 'Esri', 19);
-      add(PLACES_URL, 'Esri', 19);
-    }
+    if (mode === 'hybrid') add(ROADS_URL, 'Esri', 19);
+    // Place names and administrative labels remain visible in satellite mode too.
+    add(PLACES_URL, 'Esri', 19);
   }
 }
 
