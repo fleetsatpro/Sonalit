@@ -2,6 +2,7 @@ import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spa
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { AlertTriangle, ArrowLeft, Loader2, Package, Pause, Play } from 'lucide-react';
 
@@ -72,6 +73,7 @@ export default function PortalReplay(): React.ReactElement {
       zoom: 10,
       attributionControl: false,
     });
+    bindDenseMapLabels(map);
 
     map.on('load', () => {
       // Full route line
