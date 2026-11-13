@@ -53,12 +53,6 @@ interface LiveFleetMapProps {
   track: TrackPoint[];
 }
 
-const PHASE_COLOR: Record<LiveTrip['phase'], string> = {
-  moving: '#33d6a8',
-  at_port: '#37e6ff',
-  staged: '#f0b429',
-};
-
 const num = (v: number | string | null): number | null => {
   if (v == null) return null;
   const n = typeof v === 'number' ? v : parseFloat(v);
