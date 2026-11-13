@@ -11,6 +11,7 @@ import {
   EntityRegistry,
 } from '@sonalit/spatial-intelligence';
 import { createAiCesiumImageryProvider } from '../lib/imageryAiCesium.js';
+import { operationalMarkerSvg } from '../lib/operationalMapMarkers.js';
 
 export interface DeviceLocation {
   device_id: string;
@@ -78,6 +79,44 @@ function makePoint(color: Cesium.Color, size: number): Cesium.PointGraphics {
     outlineWidth: 2,
     heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
     disableDepthTestDistance: Number.POSITIVE_INFINITY,
+  });
+}
+
+const DEVICE_IMAGE = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(operationalMarkerSvg('vehicle'));
+const GUARDIAN_IMAGE = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(operationalMarkerSvg('guardian'));
+
+function makeDeviceBillboard(kind: 'vehicle' | 'guardian', color: Cesium.Color, heading: number | null): Cesium.BillboardGraphics {
+  return new Cesium.BillboardGraphics({
+    image: kind === 'guardian' ? GUARDIAN_IMAGE : DEVICE_IMAGE,
+    width: 34,
+    height: 34,
+    color,
+    rotation: heading == null ? 0 : Cesium.Math.toRadians(-heading),
+    horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+    verticalOrigin: Cesium.VerticalOrigin.CENTER,
+    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    scaleByDistance: new Cesium.NearFarScalar(80_000, 1.2, 8_000_000, 0.52),
+    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+  });
+}
+
+function makeDeviceLabel(text: string, color: Cesium.Color, selected: boolean): Cesium.LabelGraphics {
+  return new Cesium.LabelGraphics({
+    text,
+    font: selected ? '700 13px Inter, sans-serif' : '650 12px Inter, sans-serif',
+    fillColor: Cesium.Color.fromCssColorString('#f3f7fb'),
+    outlineColor: Cesium.Color.fromCssColorString('#030914'),
+    outlineWidth: 3,
+    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+    pixelOffset: new Cesium.Cartesian2(0, -24),
+    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 6_000_000),
+    scaleByDistance: new Cesium.NearFarScalar(80_000, 1.05, 6_000_000, 0.72),
+    showBackground: true,
+    backgroundColor: Cesium.Color.fromCssColorString('#071321').withAlpha(0.9),
+    backgroundPadding: new Cesium.Cartesian2(8, 5),
   });
 }
 
@@ -291,29 +330,16 @@ export default function CesiumLiveMap({
 
       if (existing) {
         (existing.position as Cesium.ConstantPositionProperty).setValue(pos);
-        existing.point = makePoint(isSelected ? GREEN : ORANGE, isSelected ? 16 : 11);
-        if (existing.label) {
-          (existing.label.text as Cesium.ConstantProperty).setValue(label);
-        }
+        existing.point = makePoint(isSelected ? GREEN : ORANGE, isSelected ? 8 : 6);
+        existing.billboard = makeDeviceBillboard('vehicle', isSelected ? GREEN : ORANGE, loc.heading);
+        existing.label = makeDeviceLabel(label, isSelected ? GREEN : ORANGE, isSelected);
       } else {
         const entity = viewer.entities.add({
           id: loc.device_id,
           position: pos,
-          point: makePoint(isSelected ? GREEN : ORANGE, isSelected ? 16 : 11),
-          label: new Cesium.LabelGraphics({
-            text: label,
-            font: '11px sans-serif',
-            fillColor: WHITE,
-            outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 2,
-            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            pixelOffset: new Cesium.Cartesian2(0, -20),
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            showBackground: true,
-            backgroundColor: Cesium.Color.fromCssColorString('#1a1a2e').withAlpha(0.8),
-            backgroundPadding: new Cesium.Cartesian2(5, 3),
-          }),
+          point: makePoint(isSelected ? GREEN : ORANGE, isSelected ? 8 : 6),
+          billboard: makeDeviceBillboard('vehicle', isSelected ? GREEN : ORANGE, loc.heading),
+          label: makeDeviceLabel(label, isSelected ? GREEN : ORANGE, isSelected),
         });
         entitiesRef.current.set(loc.device_id, entity);
       }
@@ -485,26 +511,14 @@ export default function CesiumLiveMap({
       if (device.last_lat == null || device.last_lng == null) continue;
       const pos = Cesium.Cartesian3.fromDegrees(device.last_lng, device.last_lat, 0);
       const color = device.panic_active ? RED : GREEN;
-      const labelText = device.panic_active ? `⚠ ${device.name}` : device.name;
+      const labelText = device.panic_active ? 'SOS · ' + device.name : device.name;
       const cesiumId = `guardian_${device.id}`;
       const entity = viewer.entities.add({
         id: cesiumId,
         position: pos,
-        point: makePoint(color, 13),
-        label: new Cesium.LabelGraphics({
-          text: labelText,
-          font: '11px sans-serif',
-          fillColor: color,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          pixelOffset: new Cesium.Cartesian2(0, -20),
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          showBackground: true,
-          backgroundColor: Cesium.Color.fromCssColorString('#1a1a2e').withAlpha(0.8),
-          backgroundPadding: new Cesium.Cartesian2(5, 3),
-        }),
+        point: makePoint(color, 7),
+        billboard: makeDeviceBillboard('guardian', color, null),
+        label: makeDeviceLabel(labelText, color, false),
       });
       guardianRef.current.set(device.id, entity);
       registry?.register({
