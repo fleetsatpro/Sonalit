@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import { bindDenseMapLabels } from '../../lib/mapLabels.js';
+import { createOperationalDeviceMarker, setOperationalMarkerDensity } from '../../lib/operationalMapMarkers.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PortalShell, fmtDateTime, relativeTime } from '../../components/portal/PortalPrimitives.js';
 
@@ -178,11 +179,14 @@ function MovementAtlas({ shipments, onOpen }: { shipments: Shipment[]; onOpen: (
       attributionControl: false,
     });
     bindDenseMapLabels(map);
+    const refreshDensity = () => markersRef.current.forEach(marker => setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement, map.getZoom()));
+    map.on('zoom', refreshDensity);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     mapRef.current = map;
     return () => {
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
+      map.off('zoom', refreshDensity);
       map.remove();
       mapRef.current = null;
     };
@@ -204,29 +208,20 @@ function MovementAtlas({ shipments, onOpen }: { shipments: Shipment[]; onOpen: (
       for (const shipment of located) {
         const position = shipment.current_location;
         if (!position) continue;
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.setAttribute('aria-label', `Open ${shipment.reference}`);
-        button.style.cssText = [
-          'width:28px',
-          'height:28px',
-          'border-radius:999px',
-          'border:1px solid rgba(255,255,255,.8)',
-          'background:#0b121d',
-          'box-shadow:0 0 0 6px rgba(249,115,22,.12),0 0 24px rgba(249,115,22,.35)',
-          'cursor:pointer',
-          'position:relative',
-        ].join(';');
-        const dot = document.createElement('span');
-        dot.style.cssText = [
-          'position:absolute',
-          'inset:7px',
-          'border-radius:999px',
-          `background:${hasAttention(shipment) ? '#ef4444' : '#ff7a18'}`,
-        ].join(';');
-        button.appendChild(dot);
-        button.onclick = () => selectedRef.current(shipment.convoy_id);
-        const marker = new maplibregl.Marker({ element: button })
+        const attention = hasAttention(shipment);
+        const fresh = isFresh(shipment);
+        const detail = [attention ? 'ATTENTION' : statusLabel(shipment.status), fresh ? 'LIVE FIX' : 'STALE FIX'].join(' · ');
+        const button = createOperationalDeviceMarker({
+          kind: 'vehicle',
+          identity: shipment.reference,
+          state: attention ? 'alert' : fresh ? 'live' : 'stale',
+          detail,
+          selected: false,
+          zoom: map.getZoom(),
+          title: [shipment.reference, detail, shipment.origin, shipment.destination].filter(Boolean).join(' · '),
+        });
+        button.addEventListener('click', () => selectedRef.current(shipment.convoy_id));
+        const marker = new maplibregl.Marker({ element: button, anchor: 'left', offset: [-20, 0] })
           .setLngLat([position.lng, position.lat])
           .addTo(map);
         markersRef.current.push(marker);
