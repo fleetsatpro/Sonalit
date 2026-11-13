@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/600.css';
@@ -373,6 +374,7 @@ export default function WeatherStudio() {
         renderWorldCopies: false, cooperativeGestures: true,
         canvasContextAttributes: { antialias: false, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false },
       });
+      bindDenseMapLabels(map);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown renderer initialisation error.';
       setMapError('Map renderer could not initialise. ' + message);
