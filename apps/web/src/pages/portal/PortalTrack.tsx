@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { AlertTriangle, ArrowLeft, Clock, MapPin, Shield, Truck } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js';
 import {
@@ -148,6 +149,7 @@ function TrackMap({ convoyId, vehicles }: { convoyId: string; vehicles: Vehicle[
       zoom: located.length > 1 ? 7 : 10,
       attributionControl: false,
     });
+    bindDenseMapLabels(map);
     mapRef.current = map;
 
     const render = () => {
