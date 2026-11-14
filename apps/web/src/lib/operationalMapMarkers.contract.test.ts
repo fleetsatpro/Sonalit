@@ -21,7 +21,7 @@ describe('shared operational map markers', () => {
     expect(source).toContain('.sml-device-marker__identity');
     expect(source).toContain('.sml-device-marker__detail');
     expect(source).toContain('--sml-heading');
-    expect(source).toContain("button.setAttribute('aria-label', button.title)");
+    expect(source).toContain("button.setAttribute('aria-label', options.ariaLabel?.trim() || button.title)");
     expect(source).toContain("bearing.hidden = !Number.isFinite(heading)");
   });
 
