@@ -11,7 +11,7 @@ export interface LiveGpsPosition {
   [key: string]: unknown;
 }
 
-export function isValidGpsPosition(position: Partial<LiveGpsPosition>): position is LiveGpsPosition {
+export function isValidGpsPosition<T extends Partial<LiveGpsPosition>>(position: T): position is T & LiveGpsPosition {
   const lat = Number(position.lat);
   const lng = Number(position.lng);
   return !!position.device_id &&
@@ -25,10 +25,10 @@ export function gpsFixEpoch(position: Pick<LiveGpsPosition, 'timestamp'>): numbe
   return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
 }
 
-export function preferNewerGpsPosition(
-  current: LiveGpsPosition | undefined,
-  candidate: LiveGpsPosition,
-): LiveGpsPosition {
+export function preferNewerGpsPosition<T extends LiveGpsPosition>(
+  current: T | undefined,
+  candidate: T,
+): T {
   if (!current) return candidate;
   const currentTime = gpsFixEpoch(current);
   const candidateTime = gpsFixEpoch(candidate);
@@ -42,7 +42,7 @@ export function preferNewerGpsPosition(
   return current;
 }
 
-export function indexLatestGpsPositions(rows: readonly LiveGpsPosition[]): Map<string, LiveGpsPosition> {
+export function indexLatestGpsPositions<T extends LiveGpsPosition>(rows: readonly T[]): Map<string, T> {
   const latest = new Map<string, LiveGpsPosition>();
   for (const row of rows) {
     if (!isValidGpsPosition(row)) continue;
@@ -56,11 +56,11 @@ export function indexLatestGpsPositions(rows: readonly LiveGpsPosition[]): Map<s
  * Replace the polling snapshot, but do not let an HTTP response that started
  * before a websocket event roll a device back to an older position.
  */
-export function mergeGpsSnapshotWithRealtime(
-  snapshot: Map<string, LiveGpsPosition>,
-  previous: Map<string, LiveGpsPosition>,
+export function mergeGpsSnapshotWithRealtime<T extends LiveGpsPosition>(
+  snapshot: Map<string, T>,
+  previous: Map<string, T>,
   requestStartedAt: number,
-): Map<string, LiveGpsPosition> {
+): Map<string, T> {
   const merged = new Map(snapshot);
   for (const [key, previousFix] of previous) {
     if (previousFix._receivedAt == null || previousFix._receivedAt <= requestStartedAt) continue;
