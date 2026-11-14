@@ -34,11 +34,17 @@ describe('Sonalit imagery AI UHD contract', () => {
     expect(worker).toContain("const bitmap = await createImageBitmap(new ImageData(cropped, cropWidth, cropHeight))")
   })
 
+  it('keeps neural upscaling opt-in and away from broad or low-resolution map tiles', () => {
+    expect(core).toContain("window.localStorage.getItem('sonalit.imagery-ai') === 'on'");
+    expect(mapLibre).toContain("const aiMinZoom = parsed.kind === 'earth' ? Number.POSITIVE_INFINITY : 18");
+    expect(cesium).toContain('minimumLevel = 18');
+  });
+
   it('routes map imagery through a custom protocol that returns source bytes on failure', () => {
     expect(mapLibre).toContain("const AI_PROTOCOL = 'sonalit-ai'")
     expect(mapLibre).toContain("maplibregl.addProtocol(AI_PROTOCOL, async (params, abortController)")
     expect(mapLibre).toContain("return { data: await blob.arrayBuffer() }")
-    expect(mapLibre).toContain("const aiMinZoom = parsed.kind === 'earth' ? 7 : 14")
+    expect(mapLibre).toContain("const aiMinZoom = parsed.kind === 'earth' ? Number.POSITIVE_INFINITY : 18")
     expect(mapLibre).toContain("return { data: enhanced }")
     expect(cesium).toContain('wrapCesiumImageryProvider')
     expect(cesium).toContain('createAiCesiumImageryProvider')
