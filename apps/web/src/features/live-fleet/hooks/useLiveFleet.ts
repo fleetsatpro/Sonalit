@@ -104,7 +104,7 @@ export function useLiveFleet() {
       const requestStartedAt = Date.now()
       const r = await api.get<unknown>('/gps/track')
       const payload = arrayPayload<GpsPos>(r.data, 'Primary GPS position feed')
-      const snapshot = indexLatestGpsPositions(payload). as Map<string, GpsPos>
+      const snapshot = indexLatestGpsPositions(payload) as Map<string, GpsPos>
       const panicking = new Set<string>()
       for (const p of payload) {
         if (p?.panic_active && p.device_id) panicking.add(p.device_id)
