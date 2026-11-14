@@ -53,6 +53,15 @@ describe('Live Fleet GPS position integrity', () => {
     expect(indexLatestGpsPositions([fix({ lat: 91 })]).size).toBe(0);
   });
 
+  it('rejects explicit nulls, blank strings and non-numeric coordinate values', () => {
+    expect(normalizeGpsPosition(fix({ lat: null as unknown as number }))).toBeNull();
+    expect(normalizeGpsPosition(fix({ lng: null as unknown as number }))).toBeNull();
+    expect(normalizeGpsPosition(fix({ lat: '' as unknown as number }))).toBeNull();
+    expect(normalizeGpsPosition(fix({ lng: '   ' as unknown as number }))).toBeNull();
+    expect(normalizeGpsPosition(fix({ lat: true as unknown as number }))).toBeNull();
+    expect(normalizeGpsPosition(fix({ lng: 'not-a-coordinate' as unknown as number }))).toBeNull();
+  });
+
   it('does not let a stale HTTP snapshot replace a websocket update received after the request began', () => {
     const requestStartedAt = 1_000;
     const snapshot = new Map([['guardian-1', fix({ timestamp: '2026-11-14T06:00:10.000Z', lat: -1.2 })]]);
