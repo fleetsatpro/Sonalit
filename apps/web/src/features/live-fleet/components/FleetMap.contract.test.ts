@@ -27,7 +27,7 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain("getClusterExpansionZoom(clusterId)");
     expect(source).toContain("item.id");
     expect(source).toContain("map.getZoom() <= 8.2 ? 'none' : ''");
-    expect(source).toContain("deviceSource.setData({ type: 'FeatureCollection', features })");
+    expect(source).toContain("source.setData({ type: 'FeatureCollection', features })");
   });
 
   it('uses the zoom-resilient shared vector basemap and caps Esri satellite tiles', () => {
