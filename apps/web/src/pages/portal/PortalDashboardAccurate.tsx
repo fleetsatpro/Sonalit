@@ -26,6 +26,10 @@ const API = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/ap
 const LIVE_WINDOW_MS = 120_000;
 const ACTIVE_STATUSES = new Set(['active', 'pending', 'in_transit', 'delayed', 'at_checkpoint']);
 
+function statusLabel(status: string): string {
+  return status.replace(/_/g, ' ').replace(/\\b\\w/g, character => character.toUpperCase());
+}
+
 type Position = { lat: number; lng: number };
 type Shipment = {
   convoy_id: string;
