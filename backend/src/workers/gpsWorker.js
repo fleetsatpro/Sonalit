@@ -93,31 +93,34 @@ async function processGPS(job) {
     const currentFix = { lat, lng, speed: speed ?? 0, heading: heading ?? null, timestamp: fixTimestamp };
     const cacheKey = `${orgId}:${vehicle_id}`;
     const prevFix = _prevFixCache.get(cacheKey) ?? null;
-    _prevFixCache.set(cacheKey, currentFix);
 
-    // 1. Store GPS log
-    await query(
-      'INSERT INTO gps_logs (vehicle_id, lat, lng, speed, timestamp, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [vehicle_id, lat, lng, speed, fixTimestamp, orgId]
-    );
-
-  // 2. Update vehicle position and get org_id via active convoy. RETURNING
-  // registration so alert messages can name the vehicle like an operator
-  // would ("KEN-001"), not by its raw UUID.
+    // Atomically accept the fix and persist its history. A delayed worker
+    // completion can neither roll the current point backwards nor leave a
+    // stale, later-inserted gps_logs row that the map mistakes for newest.
     const posRes = await query(
-      `UPDATE vehicles
-          SET latitude=$1, longitude=$2, last_ping=$3,
-              heading=COALESCE($4, heading), updated_at=NOW()
-        WHERE id=$5 AND org_id=$6
-          AND (last_ping IS NULL OR last_ping < $3)
-        RETURNING registration`,
-      [lat, lng, fixTimestamp, heading ?? null, vehicle_id, orgId]
+      `WITH accepted AS (
+         UPDATE vehicles
+            SET latitude=$1, longitude=$2, last_ping=$3,
+                heading=COALESCE($4, heading), updated_at=NOW()
+          WHERE id=$5 AND org_id=$6
+            AND (last_ping IS NULL OR last_ping < $3)
+          RETURNING registration
+       ),
+       logged AS (
+         INSERT INTO gps_logs (vehicle_id, lat, lng, speed, timestamp, org_id)
+         SELECT $5, $1, $2, $7, $3, $6 FROM accepted
+         RETURNING id
+       )
+       SELECT accepted.registration FROM accepted
+       INNER JOIN logged ON TRUE`,
+      [lat, lng, fixTimestamp, heading ?? null, vehicle_id, orgId, speed ?? 0]
     );
     if (!posRes.rows.length) {
       logger.info(`Ignoring out-of-order GPS fix: vehicle=${vehicle_id} timestamp=${fixTimestamp}`);
       return { accepted: false, reason: 'older_than_current_fix' };
     }
-  const vehicleLabel = posRes.rows[0]?.registration || String(vehicle_id).slice(0, 8);
+    _prevFixCache.set(cacheKey, currentFix);
+    const vehicleLabel = posRes.rows[0]?.registration || String(vehicle_id).slice(0, 8);
 
   // 3. Broadcast live position on org channel for real-time GPS page
     const orgRes = await query(
