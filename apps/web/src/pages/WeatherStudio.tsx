@@ -15,7 +15,7 @@ import '@fontsource/ibm-plex-mono/700.css';
 import { Activity, AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, CloudSun, Crosshair, Flame, Globe2, LoaderCircle, MapPin, Pause, Play, RefreshCw, Thermometer, Droplets, Wind, Eye, Waves, X, Satellite, CloudRain } from 'lucide-react';
 import { fetchLiveEventSimulation, snapSpatialBounds, shouldRetrySpatialRequest } from '../lib/spatialClient.js';
 import type { LiveEventSimulationResponse, SpatialWorldEntity } from '../lib/spatialClient.js';
-import { FALLBACK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
+import { ESRI_STREET_STYLE, FALLBACK_STREET_STYLE } from '../lib/mapStyles.js';
 import { buildOfficialWarningAreaCollection, syncOfficialWarningLayers } from '../lib/weatherWarningGeometry.js';
 import WeatherFieldCanvas from '../components/weather/WeatherFieldCanvas.js';
 import '../styles/weather-studio.css';
@@ -193,8 +193,8 @@ export default function WeatherStudio() {
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
   const [mapAttempt, setMapAttempt] = useState(0);
-  const [mapProvider, setMapProvider] = useState<'openfreemap' | 'fallback'>('openfreemap');
-  const baseStyleRef = useRef<'openfreemap' | 'fallback'>('openfreemap');
+  const [mapProvider, setMapProvider] = useState<'esri' | 'fallback'>('esri');
+  const baseStyleRef = useRef<'esri' | 'fallback'>('esri');
   const baseTileFailuresRef = useRef(0);
   const [viewport, setViewport] = useState<Viewport>({ latitude: 0, longitude: 28, radiusM: 100000, bounds: [12, -28, 62, 34] });
   const [queryViewport, setQueryViewport] = useState(viewport);
@@ -343,7 +343,7 @@ export default function WeatherStudio() {
     setMapNotice(null);
     setRasterError(null);
     setMapProvider('esri');
-    baseStyleRef.current = 'openfreemap';
+    baseStyleRef.current = 'esri';
     baseTileFailuresRef.current = 0;
 
     // Some package entry points expose Map as the default namespace but do not
@@ -369,7 +369,7 @@ export default function WeatherStudio() {
 
     try {
       map = new maplibregl.Map({
-        container, style: STREET_STYLE, center: [28, 0], zoom: 2.15,
+        container, style: ESRI_STREET_STYLE, center: [28, 0], zoom: 2.15,
         minZoom: 1.15, maxZoom: 14, attributionControl: true,
         renderWorldCopies: false, cooperativeGestures: true,
         canvasContextAttributes: { antialias: false, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false },
@@ -387,11 +387,11 @@ export default function WeatherStudio() {
       baseStyleRef.current = 'fallback';
       baseTileFailuresRef.current = 0;
       setMapProvider('fallback');
-      setMapNotice('The primary OpenFreeMap style failed. Switched to the alternate OpenFreeMap style.');
+      setMapNotice('The primary Esri tile service failed. Switched to the alternate vector cartography provider.');
       try { instance.setStyle(FALLBACK_STREET_STYLE); }
       catch (_) {
         setMapReady(false);
-        setMapError('The primary base map failed and the fallback could not be selected. Retry the map when connectivity is restored.');
+        setMapError('The primary Esri basemap failed and the alternate cartography could not be selected. Retry the map when connectivity is restored.');
       }
     };
 
@@ -410,7 +410,7 @@ export default function WeatherStudio() {
         setWarningOverlayError('Verified official warning boundaries could not be drawn. Warning messages remain available from the source feed.');
       }
       setMapError(null);
-      setMapNotice(baseStyleRef.current === 'fallback' ? 'Using the alternate OpenFreeMap vector style.' : null);
+      setMapNotice(baseStyleRef.current === 'fallback' ? 'Using independent fallback vector cartography.' : null);
       setMapReady(true);
       syncViewport(instance);
       window.setTimeout(() => { if (mounted) instance.resize(); }, 0);
@@ -426,7 +426,7 @@ export default function WeatherStudio() {
       }
       const isPrimaryTiles = sourceId === 'street' || /tiles\.openfreemap\.org/i.test(message);
       const isFallbackTiles = sourceId === 'fallback-base' || /tiles\.openfreemap\.org/i.test(message);
-      if (isPrimaryTiles && baseStyleRef.current === 'openfreemap') {
+      if (isPrimaryTiles && baseStyleRef.current === 'esri') {
         baseTileFailuresRef.current += 1;
         if (baseTileFailuresRef.current >= 3) switchToFallback();
         return;
@@ -568,7 +568,7 @@ export default function WeatherStudio() {
 
       <main className="wx-workspace">
         <section className="wx-map-panel" aria-label="Interactive weather and natural event map">
-          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "ALTERNATE VECTOR STYLE" : "OPENFREEMAP CARTOGRAPHY"}</span></div><b>Global atmospheric field</b><small>Modelled wind flow · satellite-derived rainfall estimates · no radar imagery.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
+          <div className="wx-map-context"><div><div className="wx-map-heading-line"><span className="wx-map-kicker">FORECAST INTELLIGENCE</span><span className="wx-map-provider" data-provider={mapProvider}><i />{mapProvider === "fallback" ? "RESILIENT BASE" : "ESRI CARTOGRAPHY"}</span></div><b>Global atmospheric field</b><small>Modelled wind flow · satellite-derived rainfall estimates · no radar imagery.</small></div><div className="wx-map-utc"><small>FORECAST VALID TIME</small><b>{formatValidTime(selectedForecastTime)}</b></div></div>
           <div className="wx-map-canvas">
             <div className="wx-map-instance" ref={mapContainerRef} />
             <WeatherFieldCanvas
