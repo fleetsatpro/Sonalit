@@ -137,6 +137,14 @@ export default function SjmAirspaceGlobe({aircraft,status,configured,lastPositio
         maximumRenderTimeChange:Number.POSITIVE_INFINITY,
         showRenderLoopErrors:false,
       });
+      if(AIRSPACE_IMAGERY.provider==='custom'){
+        widget.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+          url:'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+          credit:new Cesium.Credit('© Esri Reference Overlay',false),
+          maximumLevel:19,
+          enablePickFeatures:false,
+        }));
+      }
       widget.scene.backgroundColor=Cesium.Color.fromCssColorString('#050b12');
       widget.scene.globe.enableLighting=true;
       widget.scene.globe.showGroundAtmosphere=true;

@@ -11,6 +11,10 @@ export interface LiveVehicle {
   speed_kmh: number
   heading: number | null
   last_ping_at: string | null
+  /** Last device heartbeat, distinct from the observation time of its GPS fix. */
+  last_seen_at: string | null
+  /** Horizontal accuracy radius from the source GPS fix, in metres. */
+  accuracy_m: number | null
   secondsAgo: number
   panic_active: boolean
   location_desc: string

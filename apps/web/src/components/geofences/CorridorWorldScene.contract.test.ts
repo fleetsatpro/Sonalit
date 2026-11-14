@@ -59,6 +59,9 @@ describe('GEV 3D render resilience contract', () => {
   it('keeps a non-Ion Esri surface and recovers Cesium after render exceptions', () => {
     expect(source).toContain("const STREET_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'");
     expect(source).toContain("const SATELLITE_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'");
+    expect(source).toContain("add(STREET_URL, 'Esri, HERE, Garmin, © OpenStreetMap contributors', 16");
+    expect(source).toContain("add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 16)");
+    expect(source).toContain("add(PLACES_URL, 'Esri', 14)");
     expect(source).toContain('failIfMajorPerformanceCaveat: false');
     expect(source).toContain('showRenderLoopErrors: false');
     expect(source).toContain('viewer.scene.renderError.addEventListener(renderErrorHandler)');

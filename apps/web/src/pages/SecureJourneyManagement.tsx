@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
+import { createOperationalDeviceMarker, setOperationalMarkerDensity } from '../lib/operationalMapMarkers.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { DARK_STREET_STYLE, STREET_STYLE, SAT_STYLE } from '../lib/mapStyles.js';
 import { toCoordinatePair as mapCoord } from '../lib/coordinatePair.js';
@@ -226,10 +228,13 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
     const container=containerRef.current;
     if(!container||mapRef.current)return;
     const map=new maplibregl.Map({container,style:DARK_STREET_STYLE,center:[37.5,-1.3],zoom:5,attributionControl:false,maxPitch:55});
+    bindDenseMapLabels(map);
      container.dataset.sjmMapState='loading';
     map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'bottom-right');
     map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
     map.on('load',()=>{container.dataset.sjmMapState='loaded';setMapReady(true)});
+    const refreshObservedMarkerDensity=()=>observedMarkersRef.current.forEach(marker=>setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement,map.getZoom()));
+    map.on('zoom',refreshObservedMarkerDensity);
     mapRef.current=map;
     const resizeObserver=new ResizeObserver(()=>map.resize());
     resizeObserver.observe(container);
@@ -239,6 +244,7 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
       markersRef.current=[];
       observedMarkersRef.current.forEach(marker=>marker.remove());
       observedMarkersRef.current=[];
+      map.off('zoom',refreshObservedMarkerDensity);
       map.remove();
       mapRef.current=null;
       setMapReady(false);
@@ -285,9 +291,22 @@ function JourneyMap({journey,stops,geometry,assessment,telemetry}:{journey:Journ
     if(!showObserved)return;
     observedPoints.forEach(({device,coord})=>{
       const freshness=String(device.freshness||'UNAVAILABLE').toUpperCase();
-      const kind=freshness==='LIVE'?'observed_live':freshness==='DELAYED'?'observed_delayed':freshness==='STALE'?'observed_stale':'observed_unavailable';
-      const title='OBSERVED '+freshness+' · '+device.device_name+' · '+dateText(device.observed_at);
-      observedMarkersRef.current.push(new maplibregl.Marker({element:journeyMarkerElement(kind,title),anchor:'bottom',offset:[0,-7]}).setLngLat(coord).addTo(map));
+      const speed=Number(device.speed_kph);
+      const age=Number(device.age_seconds);
+      const detail=Number.isFinite(speed)&&speed>0
+        ?Math.round(speed)+' km/h · '+freshness
+        :Number.isFinite(age)&&age>=0?Math.round(age)+'s old · '+freshness:freshness;
+      const title='OBSERVED '+freshness+' · '+device.device_name+' · '+dateText(device.observed_at)+(device.source?' · '+device.source:'');
+      const element=createOperationalDeviceMarker({
+        kind:'tracker',
+        identity:device.device_name||device.officer_name||'GPS device',
+        state:freshness.toLowerCase(),
+        detail,
+        heading:device.heading==null?null:Number(device.heading),
+        zoom:map.getZoom(),
+        title,
+      });
+      observedMarkersRef.current.push(new maplibregl.Marker({element,anchor:'left',offset:[-20,0]}).setLngLat(coord).addTo(map));
     });
   },[mapReady,showObserved,observedPoints]);
   const changeBasemap=(value:'street'|'dark'|'satellite')=>{
@@ -333,6 +352,7 @@ function IntakeMapPicker({onPick,targetKey}:{onPick:(point:{lat:number;lng:numbe
   const container=containerRef.current;
   if(!container||mapRef.current)return;
   const map=new maplibregl.Map({container,style:STREET_STYLE,center:[37.5,-1.3],zoom:4.7,attributionControl:false,maxPitch:35});
+  bindDenseMapLabels(map);
   map.addControl(new maplibregl.NavigationControl({showCompass:true,showZoom:true}),'top-right');
   map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
   map.on('click',(event)=>{

@@ -6,6 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
 import { safeExternalUrl } from '../lib/intelligenceText.js';
 import { DARK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 
 type Row = Record<string, any>;
 type ScopeType = 'global' | 'continent' | 'region' | 'country';
@@ -244,7 +245,7 @@ export default function IntelligenceCommandView() {
       <section className="icv-panel icv-map-panel">
         <header className="icv-panel-head"><div><span>01 / SPATIAL CONTEXT</span><h2>Geographic event picture</h2><p>Only event records with stored coordinates are plotted.</p></div><div className="icv-map-tools"><div className="icv-map-legend"><span><i className="critical"/> Critical</span><span><i className="high"/> High</span><span><i className="other"/> Other / unclassified</span></div><div className="icv-basemap-toggle" role="group" aria-label="Map basemap"><button type="button" className={basemap === 'dark' ? 'active' : ''} aria-pressed={basemap === 'dark'} onClick={() => setBasemap('dark')}>DARK</button><button type="button" className={basemap === 'street' ? 'active' : ''} aria-pressed={basemap === 'street'} onClick={() => setBasemap('street')}>STREET</button></div></div></header>
         <div className="icv-map-canvas">
-          <MapLibreMap ref={mapRef} key={scope.type + ':' + scope.key} initialViewState={centre} mapStyle={basemap === 'dark' ? DARK_STREET_STYLE : STREET_STYLE} style={{ width: '100%', height: '100%' }} attributionControl>
+          <MapLibreMap ref={mapRef} key={scope.type + ':' + scope.key} initialViewState={centre} mapStyle={basemap === 'dark' ? DARK_STREET_STYLE : STREET_STYLE} style={{ width: '100%', height: '100%' }} attributionControl onLoad={event => { bindDenseMapLabels(event.target); }}>
             <NavigationControl position="top-right" showCompass={false}/>
             {located.slice(0, 250).map((event, index) => <Marker key={event.id || index} longitude={Number(event.longitude)} latitude={Number(event.latitude)} anchor="center" onClick={click => { click.originalEvent.stopPropagation(); setSelectedEvent(event); setSelectedWarning(null); }}>
               <button type="button" className={'icv-map-marker icv-severity-' + severity(event.severity)} title={event.title || 'Intelligence event'} aria-label={'Open ' + (event.title || 'intelligence event')}><i/></button>

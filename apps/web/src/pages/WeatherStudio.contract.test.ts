@@ -61,6 +61,17 @@ describe('Weather Studio evidence and interaction contract', () => {
     expect(styles).not.toContain('wx-marker__particles');
   });
 
+  it('reports Esri as the primary basemap and an alternate vector provider after tile failure', () => {
+    expect(page).toContain("useState<'esri' | 'fallback'>('esri')");
+    expect(page).toContain('style: ESRI_STREET_STYLE');
+    expect(page).toContain("baseStyleRef.current = 'esri'");
+    expect(page).toContain('ESRI CARTOGRAPHY');
+    expect(page).toContain('RESILIENT BASE');
+    expect(page).toContain('primary Esri tile service failed');
+    expect(page).toContain('independent fallback vector cartography');
+    expect(page).not.toContain('OPENFREEMAP CARTOGRAPHY');
+  });
+
   it('is routed and discoverable through the app navigation', () => {
     expect(router).toContain("path:'/weather-studio'");
     expect(router).toContain("import('./pages/WeatherStudio.js')");

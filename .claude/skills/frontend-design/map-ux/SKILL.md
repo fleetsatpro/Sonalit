@@ -295,6 +295,18 @@ useEffect(() => {
 - **Cleanup**: `m.remove()` + null ref on unmount
 - **Default centre**: `[35.5, 1.2]` (East Africa — Sonalit's primary operations region)
 
+## Platform-wide geographic labeling standard
+
+Every Sonalit map must expose a clear geographic naming hierarchy, not just operational markers.
+
+- Keep country, region, county/state, city, town and settlement names legible at the scales where the source provides them.
+- Show major road and route names, waterbody names, airports/ports and relevant points of interest when the basemap/source supplies them.
+- Satellite and Earth-observation views must retain a high-contrast reference overlay. Keep its label layer fully visible; do not reduce opacity until names become faint.
+- Vector MapLibre maps must call `bindDenseMapLabels(map)` immediately after map creation. The shared helper boosts geographic label size and halo contrast and is rebound automatically on every `style.load`.
+- Preserve collision detection. Never set text overlap/ignore-placement globally just to force every label onto the canvas; use zoom-aware placement and a readable hierarchy.
+- Raster basemaps already contain baked-in labels and are not re-styled by the MapLibre helper. Do not stack a second label raster over a labeled street tile unless the underlying source is imagery-only.
+- Cesium imagery maps must provide a place/reference overlay when the active imagery source has no labels. Keep attribution visible and distinguish basemap labels from Sonalit operational entity labels.
+
 ## Relevant Files
 
 - `apps/web/src/features/live-fleet/components/FleetMap.tsx` — MapLibre fleet tracking, markers, geofences, traffic

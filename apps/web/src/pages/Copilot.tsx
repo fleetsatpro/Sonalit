@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, Send, User, Loader2, MapPin, Trash2, CheckCheck, X, Activity, Database, ShieldCheck, Radar, Sparkles, ChevronRight } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
 import { formatArea, polygonAreaM2, polygonValidationError, toGeoJsonPolygon } from '../lib/geofenceGeometry.js';
@@ -111,6 +112,7 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
       center: [27.5, -11.5],
       zoom: 5,
     });
+    bindDenseMapLabels(map);
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
     map.on('load', () => {

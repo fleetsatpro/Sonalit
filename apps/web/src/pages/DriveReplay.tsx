@@ -58,7 +58,7 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     const esri = createAiCesiumImageryProvider(
       'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       'Esri, Maxar, Earthstar Geographics',
-      19,
+      16,
       14,
     );
     const viewer = new Cesium.Viewer(containerRef.current, {
@@ -69,6 +69,12 @@ function CesiumDrive({ points, snapped, provider, confidence }:
       selectionIndicator: false, navigationHelpButton: false,
       navigationInstructionsInitiallyVisible: false, creditContainer: document.createElement('div'),
     });
+    viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+        url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+        credit: new Cesium.Credit('© Esri Reference Overlay', false),
+        maximumLevel: 14,
+        enablePickFeatures: false,
+      }));
     viewer.scene.globe.enableLighting = true;
     if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
@@ -96,6 +102,12 @@ function CesiumDrive({ points, snapped, provider, confidence }:
           if (!alive()) return;
           viewer.imageryLayers.removeAll();
           viewer.imageryLayers.addImageryProvider(bing);
+          viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+        url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+        credit: new Cesium.Credit('© Esri Reference Overlay', false),
+        maximumLevel: 19,
+        enablePickFeatures: false,
+      }));
         } catch { /* keep Esri */ }
         try {
           const terrain = await Cesium.createWorldTerrainAsync();
@@ -183,7 +195,7 @@ function CesiumDrive({ points, snapped, provider, confidence }:
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         label: {
-          text: `⏸ ${fmtDuration(st.durationMs)}`, font: '600 12px sans-serif',
+          text: `STOP · ${fmtDuration(st.durationMs)}`, font: '700 11px Inter, sans-serif',
           fillColor: Cesium.Color.WHITE, showBackground: true,
           backgroundColor: Cesium.Color.fromCssColorString('#7f1d1d').withAlpha(0.85),
           pixelOffset: new Cesium.Cartesian2(0, -20), disableDepthTestDistance: Number.POSITIVE_INFINITY,

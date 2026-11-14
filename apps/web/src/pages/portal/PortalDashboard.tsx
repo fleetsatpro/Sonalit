@@ -6,6 +6,8 @@ import {
   TimerReset, Truck, Waves, XCircle,
 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
+import { createOperationalDeviceMarker, setOperationalMarkerDensity } from '../../lib/operationalMapMarkers.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PortalShell, Badge, ProgressBar, fmtDateTime, relativeTime } from '../../components/portal/PortalPrimitives.js';
 
@@ -42,6 +44,7 @@ function isActive(s: ShipmentSummary): boolean {
 function freshness(s: ShipmentSummary): 'live' | 'recent' | 'stale' | 'offline' {
   if (!s.last_ping_at) return 'offline';
   const age = Date.now() - new Date(s.last_ping_at).getTime();
+  if (!Number.isFinite(age) || age < 0) return 'offline';
   if (age < 120000) return 'live';
   if (age < 900000) return 'recent';
   if (age < 3600000) return 'stale';
@@ -100,9 +103,12 @@ function OverviewMap({ shipments, selected, onSelect }: {
       zoom: 3.2,
       attributionControl: false,
     });
+    bindDenseMapLabels(m);
     map.current = m;
+    const refreshDensity = () => markers.current.forEach(marker => setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement, m.getZoom()));
+    m.on('zoom', refreshDensity);
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-    return () => { m.remove(); map.current = null; };
+    return () => { m.off('zoom', refreshDensity); m.remove(); map.current = null; };
   }, []);
 
   useEffect(() => {
@@ -116,23 +122,23 @@ function OverviewMap({ shipments, selected, onSelect }: {
     const bounds = new maplibregl.LngLatBounds();
     located.forEach(s => {
       const freshnessState = freshness(s);
-      const el = document.createElement('button');
-      el.type = 'button';
-      el.title = s.reference;
       const alerting = s.exception_count > 0 || s.seal_status === 'compromised';
-      el.style.cssText = 'width:18px;height:18px;border-radius:999px;border:2px solid rgba(255,255,255,.85);background:' +
-        (alerting ? '#ef4444' : '#f97316') +
-        ';box-shadow:0 0 0 5px rgba(249,115,22,.12),0 0 18px rgba(249,115,22,.45);cursor:pointer;';
-      if (freshnessState === 'stale' || freshnessState === 'offline') el.style.opacity = '.6';
-      el.onclick = () => onSelect(s.convoy_id);
-      markers.current.push(new maplibregl.Marker({ element: el })
+      const detail = [alerting ? 'ATTENTION' : statusLabel(s.status), freshnessState.toUpperCase()].join(' · ');
+      const el = createOperationalDeviceMarker({
+        kind: 'vehicle', identity: s.reference,
+        state: alerting ? 'alert' : freshnessState,
+        detail, zoom: m.getZoom(), selected: s.convoy_id === selected,
+        title: [s.reference, detail, s.origin, s.destination].filter(Boolean).join(' · '),
+      });
+      el.addEventListener('click', () => onSelect(s.convoy_id));
+      markers.current.push(new maplibregl.Marker({ element: el, anchor: 'left', offset: [-20, 0] })
         .setLngLat([s.current_location!.lng, s.current_location!.lat])
         .addTo(m));
       bounds.extend([s.current_location!.lng, s.current_location!.lat]);
     });
     if (located.length > 1) m.fitBounds(bounds, { padding: 55, maxZoom: 6.5, duration: 450 });
     else m.easeTo({ center: [located[0].current_location!.lng, located[0].current_location!.lat], zoom: 6, duration: 450 });
-  }, [shipments, onSelect]);
+  }, [shipments, selected, onSelect]);
 
   return (
     <div className="relative h-[430px] sm:h-[520px] overflow-hidden rounded-2xl border border-white/[0.07] bg-[#08101a]">

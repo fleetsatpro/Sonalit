@@ -11,6 +11,7 @@ import {
   EntityRegistry,
 } from '@sonalit/spatial-intelligence';
 import { createAiCesiumImageryProvider } from '../lib/imageryAiCesium.js';
+import { operationalMarkerSvg } from '../lib/operationalMapMarkers.js';
 
 export interface DeviceLocation {
   device_id: string;
@@ -81,6 +82,45 @@ function makePoint(color: Cesium.Color, size: number): Cesium.PointGraphics {
   });
 }
 
+const DEVICE_IMAGE = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(operationalMarkerSvg('vehicle'));
+const GUARDIAN_IMAGE = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(operationalMarkerSvg('guardian'));
+const TRACKER_IMAGE = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(operationalMarkerSvg('tracker'));
+
+function makeDeviceBillboard(kind: 'vehicle' | 'guardian' | 'tracker', color: Cesium.Color, heading: number | null): Cesium.BillboardGraphics {
+  return new Cesium.BillboardGraphics({
+    image: kind === 'guardian' ? GUARDIAN_IMAGE : kind === 'tracker' ? TRACKER_IMAGE : DEVICE_IMAGE,
+    width: 34,
+    height: 34,
+    color,
+    rotation: heading == null ? 0 : Cesium.Math.toRadians(-heading),
+    horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+    verticalOrigin: Cesium.VerticalOrigin.CENTER,
+    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    scaleByDistance: new Cesium.NearFarScalar(80_000, 1.2, 8_000_000, 0.52),
+    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+  });
+}
+
+function makeDeviceLabel(text: string, color: Cesium.Color, selected: boolean): Cesium.LabelGraphics {
+  return new Cesium.LabelGraphics({
+    text,
+    font: selected ? '700 13px Inter, sans-serif' : '650 12px Inter, sans-serif',
+    fillColor: color.withAlpha(0.98),
+    outlineColor: Cesium.Color.fromCssColorString('#030914'),
+    outlineWidth: 3,
+    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+    pixelOffset: new Cesium.Cartesian2(0, -24),
+    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 6_000_000),
+    scaleByDistance: new Cesium.NearFarScalar(80_000, 1.05, 6_000_000, 0.72),
+    showBackground: true,
+    backgroundColor: Cesium.Color.fromCssColorString('#071321').withAlpha(0.9),
+    backgroundPadding: new Cesium.Cartesian2(8, 5),
+  });
+}
+
 function ModeIcon({ mode }: { mode: MapMode }): React.ReactElement {
   if (mode === 'satellite' || mode === 'earth') return <Globe className="w-3.5 h-3.5" />;
   if (mode === 'hybrid')    return <Layers className="w-3.5 h-3.5" />;
@@ -127,7 +167,7 @@ export default function CesiumLiveMap({
       const cartoProvider = new Cesium.UrlTemplateImageryProvider({
         url: MAP_URL,
         credit: new Cesium.Credit('© Carto, © OpenStreetMap contributors', false),
-        maximumLevel: 19,
+        maximumLevel: 14,
       });
 
       viewer = new Cesium.Viewer(containerRef.current, {
@@ -227,6 +267,13 @@ export default function CesiumLiveMap({
           7,
         ),
       );
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: REF_PLACES_URL,
+          credit: new Cesium.Credit('© Esri Reference Overlay', false),
+          maximumLevel: 19,
+        }),
+      );
     } else {
       viewer.imageryLayers.addImageryProvider(
         createAiCesiumImageryProvider(
@@ -281,32 +328,20 @@ export default function CesiumLiveMap({
       const label = loc.vehicle_id
         ? (vehicleMap.get(loc.vehicle_id) ?? loc.device_id.slice(0, 8))
         : loc.device_id.slice(0, 8);
+      const markerKind = loc.vehicle_id ? 'vehicle' as const : 'tracker' as const;
 
       if (existing) {
         (existing.position as Cesium.ConstantPositionProperty).setValue(pos);
-        existing.point = makePoint(isSelected ? GREEN : ORANGE, isSelected ? 16 : 11);
-        if (existing.label) {
-          (existing.label.text as Cesium.ConstantProperty).setValue(label);
-        }
+        existing.point = makePoint(isSelected ? GREEN : ORANGE, isSelected ? 8 : 6);
+        existing.billboard = makeDeviceBillboard(markerKind, isSelected ? GREEN : ORANGE, loc.heading);
+        existing.label = makeDeviceLabel(label, isSelected ? GREEN : ORANGE, isSelected);
       } else {
         const entity = viewer.entities.add({
           id: loc.device_id,
           position: pos,
-          point: makePoint(isSelected ? GREEN : ORANGE, isSelected ? 16 : 11),
-          label: new Cesium.LabelGraphics({
-            text: label,
-            font: '11px sans-serif',
-            fillColor: WHITE,
-            outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 2,
-            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            pixelOffset: new Cesium.Cartesian2(0, -20),
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            showBackground: true,
-            backgroundColor: Cesium.Color.fromCssColorString('#1a1a2e').withAlpha(0.8),
-            backgroundPadding: new Cesium.Cartesian2(5, 3),
-          }),
+          point: makePoint(isSelected ? GREEN : ORANGE, isSelected ? 8 : 6),
+          billboard: makeDeviceBillboard(markerKind, isSelected ? GREEN : ORANGE, loc.heading),
+          label: makeDeviceLabel(label, isSelected ? GREEN : ORANGE, isSelected),
         });
         entitiesRef.current.set(loc.device_id, entity);
       }
@@ -477,27 +512,18 @@ export default function CesiumLiveMap({
     for (const device of devices) {
       if (device.last_lat == null || device.last_lng == null) continue;
       const pos = Cesium.Cartesian3.fromDegrees(device.last_lng, device.last_lat, 0);
-      const color = device.panic_active ? RED : GREEN;
-      const labelText = device.panic_active ? `⚠ ${device.name}` : device.name;
+      const state = String(device.status || 'unknown').toLowerCase();
+      const offline = state === 'offline' || state === 'stale' || state === 'unavailable';
+      const color = device.panic_active ? RED : offline ? Cesium.Color.fromCssColorString('#94a3b8') : GREEN;
+      const labelText = device.panic_active ? 'SOS · ' + device.name : offline ? 'OFFLINE · ' + device.name : device.name;
       const cesiumId = `guardian_${device.id}`;
       const entity = viewer.entities.add({
         id: cesiumId,
         position: pos,
-        point: makePoint(color, 13),
-        label: new Cesium.LabelGraphics({
-          text: labelText,
-          font: '11px sans-serif',
-          fillColor: color,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          pixelOffset: new Cesium.Cartesian2(0, -20),
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          showBackground: true,
-          backgroundColor: Cesium.Color.fromCssColorString('#1a1a2e').withAlpha(0.8),
-          backgroundPadding: new Cesium.Cartesian2(5, 3),
-        }),
+        point: makePoint(color, 7),
+        billboard: makeDeviceBillboard('guardian', color, null),
+        label: makeDeviceLabel(labelText, color, false),
+        description: [device.name, state.toUpperCase(), device.last_seen ? 'Last seen ' + device.last_seen : 'Last seen unavailable', device.last_speed == null ? '' : 'Last reported speed ' + device.last_speed].filter(Boolean).join(' · '),
       });
       guardianRef.current.set(device.id, entity);
       registry?.register({

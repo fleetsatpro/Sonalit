@@ -3,13 +3,15 @@ import { STREET_STYLE } from '../../../lib/mapStyles.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
+import { bindDenseMapLabels } from '../../../lib/mapLabels.js'
+import { createOperationalDeviceMarker, setOperationalMarkerDensity, updateOperationalDeviceMarker } from '../../../lib/operationalMapMarkers.js'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
 import {
   trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
   bboxFromMap, useTrafficIncidents, useTrafficStatus,
 } from '../../../lib/trafficLayer.js'
-import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
+import type { LiveVehicle } from '../types/fleet.js'
 import '../../../styles/spatial-command.css'
 
 installOpticalReconMapLibreProtocol()
@@ -25,12 +27,14 @@ const SATELLITE_STYLE: maplibregl.StyleSpecification = {
       type: 'raster',
       tiles: ['sonalit-ai://satellite/{z}/{y}/{x}'],
       tileSize: 256,
-      attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics',
+      maxzoom: 19,
+      attribution: '© Esri, Vantor, Earthstar Geographics, GIS User Community',
     },
     ref: {
       type: 'raster',
       tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}'],
       tileSize: 256,
+      maxzoom: 19,
     },
   },
   layers: [
@@ -51,10 +55,6 @@ const EARTH_OBSERVATION_STYLE: maplibregl.StyleSpecification = {
     },
   },
   layers: [{ id: 'earth-layer', type: 'raster', source: 'earth' }],
-}
-
-const STATUS_COLOR: Record<LiveStatus, string> = {
-  move: '#16c784', idle: '#f59e0b', stop: '#475569', offline: '#3e4252', sos: '#ef4444',
 }
 
 interface Geofence {
@@ -155,15 +155,6 @@ const riskColorExpr: any = ['case',
   ['==', ['get', 'risk_level'], 'medium'], '#f97316',
   '#eab308',
 ]
-
-// Field officer (Guardian device) marker glyph — a person icon inside a
-// rounded-square badge, distinct from the plain dot used for vehicles so the
-// two are never confused at a glance on a busy map.
-const OFFICER_ICON = (color: string) =>
-  `<svg width="11" height="11" viewBox="0 0 24 24" fill="${color}" stroke="none" style="pointer-events:none">
-     <circle cx="12" cy="7.5" r="4.2"/>
-     <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
-   </svg>`
 
 function weatherConditionLabel(item: SpatialWorldEntity): string {
   return String(item.attributes?.conditions ?? 'weather').replaceAll('_', ' ').toUpperCase()
@@ -313,44 +304,74 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
   return marker
 }
 
-function makeEl(v: LiveVehicle): HTMLElement {
-  const isOfficer = v.kind === 'guardian'
-  // For a field officer, "online at all" is the signal that matters most —
-  // whether they're walking, stopped, or idle is secondary to dispatch
-  // knowing their device is actually reachable right now. So online officers
-  // glow green regardless of move/idle/stop sub-state; SOS and offline still
-  // take priority over that.
-  const color = (isOfficer && v.status !== 'offline' && v.status !== 'sos') ? '#16c784' : STATUS_COLOR[v.status]
-  const spd = Math.round(v.speed_kmh)
-  const reg = v.registration.length > 10 ? v.registration.slice(0, 10) : v.registration
-  const label = v.status === 'sos' ? 'SOS' : isOfficer && v.status !== 'offline' ? (v.status === 'move' ? `${spd} km/h` : 'ONLINE') : v.status === 'move' ? `${spd} km/h` : v.status === 'offline' ? 'OFF' : v.status.toUpperCase().slice(0, 4)
-  const pulse = (v.status === 'move' || v.status === 'idle')
-    ? `<div style="position:absolute;inset:-6px;border-radius:${isOfficer ? '7px' : '50%'};border:1.5px solid ${color}55;animation:lf-mping 2.2s ease-out infinite;pointer-events:none"></div>` : ''
-  const sos = v.status === 'sos'
-    ? `<div style="position:absolute;inset:-7px;border-radius:${isOfficer ? '8px' : '50%'};border:2px solid ${color}88;animation:lf-sos-ring .65s ease-in-out infinite;pointer-events:none"></div>` : ''
-  const glyph = isOfficer ? OFFICER_ICON(color) : `<div style="width:7px;height:7px;border-radius:50%;background:${color};box-shadow:0 0 5px ${color};pointer-events:none"></div>`
-  // Heading arrow — only for a moving officer with a real bearing. Sits just
-  // outside the badge, rotated to point the direction they're travelling
-  // (heading is a compass bearing, clockwise from north — same convention
-  // CSS rotate() uses, so no sign flip needed).
-  const arrow = (isOfficer && v.status === 'move' && v.heading != null)
-    ? `<div style="position:absolute;left:50%;top:50%;width:0;height:0;transform:translate(-50%,-50%) rotate(${v.heading}deg) translateY(-17px);border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid ${color};filter:drop-shadow(0 0 3px ${color}aa);pointer-events:none"></div>`
-    : ''
-  const wrap = document.createElement('div')
-  wrap.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none">
-      <div style="position:relative;overflow:visible;width:22px;height:22px;border-radius:${isOfficer ? '6px' : '50%'};background:rgba(5,7,13,.92);border:2px solid ${color};display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px ${color}44,0 2px 8px rgba(0,0,0,.8);pointer-events:all;cursor:pointer;${v.status==='sos'?'animation:lf-sos-marker .65s ease-in-out infinite':''}">
-        ${pulse}${sos}${arrow}
-        ${glyph}
-      </div>
-      <div style="display:flex;gap:3px;align-items:center;background:rgba(5,7,13,.95);border:1px solid ${color}44;border-radius:3px;padding:1px 6px;pointer-events:none;white-space:nowrap">
-        <span style="font-family:JetBrains Mono,IBM Plex Mono,monospace;font-size:9px;font-weight:700;color:#e8a830">${reg}</span>
-        <span style="font-family:JetBrains Mono,IBM Plex Mono,monospace;font-size:8px;color:${color};font-weight:600">${label}</span>
-      </div>
-    </div>`
-  return wrap
+function formatFixAge(secondsAgo: number): string {
+  if (!Number.isFinite(secondsAgo) || secondsAgo < 0) return 'AGE N/A';
+  if (secondsAgo < 60) return Math.floor(secondsAgo) + 's';
+  if (secondsAgo < 3600) return Math.floor(secondsAgo / 60) + 'm';
+  if (secondsAgo < 86400) return Math.floor(secondsAgo / 3600) + 'h';
+  return Math.floor(secondsAgo / 86400) + 'd';
 }
 
+function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
+  const isOfficer = v.kind === 'guardian';
+  const isSos = v.panic_active || v.status === 'sos';
+  const now = Date.now();
+  const heartbeatEpoch = v.last_seen_at ? Date.parse(v.last_seen_at) : Number.NaN;
+  const heartbeatAge = Number.isFinite(heartbeatEpoch) ? (now - heartbeatEpoch) / 1000 : Number.POSITIVE_INFINITY;
+  const heartbeatOnline = heartbeatAge >= -60 && heartbeatAge <= 300;
+  const fixIsAged = !Number.isFinite(v.secondsAgo) || v.secondsAgo > 300;
+  const state = isSos
+    ? 'sos'
+    : isOfficer && heartbeatOnline && fixIsAged
+      ? 'stale'
+      : isOfficer && v.status !== 'offline'
+        ? 'online'
+        : v.status;
+  const activity = v.status === 'move'
+    ? (Number.isFinite(v.speed_kmh) ? Math.round(v.speed_kmh) + ' km/h' : 'MOVING')
+    : v.status === 'idle' || v.status === 'stop'
+      ? 'STATIONARY'
+      : v.status === 'offline' ? 'NO RECENT FIX' : 'SOS';
+  const gpsAge = formatFixAge(v.secondsAgo);
+  const healthTimestamp = v.health_recorded_at ? Date.parse(v.health_recorded_at) : Number.NaN;
+  const healthAgeMs = now - healthTimestamp;
+  const healthAge = Number.isFinite(healthAgeMs) && healthAgeMs >= 0
+    ? healthAgeMs < 60_000 ? Math.round(healthAgeMs / 1000) + 's' : healthAgeMs < 3_600_000 ? Math.floor(healthAgeMs / 60_000) + 'm' : Math.floor(healthAgeMs / 3_600_000) + 'h'
+    : 'age n/a';
+  const batteryDetail = isOfficer && v.battery_level != null
+    ? ' · BAT ' + Math.round(v.battery_level) + '%'
+    : '';
+  const detail = isSos
+    ? 'SOS · ALERT ACTIVE'
+    : isOfficer && state === 'stale'
+      ? 'HEARTBEAT ONLINE · GPS FIX AGED'
+      : v.status === 'offline'
+        ? 'OFFLINE · GPS ' + gpsAge
+        : isOfficer
+          ? (v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
+          : v.status === 'move'
+            ? 'MOVING · ' + activity
+            : state.toUpperCase().replaceAll('_', ' ');
+  const identity = isOfficer ? (v.officer_name || v.registration || 'Field officer') : (v.registration || 'Vehicle');
+  const healthSummary = isOfficer && v.battery_level != null
+    ? 'BAT ' + Math.round(v.battery_level) + '% · HEALTH ' + healthAge + ' AGO'
+    : '';
+  const accuracySummary = v.accuracy_m != null && Number.isFinite(v.accuracy_m) && v.accuracy_m > 0
+    ? 'GPS ACCURACY ±' + Math.round(v.accuracy_m) + ' M'
+    : 'GPS ACCURACY NOT REPORTED';
+  return {
+    kind: isOfficer ? 'guardian' as const : 'vehicle' as const,
+    identity,
+    state,
+    detail,
+    heading: v.heading,
+    accuracyMeters: v.accuracy_m,
+    latitude: v.lat,
+    selected,
+    zoom,
+    title: [identity, state.toUpperCase(), activity, 'GPS FIX ' + gpsAge + ' AGO', accuracySummary, isOfficer && heartbeatOnline ? 'HEARTBEAT ONLINE' : '', healthSummary, v.location_desc].filter(Boolean).join(' · '),
+  };
+}
 interface Props {
   vehicles: LiveVehicle[];
   selectedId: string | null;
@@ -384,6 +405,12 @@ export default function FleetMap({
   const onWeatherSelectRef = useRef(onWeatherSelect)
   const onNaturalEventSelectRef = useRef(onNaturalEventSelect)
   const onViewportChangeRef = useRef(onViewportChange)
+  const onSelectRef = useRef(onSelect)
+  const vehiclesRef = useRef(vehicles)
+  const selectedIdRef = useRef(selectedId)
+  onSelectRef.current = onSelect
+  vehiclesRef.current = vehicles
+  selectedIdRef.current = selectedId
   onWeatherSelectRef.current = onWeatherSelect
   onNaturalEventSelectRef.current = onNaturalEventSelect
   onViewportChangeRef.current = onViewportChange
@@ -450,6 +477,7 @@ export default function FleetMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     const m = new maplibregl.Map({ container: containerRef.current, style: STREET_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
+    bindDenseMapLabels(m);
     m.on('style.load', () => {
       setMapReady(true)
       syncWorldViewport()
@@ -908,6 +936,156 @@ export default function FleetMap({
     }
   }, [mapReady, weatherAnimationEnabled, naturalEvents])
 
+  // Wide-area device presentation: aggregate only when individual points
+  // collapse to the same few screen pixels. Cluster centroids are explicitly
+  // counted and clickable; they are never presented as a single device fix.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const sourceId = 'lf-operational-devices'
+    const clusterLayer = 'lf-operational-device-clusters'
+    const clusterCountLayer = 'lf-operational-device-cluster-count'
+    const pointLayer = 'lf-operational-device-points'
+
+    if (!map.getSource(sourceId)) {
+      map.addSource(sourceId, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterRadius: 30,
+        clusterMaxZoom: 7,
+        clusterProperties: {
+          sos_count: ['+', ['case', ['==', ['get', 'state'], 'sos'], 1, 0]],
+        },
+      } as maplibregl.GeoJSONSourceSpecification)
+
+      map.addLayer({
+        id: clusterLayer,
+        type: 'circle',
+        source: sourceId,
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': ['case', ['>', ['get', 'sos_count'], 0], '#f0445d', '#11b9bd'],
+          'circle-radius': ['step', ['get', 'point_count'], 10, 3, 12, 8, 15, 20, 19],
+          'circle-stroke-color': '#07111e',
+          'circle-stroke-width': 2,
+          'circle-opacity': 0.94,
+        },
+      })
+      map.addLayer({
+        id: clusterCountLayer,
+        type: 'symbol',
+        source: sourceId,
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': ['get', 'point_count_abbreviated'],
+          'text-font': ['Open Sans Bold'],
+          'text-size': 10,
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#f7fbff',
+          'text-halo-color': '#07111e',
+          'text-halo-width': 1,
+        },
+      })
+      map.addLayer({
+        id: pointLayer,
+        type: 'circle',
+        source: sourceId,
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': ['match', ['get', 'state'],
+            'sos', '#f0445d',
+            'offline', '#8190a3',
+            'stale', '#e0a34a',
+            'stopped', '#8190a3',
+            'moving', '#32d6a0',
+            'online', '#32d6a0',
+            'idle', '#e0b85b',
+            '#8ea0b7',
+          ],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 2.2, 7, 4],
+          'circle-stroke-color': '#07111e',
+          'circle-stroke-width': 1.5,
+          'circle-opacity': 0.98,
+        },
+      })
+    }
+
+    const deviceSource = map.getSource(sourceId) as maplibregl.GeoJSONSource
+    const syncOverviewMode = () => {
+      const overview = map.getZoom() <= 8.2
+      const visibility = overview ? 'visible' : 'none'
+      for (const layer of [clusterLayer, clusterCountLayer, pointLayer]) {
+        if (map.getLayer(layer) && map.getLayoutProperty(layer, 'visibility') !== visibility) {
+          map.setLayoutProperty(layer, 'visibility', visibility)
+        }
+      }
+      for (const marker of markersRef.current.values()) {
+        marker.getElement().style.display = overview ? 'none' : ''
+      }
+    }
+    const onClusterClick = (event: maplibregl.MapLayerMouseEvent) => {
+      const feature = event.features?.[0]
+      const clusterId = Number(feature?.properties?.cluster_id)
+      const geometry = feature?.geometry
+      if (!Number.isFinite(clusterId) || !geometry || geometry.type !== 'Point') return
+      void deviceSource.getClusterExpansionZoom(clusterId).then(zoom => {
+        if (!Number.isFinite(zoom)) return
+        map.easeTo({ center: geometry.coordinates as [number, number], zoom, duration: 420 })
+      }).catch(() => undefined)
+    }
+    const onPointClick = (event: maplibregl.MapLayerMouseEvent) => {
+      const feature = event.features?.[0]
+      const deviceId = String(feature?.properties?.device_id ?? '')
+      const vehicle = vehiclesRef.current.find(item => item.id === deviceId)
+      if (vehicle) onSelectRef.current(vehicle)
+    }
+    map.on('click', clusterLayer, onClusterClick)
+    map.on('click', pointLayer, onPointClick)
+    map.on('zoom', syncOverviewMode)
+    map.on('zoomend', syncOverviewMode)
+    map.on('moveend', syncOverviewMode)
+    syncOverviewMode()
+    return () => {
+      map.off('click', clusterLayer, onClusterClick)
+      map.off('click', pointLayer, onPointClick)
+      map.off('zoom', syncOverviewMode)
+      map.off('zoomend', syncOverviewMode)
+      map.off('moveend', syncOverviewMode)
+    }
+  }, [mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const source = map.getSource('lf-operational-devices') as maplibregl.GeoJSONSource | undefined
+    if (!source) return
+    const features: GeoJSON.Feature<GeoJSON.Point, Record<string, string>>[] = vehicles
+      .filter(item => item.lat != null && item.lng != null &&
+        Number.isFinite(item.lat) && Number.isFinite(item.lng) &&
+        item.lat >= -90 && item.lat <= 90 && item.lng >= -180 && item.lng <= 180)
+      .map(item => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [item.lng!, item.lat!] },
+        properties: {
+          device_id: item.id,
+          state: item.panic_active || item.status === 'sos'
+            ? 'sos'
+            : item.kind === 'guardian' &&
+              Number.isFinite(Date.parse(item.last_seen_at ?? '')) &&
+              (Date.now() - Date.parse(item.last_seen_at ?? '')) / 1000 <= 300 &&
+              item.secondsAgo > 300
+              ? 'stale'
+              : item.status === 'move' ? 'moving'
+                : item.status === 'stop' ? 'stopped'
+                  : item.status,
+        },
+      }))
+    source.setData({ type: 'FeatureCollection', features })
+  }, [mapReady, vehicles])
+
   // sync vehicle markers
   useEffect(() => {
     const map = mapRef.current; if (!map) return
@@ -921,24 +1099,44 @@ export default function FleetMap({
     // row, and if it renders on top the operator sees (and taps) OFFLINE while
     // the online marker hides underneath.
     const zFor = (s: string) => (s === 'sos' ? '40' : s === 'move' ? '30' : s === 'offline' ? '10' : '20')
+    const zoom = map.getZoom()
     for (const v of positioned) {
+      const selected = v.id === selectedId
+      const options = markerOptions(v, selected, zoom)
       const existing = markersRef.current.get(v.id)
       if (existing) {
         existing.setLngLat([v.lng!, v.lat!])
-        const el = existing.getElement(); el.innerHTML = makeEl(v).innerHTML
+        const el = existing.getElement() as HTMLButtonElement
+        updateOperationalDeviceMarker(el, options)
+        el.style.display = map.getZoom() <= 8.2 ? 'none' : ''
         el.style.zIndex = zFor(v.status)
-        const inner = el.firstElementChild as HTMLElement | null
-        if (inner) inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) }, { once: true })
       } else {
-        const el = makeEl(v)
+        const el = createOperationalDeviceMarker(options)
+        el.style.display = map.getZoom() <= 8.2 ? 'none' : ''
         el.style.zIndex = zFor(v.status)
-        const inner = el.firstElementChild as HTMLElement | null
-        if (inner) inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) })
-        const marker = new maplibregl.Marker({ element: el, anchor: 'top' }).setLngLat([v.lng!, v.lat!]).addTo(map)
+        el.addEventListener('click', event => {
+          event.stopPropagation()
+          const current = vehiclesRef.current.find(item => item.id === v.id)
+          if (current) onSelectRef.current(current)
+        })
+        const marker = new maplibregl.Marker({ element: el, anchor: 'center', subpixelPositioning: true }).setLngLat([v.lng!, v.lat!]).addTo(map)
         markersRef.current.set(v.id, marker)
       }
     }
-  }, [vehicles, onSelect])
+  }, [vehicles, selectedId])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const refreshDensity = () => {
+      for (const [id, marker] of markersRef.current) {
+        setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement, map.getZoom(), id === selectedIdRef.current)
+      }
+    }
+    map.on('zoom', refreshDensity)
+    refreshDensity()
+    return () => { map.off('zoom', refreshDensity) }
+  }, [mapReady])
 
   // fly to selected (one-shot, when selection changes)
   useEffect(() => {

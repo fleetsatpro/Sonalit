@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/600.css';
@@ -14,7 +15,7 @@ import '@fontsource/ibm-plex-mono/700.css';
 import { Activity, AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, ChevronDown, CloudSun, Crosshair, Flame, Globe2, LoaderCircle, MapPin, Pause, Play, RefreshCw, Thermometer, Droplets, Wind, Eye, Waves, X, Satellite, CloudRain } from 'lucide-react';
 import { fetchLiveEventSimulation, snapSpatialBounds, shouldRetrySpatialRequest } from '../lib/spatialClient.js';
 import type { LiveEventSimulationResponse, SpatialWorldEntity } from '../lib/spatialClient.js';
-import { FALLBACK_STREET_STYLE, STREET_STYLE } from '../lib/mapStyles.js';
+import { ESRI_STREET_STYLE, FALLBACK_STREET_STYLE } from '../lib/mapStyles.js';
 import { buildOfficialWarningAreaCollection, syncOfficialWarningLayers } from '../lib/weatherWarningGeometry.js';
 import WeatherFieldCanvas from '../components/weather/WeatherFieldCanvas.js';
 import '../styles/weather-studio.css';
@@ -368,11 +369,12 @@ export default function WeatherStudio() {
 
     try {
       map = new maplibregl.Map({
-        container, style: STREET_STYLE, center: [28, 0], zoom: 2.15,
+        container, style: ESRI_STREET_STYLE, center: [28, 0], zoom: 2.15,
         minZoom: 1.15, maxZoom: 14, attributionControl: true,
         renderWorldCopies: false, cooperativeGestures: true,
         canvasContextAttributes: { antialias: false, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false },
       });
+      bindDenseMapLabels(map);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown renderer initialisation error.';
       setMapError('Map renderer could not initialise. ' + message);
@@ -385,11 +387,11 @@ export default function WeatherStudio() {
       baseStyleRef.current = 'fallback';
       baseTileFailuresRef.current = 0;
       setMapProvider('fallback');
-      setMapNotice('The primary map tile source failed. Switched to an independent cartographic provider.');
+      setMapNotice('The primary Esri tile service failed. Switched to the alternate vector cartography provider.');
       try { instance.setStyle(FALLBACK_STREET_STYLE); }
       catch (_) {
         setMapReady(false);
-        setMapError('The primary base map failed and the fallback could not be selected. Retry the map when connectivity is restored.');
+        setMapError('The primary Esri basemap failed and the alternate cartography could not be selected. Retry the map when connectivity is restored.');
       }
     };
 
@@ -408,7 +410,7 @@ export default function WeatherStudio() {
         setWarningOverlayError('Verified official warning boundaries could not be drawn. Warning messages remain available from the source feed.');
       }
       setMapError(null);
-      setMapNotice(baseStyleRef.current === 'fallback' ? 'Using independent fallback cartography.' : null);
+      setMapNotice(baseStyleRef.current === 'fallback' ? 'Using independent fallback vector cartography.' : null);
       setMapReady(true);
       syncViewport(instance);
       window.setTimeout(() => { if (mounted) instance.resize(); }, 0);
@@ -423,7 +425,7 @@ export default function WeatherStudio() {
         return;
       }
       const isPrimaryTiles = sourceId === 'street' || /World_Street_Map\/MapServer\/tile/i.test(message);
-      const isFallbackTiles = sourceId === 'fallback-base' || /basemaps\.cartocdn\.com\/dark_all/i.test(message);
+      const isFallbackTiles = sourceId === 'fallback-base' || /tiles\.openfreemap\.org/i.test(message);
       if (isPrimaryTiles && baseStyleRef.current === 'esri') {
         baseTileFailuresRef.current += 1;
         if (baseTileFailuresRef.current >= 3) switchToFallback();

@@ -1430,10 +1430,14 @@ router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => 
     // Update last known position on device record
     await query(
       `UPDATE guardian_devices
-       SET last_lat = $2, last_lng = $3, last_speed = $4,
-           last_seen = NOW(), last_fix_at = NOW(), updated_at = NOW()
+       SET last_seen = NOW(),
+           last_lat = CASE WHEN last_fix_at IS NULL OR last_fix_at <= $5 THEN $2 ELSE last_lat END,
+           last_lng = CASE WHEN last_fix_at IS NULL OR last_fix_at <= $5 THEN $3 ELSE last_lng END,
+           last_speed = CASE WHEN last_fix_at IS NULL OR last_fix_at <= $5 THEN $4 ELSE last_speed END,
+           last_fix_at = CASE WHEN last_fix_at IS NULL OR last_fix_at <= $5 THEN $5 ELSE last_fix_at END,
+           updated_at = NOW()
        WHERE id = $1`,
-      [deviceId, lat, lng, speed ?? null]
+      [deviceId, lat, lng, speed ?? null, result.rows[0].timestamp]
     );
 
     const locationPayload = {
@@ -1445,8 +1449,12 @@ router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => 
       altitude: altitude ?? null,
       heading: heading ?? null,
       speed: speed ?? null,
+      speed_kmh: speed == null ? null : Number(speed) * 3.6,
       accuracy: accuracy ?? null,
+      accuracy_m: accuracy ?? null,
       timestamp: result.rows[0].timestamp,
+      last_seen_at: new Date().toISOString(),
+      position_source: 'device_locations',
     };
     if (req.device.org_id) {
       publish(`org#${req.device.org_id}`, locationPayload);
@@ -3346,9 +3354,20 @@ async function processLocationBatch(device, points) {
   let lastLng = null;
   let lastSpeed = null;
   let lastHeading = null;
+  let lastAccuracy = null;
   let lastTimestamp = null;
 
-  // Bulk insert using unnest for efficiency
+  // Order by device-recorded time; delayed/offline uploads are not necessarily
+  // in chronological order.
+  const orderedPoints = points
+    .filter(pt => pt && pt.lat != null && pt.lng != null)
+    .map(pt => {
+      const parsed = pt.timestamp ? new Date(pt.timestamp) : new Date();
+      return { ...pt, timestamp: Number.isFinite(parsed.getTime()) ? parsed.toISOString() : new Date().toISOString() };
+    })
+    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+
+  // Bulk insert using unnest for efficiency.
   const lats      = [];
   const lngs      = [];
   const alts      = [];
@@ -3357,23 +3376,22 @@ async function processLocationBatch(device, points) {
   const accuracies= [];
   const timestamps= [];
 
-  for (const pt of points) {
-    if (pt.lat == null || pt.lng == null) continue;
+  for (const pt of orderedPoints) {
     lats.push(pt.lat);
     lngs.push(pt.lng);
     alts.push(pt.altitude ?? null);
     headings.push(pt.heading ?? null);
     speeds.push(pt.speed ?? null);
     accuracies.push(pt.accuracy ?? null);
-    timestamps.push(pt.timestamp || null);
+    timestamps.push(pt.timestamp);
     lastLat = pt.lat;
     lastLng = pt.lng;
     lastSpeed = pt.speed ?? null;
     lastHeading = pt.heading ?? null;
-    lastTimestamp = pt.timestamp || null;
+    lastAccuracy = pt.accuracy ?? null;
+    lastTimestamp = pt.timestamp;
     accepted++;
   }
-
   if (accepted === 0) {
     const err = new Error('No valid points (lat/lng required)');
     err.statusCode = 400;
@@ -3393,9 +3411,14 @@ async function processLocationBatch(device, points) {
   if (lastLat != null) {
     await query(
       `UPDATE guardian_devices
-       SET last_lat = $2, last_lng = $3, last_speed = $4, last_seen = NOW(), updated_at = NOW()
+       SET last_seen = NOW(),
+           last_lat = CASE WHEN last_fix_at IS NULL OR last_fix_at <= $5 THEN $2 ELSE last_lat END,
+           last_lng = CASE WHEN last_fix_at IS NULL OR last_fix_at <= $5 THEN $3 ELSE last_lng END,
+           last_speed = CASE WHEN last_fix_at IS NULL OR last_fix_at <= $5 THEN $4 ELSE last_speed END,
+           last_fix_at = CASE WHEN last_fix_at IS NULL OR last_fix_at <= $5 THEN $5 ELSE last_fix_at END,
+           updated_at = NOW()
        WHERE id = $1`,
-      [deviceId, lastLat, lastLng, lastSpeed]
+      [deviceId, lastLat, lastLng, lastSpeed, lastTimestamp]
     );
   }
 
@@ -3413,8 +3436,12 @@ async function processLocationBatch(device, points) {
       altitude: null,
       heading: lastHeading,
       speed: lastSpeed,
-      accuracy: null,
+      speed_kmh: lastSpeed == null ? null : Number(lastSpeed) * 3.6,
+      accuracy: lastAccuracy ?? null,
+      accuracy_m: lastAccuracy ?? null,
       timestamp: lastTimestamp || new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
+      position_source: 'device_locations',
     };
     if (device.org_id) {
       publish(`org#${device.org_id}`, locationPayload);

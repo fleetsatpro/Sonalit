@@ -5,6 +5,8 @@ import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
 import Map, { Marker, Popup, NavigationControl } from 'react-map-gl/maplibre';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
+import { operationalMarkerSvg } from '../lib/operationalMapMarkers.js';
 import { AlertOctagon, MapPin, CheckCircle, Clock, Radio, ShieldAlert, UserCheck } from 'lucide-react';
 
 interface PanicEvent {
@@ -54,6 +56,8 @@ const MODE_COLORS: Record<string, string> = {
   medical: 'text-blue-400',
   voice_distress: 'text-red-500',
 };
+
+const GUARDIAN_MARKER_ICON = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(operationalMarkerSvg('guardian'));
 
 const MODE_LABELS: Record<string, string> = {
   loud: 'LOUD SOS',
@@ -470,6 +474,7 @@ export default function PanicCenter() {
           <Map
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
             initialViewState={initialViewState}
+             onLoad={event => { bindDenseMapLabels(event.target); }}
             style={{ width: '100%', height: '100%' }}
           >
             <NavigationControl position="top-right" />
@@ -484,15 +489,22 @@ export default function PanicCenter() {
                   setSelectedEventId(event.id);
                 }}
               >
-                <div
-                  className={!event.resolved_at ? 'animate-pulse cursor-pointer' : 'cursor-pointer'}
-                  style={{
-                    width: 16, height: 16, borderRadius: '50%',
-                    border: '2px solid white', boxShadow: '0 0 8px rgba(0,0,0,.5)',
-                    background: markerColor(event),
-                  }}
-                  title={`${event.device_name} — ${event.mode}`}
-                />
+                <button
+                  type="button"
+                  aria-label={`Open ${event.device_name} · ${MODE_LABELS[event.mode] ?? event.mode}`}
+                  onClick={click => { click.stopPropagation(); setSelectedEventId(event.id); }}
+                  className={`relative flex h-11 items-center gap-2 rounded-xl border bg-[#07111d]/95 px-2 shadow-[0_6px_20px_rgba(0,0,0,.55)] backdrop-blur ${event.resolved_at ? 'border-slate-400/50' : 'border-red-400/80'}`}
+                  title={`${event.device_name} · ${MODE_LABELS[event.mode] ?? event.mode} · ${event.created_at}`}
+                >
+                  <span className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${event.resolved_at ? 'border-slate-400/40 bg-slate-500/15' : 'border-red-300/60 bg-red-500/15'}`}>
+                    {!event.resolved_at && <span aria-hidden="true" className="absolute -inset-1 rounded-xl border border-red-400/65 animate-ping" />}
+                    <img src={GUARDIAN_MARKER_ICON} alt="" aria-hidden="true" className="relative h-5 w-5" />
+                  </span>
+                  <span className="flex min-w-0 flex-col items-start gap-0.5 text-left">
+                    <span className="max-w-[116px] truncate text-[10px] font-bold leading-none text-white">{event.device_name}</span>
+                    <span className={`max-w-[116px] truncate font-mono text-[8px] font-bold tracking-[.07em] ${event.resolved_at ? 'text-slate-400' : 'text-red-300'}`}>{event.resolved_at ? 'RESOLVED' : (MODE_LABELS[event.mode] ?? event.mode).toUpperCase()}</span>
+                  </span>
+                </button>
               </Marker>
             ))}
 

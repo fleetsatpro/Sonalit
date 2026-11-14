@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
+import { bindDenseMapLabels } from '../../../lib/mapLabels.js';
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { STREET_STYLE, SAT_STYLE } from '../../../lib/mapStyles.js'
 import { geoCircle } from '../../../lib/geoMath.js'
@@ -87,6 +88,7 @@ export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, 
       maxCanvasSize: [8192, 8192],
       canvasContextAttributes: spatialCanvasContextAttributes,
     })
+    bindDenseMapLabels(m);
     m.addControl(new maplibregl.AttributionControl({ compact: true }))
     m.on('load', () => setMapReady(true))
     mapRef.current = m

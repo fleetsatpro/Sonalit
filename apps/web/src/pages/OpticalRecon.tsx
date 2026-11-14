@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity, AlertTriangle, CheckCircle2, ChevronRight, Clock3, Cloud,
@@ -166,6 +167,7 @@ export default function OpticalRecon() {
       maxCanvasSize: [8192, 8192],
       canvasContextAttributes: spatialCanvasContextAttributes,
     })
+    bindDenseMapLabels(map);
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, showZoom: false }), 'bottom-right')
     map.on('style.load', () => setMapReady(true))
     map.on('error', event => {

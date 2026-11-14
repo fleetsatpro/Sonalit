@@ -1,15 +1,24 @@
 import type maplibregl from 'maplibre-gl';
 
-// Plain raster tiles — no vector-style/glyph fetch to fail, unlike a hosted
-// vector style (e.g. cartocdn dark-matter) which can silently fail to
-// render tiles depending on network/CSP conditions. Uses Esri's street tile
-// service (same provider as the satellite style below) rather than
-// tile.openstreetmap.org directly — OSM's own demo tile server explicitly
-// discourages/rate-limits production traffic, which is a common source of
-// tiles silently failing to load in a deployed app.
-export const STREET_STYLE: maplibregl.StyleSpecification = {
+// Global street cartography is vector-based so the renderer can overzoom the
+// provider's native tiles without surfacing Esri's raster "Map data not yet
+// available" placeholder tiles. Liberty preserves a clear, light map with
+// names, transport labels, water features and place hierarchy at every zoom.
+export const STREET_STYLE = 'https://tiles.openfreemap.org/styles/liberty' as const;
+
+// Weather Studio retains its verified Esri primary basemap and uses the
+// OpenFreeMap vector style below only as its independent fallback provider.
+export const ESRI_STREET_STYLE: maplibregl.StyleSpecification = {
   version: 8,
-  sources: { street: { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: '© Esri, HERE, Garmin, USGS, NGA, EPA, USDA' } },
+  sources: {
+    street: {
+      type: 'raster',
+      tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: '© Esri, HERE, Garmin, USGS, NGA, EPA, USDA',
+    },
+  },
   layers: [{ id: 'street-tiles', type: 'raster', source: 'street' as const, paint: { 'raster-opacity': 1 } }],
 };
 
@@ -30,7 +39,7 @@ export const SAT_STYLE: maplibregl.StyleSpecification = {
   },
   layers: [
     { id: 'sat-tiles', type: 'raster', source: 'sat' as const, paint: { 'raster-opacity': 1 } },
-    { id: 'sat-ref-tiles', type: 'raster', source: 'sat-ref' as const, paint: { 'raster-opacity': 0.9 } },
+    { id: 'sat-ref-tiles', type: 'raster', source: 'sat-ref' as const, paint: { 'raster-opacity': 1 } },
   ],
 };
 
@@ -42,9 +51,8 @@ export const SAT_STYLE: maplibregl.StyleSpecification = {
 export const DARK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/dark' as const;
 
 /**
- * Independent keyless vector fallback for map workspaces when their primary
- * cartographic provider fails. It provides geography only; no route, tracking,
- * forecast or weather data is fabricated.
+ * Alternate keyless OpenFreeMap style. This is an alternate cartographic style
+ * on the same tile service, not an independent network provider.
  */
-export const FALLBACK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/liberty' as const;
+export const FALLBACK_STREET_STYLE = 'https://tiles.openfreemap.org/styles/bright' as const;
 

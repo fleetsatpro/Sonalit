@@ -118,7 +118,7 @@ export function reconStyle(render: OpticalReconResult['render']): maplibregl.Sty
         type: 'raster',
         tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}'],
         tileSize: 256,
-        maxzoom: 19,
+        maxzoom: 14,
         attribution: '© Esri Reference Overlay',
       },
     },
@@ -133,7 +133,7 @@ export function reconStyle(render: OpticalReconResult['render']): maplibregl.Sty
         id: 'recon-reference',
         type: 'raster',
         source: 'ref',
-        paint: { 'raster-opacity': 0.82 },
+        paint: { 'raster-opacity': 1 },
       },
     ],
   }

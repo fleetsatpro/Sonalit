@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { AlertTriangle, ArrowLeft, Clock, MapPin, Shield, Truck } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
+import { bindDenseMapLabels } from '../../lib/mapLabels.js';
+import { createOperationalDeviceMarker, setOperationalMarkerDensity } from '../../lib/operationalMapMarkers.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js';
 import {
@@ -148,19 +150,28 @@ function TrackMap({ convoyId, vehicles }: { convoyId: string; vehicles: Vehicle[
       zoom: located.length > 1 ? 7 : 10,
       attributionControl: false,
     });
+    bindDenseMapLabels(map);
+    const refreshMarkerDensity = () => markersRef.current.forEach(marker => setOperationalMarkerDensity(marker.getElement() as HTMLButtonElement, map.getZoom()));
+    map.on('zoom', refreshMarkerDensity);
     mapRef.current = map;
 
     const render = () => {
       markersRef.current.forEach(marker => marker.remove());
       markersRef.current = [];
       located.forEach(v => {
-        const el = document.createElement('button');
-        el.type = 'button';
-        el.setAttribute('aria-label', `Select ${v.registration}`);
-        el.style.cssText = `width:22px;height:22px;border-radius:50%;border:2px solid ${v.carries_my_cargo ? '#f97316' : '#64748b'};background:${v.carries_my_cargo ? 'rgba(249,115,22,0.48)' : 'rgba(100,116,139,0.45)'};cursor:pointer;box-shadow:${v.carries_my_cargo ? '0 0 0 5px rgba(249,115,22,0.10),0 0 16px rgba(249,115,22,0.35)' : '0 0 0 4px rgba(100,116,139,0.08)'};`;
-        const popup = new maplibregl.Popup({ offset: 12, closeButton: false })
-          .setHTML(`<div style="font-family:monospace;font-size:11px;color:#fff;background:#0e1626;padding:6px 8px;border-radius:6px;">${v.registration}${v.speed_kmh != null ? ` · ${Math.round(v.speed_kmh)} km/h` : ''}</div>`);
-        const marker = new maplibregl.Marker({ element: el })
+        const ageMs = v.last_ping_at ? Date.now() - new Date(v.last_ping_at).getTime() : Number.POSITIVE_INFINITY;
+        const state = !Number.isFinite(ageMs) || ageMs < 0 ? 'offline' : ageMs < 120_000 ? 'online' : ageMs < 900_000 ? 'delayed' : ageMs < 3_600_000 ? 'stale' : 'offline';
+        const speed = v.speed_kmh == null ? '' : Math.round(v.speed_kmh) + ' km/h';
+        const identity = v.registration || 'Vehicle';
+        const detail = [v.carries_my_cargo ? 'CARGO VEHICLE' : 'CONVOY VEHICLE', speed, state.toUpperCase()].filter(Boolean).join(' · ');
+        const el = createOperationalDeviceMarker({
+          kind: 'vehicle', identity, state, detail,
+          heading: v.heading_deg, zoom: map.getZoom(),
+          title: [identity, detail, v.make, v.model].filter(Boolean).join(' · '),
+        });
+        const popup = new maplibregl.Popup({ offset: 22, closeButton: false })
+          .setText([identity, detail, v.driver_name || 'Driver not supplied', v.last_ping_at ? 'Last GPS fix ' + v.last_ping_at : 'No GPS timestamp'].join(' · '));
+        const marker = new maplibregl.Marker({ element: el, anchor: 'left', offset: [-20, 0] })
           .setLngLat([v.current_lng!, v.current_lat!])
           .setPopup(popup)
           .addTo(map);
@@ -173,6 +184,7 @@ function TrackMap({ convoyId, vehicles }: { convoyId: string; vehicles: Vehicle[
 
     return () => {
       map.off('load', render);
+      map.off('zoom', refreshMarkerDensity);
       markersRef.current.forEach(marker => marker.remove());
       markersRef.current = [];
       map.remove();

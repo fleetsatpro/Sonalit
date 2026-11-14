@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import MapGL, { Marker, NavigationControl, Source, Layer, type MapRef } from 'react-map-gl/maplibre';
+import { bindDenseMapLabels } from '../lib/mapLabels.js';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Crosshair, Link2, Loader2, Map as MapIcon, Maximize2, RefreshCw, Search, ShieldCheck, Signal, Truck, Users, X } from 'lucide-react';
@@ -65,7 +66,7 @@ function LiveMap({ convoys, vehicles, alerts, selectedTrack, onSelect, full, onT
   const fit = () => { const b = bounds(points); if (b) ref.current?.fitBounds(b, { padding: 90, maxZoom: 9, duration: 700 }); };
   const line = { type: 'Feature' as const, geometry: { type: 'LineString' as const, coordinates: selectedTrack.filter(f => validCoord(f.lat, f.lng)).map(f => [f.lng, f.lat]) }, properties: {} };
   return <div className={`${full ? 'fixed inset-3 z-[120]' : 'relative'} overflow-hidden rounded-2xl border border-white/[.08] bg-[#071019]`}>
-    <MapGL ref={ref} initialViewState={{ longitude: 0, latitude: 0, zoom: 1.7 }} mapStyle={mapStyle} style={{ width: '100%', height: '100%', minHeight: full ? 'calc(100vh - 24px)' : 620 }} attributionControl={false} onLoad={fit}>
+    <MapGL ref={ref} initialViewState={{ longitude: 0, latitude: 0, zoom: 1.7 }} mapStyle={mapStyle} style={{ width: '100%', height: '100%', minHeight: full ? 'calc(100vh - 24px)' : 620 }} attributionControl={false} onLoad={event => { bindDenseMapLabels(event.target); fit(); }}>
       <NavigationControl position="bottom-right" showCompass showZoom />
       {line.geometry.coordinates.length > 1 && <Source id="cargo-selected-track" type="geojson" data={line}><Layer id="cargo-selected-track-line" type="line" paint={{ 'line-color': '#ff7a18', 'line-width': 4, 'line-opacity': 0.95 }} /></Source>}
       {points.map(p => <Marker key={`${p.kind}-${p.id}`} longitude={p.lng} latitude={p.lat} anchor="center"><button type="button" onClick={() => p.kind === 'convoy' && onSelect(p.id)} title={p.name} className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg transition hover:scale-110 ${p.kind === 'convoy' ? 'border-orange-300/70 bg-[#0c1621] text-orange-300' : 'border-sky-300/60 bg-[#0c1621] text-sky-300'}`}><Truck size={15} /></button></Marker>)}
