@@ -240,11 +240,10 @@ function MovementAtlas({ shipments, onOpen }: { shipments: Shipment[]; onOpen: (
       }
     };
 
-    if (map.isStyleLoaded()) render();
-    else map.once('load', render);
-    return () => {
-      map.off('load', render);
-    };
+    // Live positions are DOM markers, not basemap layers. Render them as soon
+    // as the map container exists; a slow or unavailable third-party tile
+    // server must never hide the device itself.
+    render();
   }, [located]);
 
   return (
