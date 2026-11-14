@@ -12,6 +12,13 @@ describe('GEV 2D basemap contract', () => {
     expect(source).not.toContain("'ONLINE · STATIONARY'");
   });
 
+  it('keeps stale GPS distinct from a live device heartbeat and exposes measured accuracy', () => {
+    expect(source).toContain("accuracyMeters: v.accuracy_m");
+    expect(source).toContain("latitude: v.lat");
+    expect(source).toContain("'GPS ACCURACY ±'");
+    expect(source).toContain("'HEARTBEAT ONLINE · GPS FIX AGED'");
+  });
+
   it('uses the zoom-resilient shared vector basemap and caps Esri satellite tiles', () => {
     expect(source).toContain("import { STREET_STYLE } from '../../../lib/mapStyles.js'");
     expect(source).toContain('style: STREET_STYLE');
