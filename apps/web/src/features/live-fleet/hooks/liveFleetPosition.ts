@@ -57,9 +57,10 @@ export function preferNewerGpsPosition<T extends LiveGpsPosition>(
 export function indexLatestGpsPositions<T extends LiveGpsPosition>(rows: readonly T[]): Map<string, T> {
   const latest = new Map<string, T>();
   for (const row of rows) {
-    if (!isValidGpsPosition(row)) continue;
-    const key = row.vehicle_id || row.device_id;
-    latest.set(key, preferNewerGpsPosition(latest.get(key), row));
+    const normalized = normalizeGpsPosition(row);
+    if (!normalized) continue;
+    const key = normalized.vehicle_id || normalized.device_id;
+    latest.set(key, preferNewerGpsPosition(latest.get(key), normalized));
   }
   return latest;
 }
