@@ -936,6 +936,147 @@ export default function FleetMap({
     }
   }, [mapReady, weatherAnimationEnabled, naturalEvents])
 
+  // Wide-area device presentation: aggregate only when individual points
+  // collapse to the same few screen pixels. Cluster centroids are explicitly
+  // counted and clickable; they are never presented as a single device fix.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const sourceId = 'lf-operational-devices'
+    const clusterLayer = 'lf-operational-device-clusters'
+    const clusterCountLayer = 'lf-operational-device-cluster-count'
+    const pointLayer = 'lf-operational-device-points'
+
+    if (!map.getSource(sourceId)) {
+      map.addSource(sourceId, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterRadius: 30,
+        clusterMaxZoom: 7,
+        clusterProperties: {
+          sos_count: ['+', ['case', ['==', ['get', 'state'], 'sos'], 1, 0]],
+        },
+      } as maplibregl.GeoJSONSourceSpecification)
+
+      map.addLayer({
+        id: clusterLayer,
+        type: 'circle',
+        source: sourceId,
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': ['case', ['>', ['get', 'sos_count'], 0], '#f0445d', '#11b9bd'],
+          'circle-radius': ['step', ['get', 'point_count'], 10, 3, 12, 8, 15, 20, 19],
+          'circle-stroke-color': '#07111e',
+          'circle-stroke-width': 2,
+          'circle-opacity': 0.94,
+        },
+      })
+      map.addLayer({
+        id: clusterCountLayer,
+        type: 'symbol',
+        source: sourceId,
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': ['get', 'point_count_abbreviated'],
+          'text-font': ['Open Sans Bold'],
+          'text-size': 10,
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#f7fbff',
+          'text-halo-color': '#07111e',
+          'text-halo-width': 1,
+        },
+      })
+      map.addLayer({
+        id: pointLayer,
+        type: 'circle',
+        source: sourceId,
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': ['match', ['get', 'state'],
+            'sos', '#f0445d',
+            'offline', '#8190a3',
+            'stale', '#e0a34a',
+            'moving', '#32d6a0',
+            'online', '#32d6a0',
+            'idle', '#e0b85b',
+            '#8ea0b7',
+          ],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 2.2, 7, 4],
+          'circle-stroke-color': '#07111e',
+          'circle-stroke-width': 1.5,
+          'circle-opacity': 0.98,
+        },
+      })
+    }
+
+    const deviceSource = map.getSource(sourceId) as maplibregl.GeoJSONSource
+    const syncOverviewMode = () => {
+      const overview = map.getZoom() <= 8.2
+      const visibility = overview ? 'visible' : 'none'
+      for (const layer of [clusterLayer, clusterCountLayer, pointLayer]) {
+        if (map.getLayer(layer) && map.getLayoutProperty(layer, 'visibility') !== visibility) {
+          map.setLayoutProperty(layer, 'visibility', visibility)
+        }
+      }
+      for (const marker of markersRef.current.values()) {
+        marker.getElement().style.display = overview ? 'none' : ''
+      }
+    }
+    const onClusterClick = (event: maplibregl.MapLayerMouseEvent) => {
+      const feature = event.features?.[0]
+      const clusterId = Number(feature?.properties?.cluster_id)
+      const geometry = feature?.geometry
+      if (!Number.isFinite(clusterId) || !geometry || geometry.type !== 'Point') return
+      deviceSource.getClusterExpansionZoom(clusterId, (error, zoom) => {
+        if (error || zoom == null) return
+        map.easeTo({ center: geometry.coordinates as [number, number], zoom, duration: 420 })
+      })
+    }
+    const onPointClick = (event: maplibregl.MapLayerMouseEvent) => {
+      const feature = event.features?.[0]
+      const deviceId = String(feature?.properties?.device_id ?? '')
+      const vehicle = vehiclesRef.current.find(item => item.id === deviceId)
+      if (vehicle) onSelectRef.current(vehicle)
+    }
+    map.on('click', clusterLayer, onClusterClick)
+    map.on('click', pointLayer, onPointClick)
+    map.on('zoom', syncOverviewMode)
+    map.on('zoomend', syncOverviewMode)
+    map.on('moveend', syncOverviewMode)
+    map.getCanvas().style.cursor = 'grab'
+    syncOverviewMode()
+    return () => {
+      map.off('click', clusterLayer, onClusterClick)
+      map.off('click', pointLayer, onPointClick)
+      map.off('zoom', syncOverviewMode)
+      map.off('zoomend', syncOverviewMode)
+      map.off('moveend', syncOverviewMode)
+    }
+  }, [mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const source = map.getSource('lf-operational-devices') as maplibregl.GeoJSONSource | undefined
+    if (!source) return
+    const features: GeoJSON.Feature<GeoJSON.Point, Record<string, string>>[] = vehicles
+      .filter(item => item.lat != null && item.lng != null &&
+        Number.isFinite(item.lat) && Number.isFinite(item.lng) &&
+        item.lat >= -90 && item.lat <= 90 && item.lng >= -180 && item.lng <= 180)
+      .map(item => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [item.lng!, item.lat!] },
+        properties: {
+          device_id: item.id,
+          state: item.panic_active || item.status === 'sos' ? 'sos' : item.status,
+        },
+      }))
+    source.setData({ type: 'FeatureCollection', features })
+  }, [mapReady, vehicles])
+
   // sync vehicle markers
   useEffect(() => {
     const map = mapRef.current; if (!map) return
@@ -958,9 +1099,11 @@ export default function FleetMap({
         existing.setLngLat([v.lng!, v.lat!])
         const el = existing.getElement() as HTMLButtonElement
         updateOperationalDeviceMarker(el, options)
+        el.style.display = map.getZoom() <= 8.2 ? 'none' : ''
         el.style.zIndex = zFor(v.status)
       } else {
         const el = createOperationalDeviceMarker(options)
+        el.style.display = map.getZoom() <= 8.2 ? 'none' : ''
         el.style.zIndex = zFor(v.status)
         el.addEventListener('click', event => {
           event.stopPropagation()
