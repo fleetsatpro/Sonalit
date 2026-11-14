@@ -36,7 +36,7 @@ describe('Live Fleet GPS position integrity', () => {
     expect(isValidGpsPosition(fix({ lat: 91 }))).toBe(false);
     expect(isValidGpsPosition(fix({ lng: -181 }))).toBe(false);
     expect(isValidGpsPosition({ device_id: 'missing', vehicle_id: null } )).toBe(false);
-    expect(indexLatestGpsPositions([fix({ lat: 91 })])).toHaveLength?.(0);
+    expect(indexLatestGpsPositions([fix({ lat: 91 })]).size).toBe(0);
   });
 
   it('does not let a stale HTTP snapshot replace a websocket update received after the request began', () => {
