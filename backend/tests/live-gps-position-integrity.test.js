@@ -11,10 +11,10 @@ describe('live GPS position integrity', () => {
   const guardian = read('src/routes/guardian.js');
 
   test('Guardian map position timestamp comes from the last GPS fix, not the heartbeat', () => {
-    expect(gpsRoute).toContain('COALESCE(dl.timestamp, gd.last_fix_at) AS timestamp');
-    expect(gpsRoute).toContain('gd.last_seen AS last_seen_at');
-    expect(gpsRoute).not.toContain('gd.last_seen AS timestamp');
-    expect(gpsRoute).toContain('dl.accuracy AS accuracy_m');
+    expect(gpsRoute).toMatch(/COALESCE\(dl\.timestamp,\s*gd\.last_fix_at\)\s+AS timestamp/);
+    expect(gpsRoute).toMatch(/gd\.last_seen\s+AS last_seen_at/);
+    expect(gpsRoute).not.toMatch(/gd\.last_seen\s+AS timestamp/);
+    expect(gpsRoute).toMatch(/dl\.accuracy\s+AS accuracy_m/);
   });
 
   test('vehicle fixes and history are committed only when the fix is newer than the cached position', () => {
