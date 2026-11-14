@@ -6,6 +6,22 @@ import type maplibregl from 'maplibre-gl';
 // names, transport labels, water features and place hierarchy at every zoom.
 export const STREET_STYLE = 'https://tiles.openfreemap.org/styles/liberty' as const;
 
+// Weather Studio retains its verified Esri primary basemap and uses the
+// OpenFreeMap vector style below only as its independent fallback provider.
+export const ESRI_STREET_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: {
+    street: {
+      type: 'raster',
+      tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: '© Esri, HERE, Garmin, USGS, NGA, EPA, USDA',
+    },
+  },
+  layers: [{ id: 'street-tiles', type: 'raster', source: 'street' as const, paint: { 'raster-opacity': 1 } }],
+};
+
 // Satellite imagery + Esri reference layer (place names, country/admin boundaries, major roads).
 // Uses services.arcgisonline.com (current canonical Esri tile host, same one the
 // GPS Live page's FleetMap uses) rather than server.arcgisonline.com — the
