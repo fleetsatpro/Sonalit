@@ -27,7 +27,7 @@ const LIVE_WINDOW_MS = 120_000;
 const ACTIVE_STATUSES = new Set(['active', 'pending', 'in_transit', 'delayed', 'at_checkpoint']);
 
 function statusLabel(status: string): string {
-  return status.replace(/_/g, ' ').replace(/\\b\\w/g, character => character.toUpperCase());
+  return status.replace(/_/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
 }
 
 type Position = { lat: number; lng: number };
