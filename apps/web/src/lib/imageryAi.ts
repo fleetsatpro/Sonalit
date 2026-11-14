@@ -48,7 +48,7 @@ function hardwareThreads() {
 
 export function isImageryAiEnabled() {
   if (typeof window === 'undefined') return false
-  return window.localStorage.getItem('sonalit.imagery-ai') !== 'off'
+  return window.localStorage.getItem('sonalit.imagery-ai') === 'on'
 }
 
 export function setImageryAiEnabled(enabled: boolean) {
