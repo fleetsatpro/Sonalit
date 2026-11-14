@@ -56,7 +56,7 @@ export function createAiCesiumImageryProvider(
   url: string,
   credit: string,
   maximumLevel = 19,
-  minimumLevel = 14,
+  minimumLevel = 18,
 ) {
   const provider = new Cesium.UrlTemplateImageryProvider({
     url,
