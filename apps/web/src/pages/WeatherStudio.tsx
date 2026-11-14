@@ -424,7 +424,7 @@ export default function WeatherStudio() {
         setRasterError('An Earth-observation tile request failed; this overlay may have incomplete coverage.');
         return;
       }
-      const isPrimaryTiles = sourceId === 'street' || /tiles\.openfreemap\.org/i.test(message);
+      const isPrimaryTiles = sourceId === 'street' || /World_Street_Map\/MapServer\/tile/i.test(message);
       const isFallbackTiles = sourceId === 'fallback-base' || /tiles\.openfreemap\.org/i.test(message);
       if (isPrimaryTiles && baseStyleRef.current === 'esri') {
         baseTileFailuresRef.current += 1;
