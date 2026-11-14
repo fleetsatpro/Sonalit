@@ -9,7 +9,7 @@ const mapStyles = readFileSync(new URL('../lib/mapStyles.ts', import.meta.url), 
 describe('map workspace provider and accessibility contracts', () => {
   it('keeps Weather Studio on Esri primary cartography with an alternate provider fallback', () => {
     expect(mapStyles).toContain('export const ESRI_STREET_STYLE');
-    expect(mapStyles).toContain('services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile');
+    expect(weather).toContain('World_Street_Map\\/MapServer\\/tile');
     expect(weather).toContain("import { ESRI_STREET_STYLE, FALLBACK_STREET_STYLE }");
     expect(weather).toContain("style: ESRI_STREET_STYLE");
     expect(weather).toContain("useState<'esri' | 'fallback'>('esri')");
