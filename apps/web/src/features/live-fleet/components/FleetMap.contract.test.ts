@@ -19,6 +19,17 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain("'HEARTBEAT ONLINE · GPS FIX AGED'");
   });
 
+  it('uses truthful point clustering before revealing individual devices at regional zoom', () => {
+    expect(source).toContain("sourceId = 'lf-operational-devices'");
+    expect(source).toContain('cluster: true');
+    expect(source).toContain('clusterRadius: 30');
+    expect(source).toContain('clusterMaxZoom: 7');
+    expect(source).toContain("getClusterExpansionZoom(clusterId)");
+    expect(source).toContain("item.id");
+    expect(source).toContain("map.getZoom() <= 8.2 ? 'none' : ''");
+    expect(source).toContain("deviceSource.setData({ type: 'FeatureCollection', features })");
+  });
+
   it('uses the zoom-resilient shared vector basemap and caps Esri satellite tiles', () => {
     expect(source).toContain("import { STREET_STYLE } from '../../../lib/mapStyles.js'");
     expect(source).toContain('style: STREET_STYLE');
