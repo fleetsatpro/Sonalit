@@ -16,6 +16,7 @@ export interface OperationalMarkerOptions {
   accuracyMeters?: number | null;
   latitude?: number | null;
   title?: string;
+  ariaLabel?: string;
 }
 
 const ICONS: Record<OperationalMarkerKind, string> = {
@@ -144,7 +145,7 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
   if (identity) identity.textContent = options.identity.trim() || (options.kind === 'vehicle' ? 'Vehicle' : options.kind === 'guardian' ? 'Field officer' : 'Device');
   if (detail) detail.textContent = options.detail?.trim() || status.label;
   button.title = options.title || [identity?.textContent, status.label, detail?.textContent].filter(Boolean).join(' · ');
-  button.setAttribute('aria-label', button.title);
+  button.setAttribute('aria-label', options.ariaLabel?.trim() || button.title);
   setOperationalMarkerDensity(button, options.zoom ?? 10, options.selected ?? false);
 }
 
