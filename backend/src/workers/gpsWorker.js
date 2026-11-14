@@ -87,7 +87,10 @@ async function processGPS(job) {
   if (!orgId) throw new Error(`GPS vehicle has no tenant scope: ${vehicle_id}`);
 
   return withOrg(orgId, async () => {
-    const currentFix = { lat, lng, speed: speed ?? 0, heading: heading ?? null, timestamp: timestamp ?? new Date().toISOString() };
+    const fixDate = new Date(timestamp ?? Date.now());
+    if (!Number.isFinite(fixDate.getTime())) throw new Error('GPS job has an invalid fix timestamp');
+    const fixTimestamp = fixDate.toISOString();
+    const currentFix = { lat, lng, speed: speed ?? 0, heading: heading ?? null, timestamp: fixTimestamp };
     const cacheKey = `${orgId}:${vehicle_id}`;
     const prevFix = _prevFixCache.get(cacheKey) ?? null;
     _prevFixCache.set(cacheKey, currentFix);
@@ -95,16 +98,25 @@ async function processGPS(job) {
     // 1. Store GPS log
     await query(
       'INSERT INTO gps_logs (vehicle_id, lat, lng, speed, timestamp, org_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [vehicle_id, lat, lng, speed, timestamp, orgId]
+      [vehicle_id, lat, lng, speed, fixTimestamp, orgId]
     );
 
   // 2. Update vehicle position and get org_id via active convoy. RETURNING
   // registration so alert messages can name the vehicle like an operator
   // would ("KEN-001"), not by its raw UUID.
     const posRes = await query(
-      'UPDATE vehicles SET latitude=$1, longitude=$2, last_ping=$3, updated_at=NOW() WHERE id=$4 AND org_id=$5 RETURNING registration',
-      [lat, lng, new Date(timestamp), vehicle_id, orgId]
+      `UPDATE vehicles
+          SET latitude=$1, longitude=$2, last_ping=$3,
+              heading=COALESCE($4, heading), updated_at=NOW()
+        WHERE id=$5 AND org_id=$6
+          AND (last_ping IS NULL OR last_ping < $3)
+        RETURNING registration`,
+      [lat, lng, fixTimestamp, heading ?? null, vehicle_id, orgId]
     );
+    if (!posRes.rows.length) {
+      logger.info(`Ignoring out-of-order GPS fix: vehicle=${vehicle_id} timestamp=${fixTimestamp}`);
+      return { accepted: false, reason: 'older_than_current_fix' };
+    }
   const vehicleLabel = posRes.rows[0]?.registration || String(vehicle_id).slice(0, 8);
 
   // 3. Broadcast live position on org channel for real-time GPS page
@@ -116,7 +128,11 @@ async function processGPS(job) {
       [vehicle_id]
     );
     const activeConvoyId = orgRes.rows[0]?.convoy_id ?? null;
-    const gpsPayload = { type: 'location', device_id: vehicle_id, vehicle_id, lat, lng, speed };
+    const gpsPayload = {
+      type: 'location', device_id: vehicle_id, vehicle_id, lat, lng, speed,
+      speed_kmh: speed, heading: heading ?? null, timestamp: fixTimestamp,
+      last_seen_at: fixTimestamp, position_source: 'vehicle_gps',
+    };
     publish(`org#${orgId}`, gpsPayload);
 
     // Also publish to portal channel so cargo owners see live updates
