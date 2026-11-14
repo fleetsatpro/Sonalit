@@ -315,11 +315,18 @@ function formatFixAge(secondsAgo: number): string {
 function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
   const isOfficer = v.kind === 'guardian';
   const isSos = v.panic_active || v.status === 'sos';
+  const now = Date.now();
+  const heartbeatEpoch = v.last_seen_at ? Date.parse(v.last_seen_at) : Number.NaN;
+  const heartbeatAge = Number.isFinite(heartbeatEpoch) ? (now - heartbeatEpoch) / 1000 : Number.POSITIVE_INFINITY;
+  const heartbeatOnline = heartbeatAge >= -60 && heartbeatAge <= 300;
+  const fixIsAged = !Number.isFinite(v.secondsAgo) || v.secondsAgo > 300;
   const state = isSos
     ? 'sos'
-    : isOfficer && v.status !== 'offline'
-      ? 'online'
-      : v.status;
+    : isOfficer && heartbeatOnline && fixIsAged
+      ? 'stale'
+      : isOfficer && v.status !== 'offline'
+        ? 'online'
+        : v.status;
   const activity = v.status === 'move'
     ? (Number.isFinite(v.speed_kmh) ? Math.round(v.speed_kmh) + ' km/h' : 'MOVING')
     : v.status === 'idle' || v.status === 'stop'
@@ -327,7 +334,7 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
       : v.status === 'offline' ? 'NO RECENT FIX' : 'SOS';
   const gpsAge = formatFixAge(v.secondsAgo);
   const healthTimestamp = v.health_recorded_at ? Date.parse(v.health_recorded_at) : Number.NaN;
-  const healthAgeMs = Date.now() - healthTimestamp;
+  const healthAgeMs = now - healthTimestamp;
   const healthAge = Number.isFinite(healthAgeMs) && healthAgeMs >= 0
     ? healthAgeMs < 60_000 ? Math.round(healthAgeMs / 1000) + 's' : healthAgeMs < 3_600_000 ? Math.floor(healthAgeMs / 60_000) + 'm' : Math.floor(healthAgeMs / 3_600_000) + 'h'
     : 'age n/a';
@@ -336,26 +343,33 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
     : '';
   const detail = isSos
     ? 'SOS · ALERT ACTIVE'
-    : v.status === 'offline'
-      ? 'OFFLINE · GPS ' + gpsAge
-      : isOfficer
-        ? (v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
-        : v.status === 'move'
-          ? 'MOVING · ' + activity
-          : state.toUpperCase().replaceAll('_', ' ');
+    : isOfficer && state === 'stale'
+      ? 'HEARTBEAT ONLINE · GPS FIX AGED'
+      : v.status === 'offline'
+        ? 'OFFLINE · GPS ' + gpsAge
+        : isOfficer
+          ? (v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
+          : v.status === 'move'
+            ? 'MOVING · ' + activity
+            : state.toUpperCase().replaceAll('_', ' ');
   const identity = isOfficer ? (v.officer_name || v.registration || 'Field officer') : (v.registration || 'Vehicle');
   const healthSummary = isOfficer && v.battery_level != null
     ? 'BAT ' + Math.round(v.battery_level) + '% · HEALTH ' + healthAge + ' AGO'
     : '';
+  const accuracySummary = v.accuracy_m != null && Number.isFinite(v.accuracy_m) && v.accuracy_m > 0
+    ? 'GPS ACCURACY ±' + Math.round(v.accuracy_m) + ' M'
+    : 'GPS ACCURACY NOT REPORTED';
   return {
     kind: isOfficer ? 'guardian' as const : 'vehicle' as const,
     identity,
     state,
     detail,
     heading: v.heading,
+    accuracyMeters: v.accuracy_m,
+    latitude: v.lat,
     selected,
     zoom,
-    title: [identity, state.toUpperCase(), activity, 'GPS FIX ' + gpsAge + ' AGO', healthSummary, v.location_desc].filter(Boolean).join(' · '),
+    title: [identity, state.toUpperCase(), activity, 'GPS FIX ' + gpsAge + ' AGO', accuracySummary, isOfficer && heartbeatOnline ? 'HEARTBEAT ONLINE' : '', healthSummary, v.location_desc].filter(Boolean).join(' · '),
   };
 }
 interface Props {
