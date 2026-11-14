@@ -4,7 +4,7 @@ import { api } from '../../../lib/api.js'
 import { subscribe } from '../../../lib/centrifuge.js'
 import { useAuthStore } from '../../../stores/auth.js'
 import type { LiveStatus, LiveVehicle, ConvoyGroup, StatusCounts } from '../types/fleet.js'
-import { indexLatestGpsPositions, isRecentDeviceHeartbeat, isValidGpsPosition, mergeGpsSnapshotWithRealtime, preferNewerGpsPosition, secondsSinceGpsFix, type LiveGpsPosition } from './liveFleetPosition.js'
+import { indexLatestGpsPositions, isRecentDeviceHeartbeat, mergeGpsSnapshotWithRealtime, normalizeGpsPosition, preferNewerGpsPosition, secondsSinceGpsFix, type LiveGpsPosition } from './liveFleetPosition.js'
 
 interface DashVehicle {
   id: string; registration: string; convoy_id: string | null
@@ -126,8 +126,8 @@ export function useLiveFleet() {
     return subscribe<GpsPos & RealtimeEvent>(`org#${orgId}`, ev => {
       if (ev.type && ev.type !== 'location') return
       if (!ev.device_id && !ev.vehicle_id) return
-      const incoming = { ...ev, _receivedAt: Date.now() } as GpsPos
-      if (!isValidGpsPosition(incoming)) return
+      const incoming = normalizeGpsPosition({ ...ev, _receivedAt: Date.now() }) as GpsPos | null
+      if (!incoming) return
       const key = incoming.vehicle_id ?? incoming.device_id
       setPositions(prev => {
         const existing = prev.get(key)
