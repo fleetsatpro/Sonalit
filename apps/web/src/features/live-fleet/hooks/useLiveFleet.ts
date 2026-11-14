@@ -4,6 +4,7 @@ import { api } from '../../../lib/api.js'
 import { subscribe } from '../../../lib/centrifuge.js'
 import { useAuthStore } from '../../../stores/auth.js'
 import type { LiveStatus, LiveVehicle, ConvoyGroup, StatusCounts } from '../types/fleet.js'
+import { indexLatestGpsPositions, isRecentDeviceHeartbeat, isValidGpsPosition, mergeGpsSnapshotWithRealtime, preferNewerGpsPosition, secondsSinceGpsFix, type LiveGpsPosition } from './liveFleetPosition.js'
 
 interface DashVehicle {
   id: string; registration: string; convoy_id: string | null
@@ -12,12 +13,17 @@ interface DashVehicle {
 interface DashConvoy {
   id: string; name: string; origin: string | null; destination: string | null
 }
-interface GpsPos {
-  device_id: string; vehicle_id: string | null; name?: string | null
-  lat: number; lng: number; speed: number | null; heading: number | null; timestamp: string | null
-  panic_active?: boolean; battery_level?: number | null; signal_strength?: number | null
-  health_recorded_at?: string | null
-  officer_name?: string | null; officer_phone?: string | null
+interface GpsPos extends LiveGpsPosition {
+  name?: string | null;
+  speed_kmh?: number | null;
+  last_seen_at?: string | null;
+  position_source?: string | null;
+  panic_active?: boolean;
+  battery_level?: number | null;
+  signal_strength?: number | null;
+  health_recorded_at?: string | null;
+  officer_name?: string | null;
+  officer_phone?: string | null;
 }
 // Realtime publishes on the org# channel carry a `type` field; GPS position
 // updates are always 'location' (gpsWorker.js, guardian.js POST /location).
@@ -39,7 +45,7 @@ function arrayPayload<T>(payload: unknown, label: string): T[] {
 }
 
 function deriveStatus(speedKmh: number, secsAgo: number): LiveStatus {
-  if (secsAgo > 1800) return 'offline'
+  if (!Number.isFinite(secsAgo) || secsAgo > 1800) return 'offline'
   if (speedKmh > 5) return 'move'
   if (secsAgo < 300) return 'idle'
   return 'stop'
@@ -95,17 +101,15 @@ export function useLiveFleet() {
   const gpsQ = useQuery<GpsPos[]>({
     queryKey: ['live-fleet-gps-init', orgId],
     queryFn: async () => {
+      const requestStartedAt = Date.now()
       const r = await api.get<unknown>('/gps/track')
       const payload = arrayPayload<GpsPos>(r.data, 'Primary GPS position feed')
-      const next = new Map<string, GpsPos>()
+      const snapshot = indexLatestGpsPositions(payload). as Map<string, GpsPos>
       const panicking = new Set<string>()
       for (const p of payload) {
-        if (!p || typeof p !== 'object' || !p.device_id || !Number.isFinite(Number(p.lat)) || !Number.isFinite(Number(p.lng))) continue
-        const key = p.vehicle_id ?? p.device_id
-        next.set(key, p)
-        if (p.panic_active) panicking.add(p.device_id)
+        if (p?.panic_active && p.device_id) panicking.add(p.device_id)
       }
-      setPositions(next)
+      setPositions(previous => mergeGpsSnapshotWithRealtime(snapshot, previous, requestStartedAt) as Map<string, GpsPos>)
       setPanicDevices(panicking)
       return payload
     },
@@ -122,15 +126,17 @@ export function useLiveFleet() {
     return subscribe<GpsPos & RealtimeEvent>(`org#${orgId}`, ev => {
       if (ev.type && ev.type !== 'location') return
       if (!ev.device_id && !ev.vehicle_id) return
-      const key = ev.vehicle_id ?? ev.device_id!
+      const incoming = { ...ev, _receivedAt: Date.now() } as GpsPos
+      if (!isValidGpsPosition(incoming)) return
+      const key = incoming.vehicle_id ?? incoming.device_id
       setPositions(prev => {
-        const next = new Map(prev)
-        // A live location ping never carries battery/signal/health data
-        // (that only comes from the periodic /gps/track fetch) — replacing
-        // the whole entry instead of merging would wipe those fields the
-        // instant a device's next GPS fix arrives.
         const existing = prev.get(key)
-        next.set(key, existing ? { ...existing, ...ev } : ev)
+        const newest = preferNewerGpsPosition(existing, incoming) as GpsPos
+        if (newest === existing) return prev
+        const next = new Map(prev)
+        // Preserve slower-changing health fields while accepting only a
+        // timestamp-newer coordinate from the realtime stream.
+        next.set(key, existing ? { ...existing, ...incoming } : incoming)
         return next
       })
     })
@@ -184,8 +190,8 @@ export function useLiveFleet() {
       for (const v of dashVehicles!) {
         usedKeys.add(v.id)
         const pos = positions.get(v.id)
-        const secsAgo = pos?.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
-        const speedKmh = pos ? (pos.speed ?? 0) : v.speed_kmh
+        const secsAgo = secondsSinceGpsFix(pos?.timestamp ?? null, now)
+        const speedKmh = pos ? (pos.speed_kmh ?? pos.speed ?? 0) : v.speed_kmh
         const isPanic = !!pos && panicDevices.has(pos.device_id)
         const status = isPanic ? 'sos' : deriveStatus(speedKmh, secsAgo)
         const lv: LiveVehicle = {
@@ -199,6 +205,8 @@ export function useLiveFleet() {
           speed_kmh: speedKmh,
           heading: pos?.heading ?? null,
           last_ping_at: pos?.timestamp ?? v.last_ping_at,
+          last_seen_at: pos?.last_seen_at ?? pos?.timestamp ?? v.last_ping_at,
+          accuracy_m: pos?.accuracy_m ?? null,
           secondsAgo: secsAgo,
           panic_active: isPanic,
           location_desc: '',
@@ -211,6 +219,7 @@ export function useLiveFleet() {
         }
         counts.all++
         counts[status]++
+        if (pos && pos.device_id !== v.id && isRecentDeviceHeartbeat(pos.last_seen_at, now)) counts.officers++
         if (v.convoy_id) {
           if (!byConvoy.has(v.convoy_id)) byConvoy.set(v.convoy_id, [])
           byConvoy.get(v.convoy_id)!.push(lv)
@@ -222,8 +231,8 @@ export function useLiveFleet() {
       // Fallback: build from GPS positions directly (like old GPS.tsx)
       for (const [key, pos] of positions) {
         usedKeys.add(key)
-        const secsAgo = pos.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
-        const speedKmh = pos.speed ?? 0
+        const secsAgo = secondsSinceGpsFix(pos.timestamp, now)
+        const speedKmh = pos.speed_kmh ?? pos.speed ?? 0
         const isPanic = panicDevices.has(pos.device_id)
         const status = isPanic ? 'sos' : deriveStatus(speedKmh, secsAgo)
         const dashV = pos.vehicle_id ? vehicleRegMap.get(pos.vehicle_id) : undefined
@@ -238,6 +247,8 @@ export function useLiveFleet() {
           speed_kmh: speedKmh,
           heading: pos.heading,
           last_ping_at: pos.timestamp,
+          last_seen_at: pos.last_seen_at ?? pos.timestamp,
+          accuracy_m: pos.accuracy_m ?? null,
           secondsAgo: secsAgo,
           panic_active: isPanic,
           location_desc: '',
@@ -254,7 +265,7 @@ export function useLiveFleet() {
         // mean actually reachable right now, not "has a device record with
         // any position ever", or the badge contradicts the OFFLINE label the
         // same officer's own marker shows a few pixels away.
-        if (lv.kind === 'guardian' && status !== 'offline') counts.officers++
+        if (lv.kind === 'guardian' && isRecentDeviceHeartbeat(pos.last_seen_at ?? pos.timestamp, now)) counts.officers++
         standalone.push(lv)
       }
     }
@@ -267,8 +278,8 @@ export function useLiveFleet() {
       for (const [key, pos] of positions) {
         if (usedKeys.has(key) || pos.vehicle_id) continue
         usedKeys.add(key)
-        const secsAgo = pos.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
-        const speedKmh = pos.speed ?? 0
+        const secsAgo = secondsSinceGpsFix(pos.timestamp, now)
+        const speedKmh = pos.speed_kmh ?? pos.speed ?? 0
         const isPanic = panicDevices.has(pos.device_id)
         const status = isPanic ? 'sos' : deriveStatus(speedKmh, secsAgo)
         const lv: LiveVehicle = {
@@ -282,6 +293,8 @@ export function useLiveFleet() {
           speed_kmh: speedKmh,
           heading: pos.heading,
           last_ping_at: pos.timestamp,
+          last_seen_at: pos.last_seen_at ?? pos.timestamp,
+          accuracy_m: pos.accuracy_m ?? null,
           secondsAgo: secsAgo,
           panic_active: isPanic,
           location_desc: '',
@@ -294,7 +307,7 @@ export function useLiveFleet() {
         }
         counts.all++
         counts[status]++
-        if (status !== 'offline') counts.officers++
+        if (isRecentDeviceHeartbeat(pos.last_seen_at ?? pos.timestamp, now)) counts.officers++
         officers.push(lv)
       }
     }
