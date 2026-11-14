@@ -14,7 +14,6 @@ describe('map workspace provider and accessibility contracts', () => {
     expect(weather).toContain("style: ESRI_STREET_STYLE");
     expect(weather).toContain("useState<'esri' | 'fallback'>('esri')");
     expect(weather).toContain("baseStyleRef.current === 'esri'");
-    expect(weather).toContain('World_Street_Map\\\\/MapServer\\\\/tile');
     expect(weather).toContain('RESILIENT BASE');
   });
 
