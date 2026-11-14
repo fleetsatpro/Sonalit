@@ -999,6 +999,7 @@ export default function FleetMap({
             'sos', '#f0445d',
             'offline', '#8190a3',
             'stale', '#e0a34a',
+            'stopped', '#8190a3',
             'moving', '#32d6a0',
             'online', '#32d6a0',
             'idle', '#e0b85b',
@@ -1070,7 +1071,16 @@ export default function FleetMap({
         geometry: { type: 'Point', coordinates: [item.lng!, item.lat!] },
         properties: {
           device_id: item.id,
-          state: item.panic_active || item.status === 'sos' ? 'sos' : item.status,
+          state: item.panic_active || item.status === 'sos'
+            ? 'sos'
+            : item.kind === 'guardian' &&
+              Number.isFinite(Date.parse(item.last_seen_at ?? '')) &&
+              (Date.now() - Date.parse(item.last_seen_at ?? '')) / 1000 <= 300 &&
+              item.secondsAgo > 300
+              ? 'stale'
+              : item.status === 'move' ? 'moving'
+                : item.status === 'stop' ? 'stopped'
+                  : item.status,
         },
       }))
     source.setData({ type: 'FeatureCollection', features })
