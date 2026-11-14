@@ -13,9 +13,9 @@ describe('map style provider contracts', () => {
     expect(source).not.toContain('/World_Street_Map/MapServer/tile/');
   });
 
-  it('caps raster imagery and reference overlays to overzoom available tiles', () => {
-    expect(source).toContain("maxzoom: 16, attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics'");
-    expect(source).toContain("maxzoom: 14, attribution: '© Esri Reference Overlay'");
+  it('requests native imagery and reference tiles through their level-19 source ceiling', () => {
+    expect(source).toContain("maxzoom: 19, attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics'");
+    expect(source).toContain("maxzoom: 19, attribution: '© Esri Reference Overlay'");
   });
 
   it('uses a documented alternate OpenFreeMap style rather than claiming an independent provider', () => {
