@@ -57,7 +57,7 @@ function injectStyles(): void {
   style.id = STYLE_ID;
   style.textContent = `
     .sml-device-marker{--sml-accent:#32d6a0;--sml-marker-size:36px;--sml-marker-label-left:45px;position:relative;display:grid;place-items:center;width:42px;height:42px;min-height:42px;max-width:42px;box-sizing:border-box;margin:0;padding:0;border:0;border-radius:50%;background:transparent;color:#f4f7fb;appearance:none;cursor:pointer;isolation:isolate;outline:none;-webkit-tap-highlight-color:transparent;transition:background .16s ease;white-space:normal}
-    .sml-device-marker:hover,.sml-device-marker:focus-visible,.sml-device-marker[data-selected="true"]{z-index:90;transform:translateY(-1px)}
+    .sml-device-marker:hover,.sml-device-marker:focus-visible,.sml-device-marker[data-selected="true"]{z-index:90}
     .sml-device-marker:focus-visible{outline:2px solid var(--sml-accent);outline-offset:3px}
     .sml-device-marker__accuracy{position:absolute;z-index:0;left:50%;top:50%;width:var(--sml-accuracy-diameter,0px);height:var(--sml-accuracy-diameter,0px);box-sizing:border-box;border:1px solid color-mix(in srgb,var(--sml-accent) 78%,white 22%);border-radius:50%;background:color-mix(in srgb,var(--sml-accent) 9%,transparent);box-shadow:0 0 0 1px rgba(3,10,18,.2);transform:translate(-50%,-50%);pointer-events:none;display:none}
     .sml-device-marker[data-accuracy-visible="true"] .sml-device-marker__accuracy{display:block}
@@ -65,6 +65,7 @@ function injectStyles(): void {
     .sml-device-marker[data-density="overview"] .sml-device-marker__icon-shell,.sml-device-marker[data-density="regional"] .sml-device-marker__icon-shell{border:1.5px solid rgba(245,250,255,.9);border-radius:50%;background:var(--sml-accent);box-shadow:0 0 0 2px rgba(4,10,18,.8),0 0 9px color-mix(in srgb,var(--sml-accent) 50%,transparent)}
     .sml-device-marker[data-density="overview"] .sml-device-marker__icon-shell:before,.sml-device-marker[data-density="regional"] .sml-device-marker__icon-shell:before{display:none}
     .sml-device-marker[data-density="overview"] .sml-device-marker__icon,.sml-device-marker[data-density="regional"] .sml-device-marker__icon,.sml-device-marker[data-density="overview"] .sml-device-marker__bearing,.sml-device-marker[data-density="regional"] .sml-device-marker__bearing{display:none}
+    .sml-device-marker[data-density="overview"]:not([data-state="sos"]):not([data-state="alert"]) .sml-device-marker__ring{display:none}
     .sml-device-marker[data-density="overview"] .sml-device-marker__label,.sml-device-marker[data-density="regional"] .sml-device-marker__label{opacity:0;visibility:hidden;transform:translateY(-50%) translateX(-4px)}
     .sml-device-marker[data-density="overview"]:hover .sml-device-marker__label,.sml-device-marker[data-density="overview"]:focus-visible .sml-device-marker__label,.sml-device-marker[data-density="regional"]:hover .sml-device-marker__label,.sml-device-marker[data-density="regional"]:focus-visible .sml-device-marker__label,.sml-device-marker[data-selected="true"] .sml-device-marker__label{opacity:1;visibility:visible;transform:translateY(-50%)}
     .sml-device-marker[data-selected="true"] .sml-device-marker__icon-shell{box-shadow:0 0 0 3px rgba(255,255,255,.22),0 0 0 5px color-mix(in srgb,var(--sml-accent) 45%,transparent),0 0 18px color-mix(in srgb,var(--sml-accent) 44%,transparent)}
