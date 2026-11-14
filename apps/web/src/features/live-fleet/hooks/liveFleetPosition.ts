@@ -11,12 +11,24 @@ export interface LiveGpsPosition {
   [key: string]: unknown;
 }
 
-export function isValidGpsPosition<T extends Partial<LiveGpsPosition>>(position: T): position is T & LiveGpsPosition {
+export function normalizeGpsPosition<T extends Partial<LiveGpsPosition>>(
+  position: T,
+): (T & LiveGpsPosition) | null {
   const lat = Number(position.lat);
   const lng = Number(position.lng);
-  return !!position.device_id &&
-    Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
-    Number.isFinite(lng) && lng >= -180 && lng <= 180;
+  if (!position.device_id ||
+      !Number.isFinite(lat) || lat < -90 || lat > 90 ||
+      !Number.isFinite(lng) || lng < -180 || lng > 180) return null;
+  // PostgreSQL NUMERIC/DECIMAL columns are commonly serialized as strings.
+  // Convert once at the feed boundary so map projections always receive
+  // numeric coordinates; do not round the GPS source precision.
+  return { ...position, lat, lng } as T & LiveGpsPosition;
+}
+
+export function isValidGpsPosition<T extends Partial<LiveGpsPosition>>(
+  position: T,
+): position is T & LiveGpsPosition {
+  return normalizeGpsPosition(position) !== null;
 }
 
 export function gpsFixEpoch(position: Pick<LiveGpsPosition, 'timestamp'>): number {
