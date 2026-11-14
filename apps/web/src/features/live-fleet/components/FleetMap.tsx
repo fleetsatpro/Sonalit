@@ -1030,10 +1030,10 @@ export default function FleetMap({
       const clusterId = Number(feature?.properties?.cluster_id)
       const geometry = feature?.geometry
       if (!Number.isFinite(clusterId) || !geometry || geometry.type !== 'Point') return
-      deviceSource.getClusterExpansionZoom(clusterId, (error, zoom) => {
-        if (error || zoom == null) return
+      void deviceSource.getClusterExpansionZoom(clusterId).then(zoom => {
+        if (!Number.isFinite(zoom)) return
         map.easeTo({ center: geometry.coordinates as [number, number], zoom, duration: 420 })
-      })
+      }).catch(() => undefined)
     }
     const onPointClick = (event: maplibregl.MapLayerMouseEvent) => {
       const feature = event.features?.[0]
@@ -1046,7 +1046,6 @@ export default function FleetMap({
     map.on('zoom', syncOverviewMode)
     map.on('zoomend', syncOverviewMode)
     map.on('moveend', syncOverviewMode)
-    map.getCanvas().style.cursor = 'grab'
     syncOverviewMode()
     return () => {
       map.off('click', clusterLayer, onClusterClick)
