@@ -4,6 +4,7 @@ import {
   isRecentDeviceHeartbeat,
   isValidGpsPosition,
   mergeGpsSnapshotWithRealtime,
+  normalizeGpsPosition,
   preferNewerGpsPosition,
   secondsSinceGpsFix,
   type LiveGpsPosition,
@@ -24,6 +25,19 @@ describe('Live Fleet GPS position integrity', () => {
     const newer = fix({ timestamp: '2026-11-14T06:00:00.000Z', lat: -1.2 });
     expect(indexLatestGpsPositions([newer, older]).get('guardian-1')?.lat).toBe(-1.2);
     expect(indexLatestGpsPositions([older, newer]).get('guardian-1')?.lat).toBe(-1.2);
+  });
+
+  it('normalizes PostgreSQL decimal coordinate strings without rounding', () => {
+    const serialized = fix({
+      lat: '-1.2837465',
+      lng: '36.8219034',
+    } as unknown as Partial<LiveGpsPosition>);
+    const normalized = normalizeGpsPosition(serialized);
+    expect(normalized).not.toBeNull();
+    expect(typeof normalized?.lat).toBe('number');
+    expect(typeof normalized?.lng).toBe('number');
+    expect(normalized?.lat).toBe(-1.2837465);
+    expect(normalized?.lng).toBe(36.8219034);
   });
 
   it('prefers the more accurate fix when device timestamps tie', () => {
