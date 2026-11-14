@@ -13,6 +13,8 @@ export interface OperationalMarkerOptions {
   selected?: boolean;
   zoom?: number;
   freshness?: string | null;
+  accuracyMeters?: number | null;
+  latitude?: number | null;
   title?: string;
 }
 
@@ -57,7 +59,15 @@ function injectStyles(): void {
     .sml-device-marker{--sml-accent:#32d6a0;--sml-marker-size:36px;--sml-marker-label-left:45px;position:relative;display:grid;place-items:center;width:42px;height:42px;min-height:42px;max-width:42px;box-sizing:border-box;margin:0;padding:0;border:0;border-radius:50%;background:transparent;color:#f4f7fb;appearance:none;cursor:pointer;isolation:isolate;outline:none;-webkit-tap-highlight-color:transparent;transition:background .16s ease;white-space:normal}
     .sml-device-marker:hover,.sml-device-marker:focus-visible,.sml-device-marker[data-selected="true"]{z-index:90;transform:translateY(-1px)}
     .sml-device-marker:focus-visible{outline:2px solid var(--sml-accent);outline-offset:3px}
-    .sml-device-marker__icon-shell{position:relative;display:grid;place-items:center;flex:none;width:var(--sml-marker-size);height:var(--sml-marker-size);border:1.5px solid color-mix(in srgb,var(--sml-accent) 86%,white 14%);border-radius:9px;background:linear-gradient(145deg,rgba(20,34,49,.98),rgba(4,10,18,.98));box-shadow:0 3px 9px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.16),0 0 0 2px color-mix(in srgb,var(--sml-accent) 18%,transparent);pointer-events:none}
+    .sml-device-marker__accuracy{position:absolute;z-index:0;left:50%;top:50%;width:var(--sml-accuracy-diameter,0px);height:var(--sml-accuracy-diameter,0px);box-sizing:border-box;border:1px solid color-mix(in srgb,var(--sml-accent) 78%,white 22%);border-radius:50%;background:color-mix(in srgb,var(--sml-accent) 9%,transparent);box-shadow:0 0 0 1px rgba(3,10,18,.2);transform:translate(-50%,-50%);pointer-events:none;display:none}
+    .sml-device-marker[data-accuracy-visible="true"] .sml-device-marker__accuracy{display:block}
+    .sml-device-marker__icon-shell{position:relative;z-index:2;display:grid;place-items:center;flex:none;width:var(--sml-marker-size);height:var(--sml-marker-size);border:1.5px solid color-mix(in srgb,var(--sml-accent) 86%,white 14%);border-radius:9px;background:linear-gradient(145deg,rgba(20,34,49,.98),rgba(4,10,18,.98));box-shadow:0 3px 9px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.16),0 0 0 2px color-mix(in srgb,var(--sml-accent) 18%,transparent);pointer-events:none}
+    .sml-device-marker[data-density="overview"] .sml-device-marker__icon-shell,.sml-device-marker[data-density="regional"] .sml-device-marker__icon-shell{border:1.5px solid rgba(245,250,255,.9);border-radius:50%;background:var(--sml-accent);box-shadow:0 0 0 2px rgba(4,10,18,.8),0 0 9px color-mix(in srgb,var(--sml-accent) 50%,transparent)}
+    .sml-device-marker[data-density="overview"] .sml-device-marker__icon-shell:before,.sml-device-marker[data-density="regional"] .sml-device-marker__icon-shell:before{display:none}
+    .sml-device-marker[data-density="overview"] .sml-device-marker__icon,.sml-device-marker[data-density="regional"] .sml-device-marker__icon,.sml-device-marker[data-density="overview"] .sml-device-marker__bearing,.sml-device-marker[data-density="regional"] .sml-device-marker__bearing{display:none}
+    .sml-device-marker[data-density="overview"] .sml-device-marker__label,.sml-device-marker[data-density="regional"] .sml-device-marker__label{opacity:0;visibility:hidden;transform:translateY(-50%) translateX(-4px)}
+    .sml-device-marker[data-density="overview"]:hover .sml-device-marker__label,.sml-device-marker[data-density="overview"]:focus-visible .sml-device-marker__label,.sml-device-marker[data-density="regional"]:hover .sml-device-marker__label,.sml-device-marker[data-density="regional"]:focus-visible .sml-device-marker__label,.sml-device-marker[data-selected="true"] .sml-device-marker__label{opacity:1;visibility:visible;transform:translateY(-50%)}
+    .sml-device-marker[data-selected="true"] .sml-device-marker__icon-shell{box-shadow:0 0 0 3px rgba(255,255,255,.22),0 0 0 5px color-mix(in srgb,var(--sml-accent) 45%,transparent),0 0 18px color-mix(in srgb,var(--sml-accent) 44%,transparent)}
     .sml-device-marker__icon-shell:before{content:"";position:absolute;inset:3px;border:1px solid color-mix(in srgb,var(--sml-accent) 24%,transparent);border-radius:7px}
     .sml-device-marker__icon{position:relative;z-index:2;width:58%;height:58%;display:block;fill:#edf4fa;filter:drop-shadow(0 1px 2px rgba(0,0,0,.52))}
     .sml-device-marker__bearing{position:absolute;z-index:4;left:50%;top:-7px;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:8px solid var(--sml-accent);filter:drop-shadow(0 1px 2px rgba(0,0,0,.85));transform:translateX(-50%) rotate(var(--sml-heading,0deg));transform-origin:50% var(--sml-bearing-origin,25px);pointer-events:none}
@@ -98,6 +108,7 @@ export function createOperationalDeviceMarker(options: OperationalMarkerOptions)
   button.type = 'button';
   button.className = 'sml-device-marker';
   button.innerHTML = `
+    <span class="sml-device-marker__accuracy" aria-hidden="true"></span>
     <span class="sml-device-marker__icon-shell" aria-hidden="true">
       <span class="sml-device-marker__ring"></span>
       <span class="sml-device-marker__bearing" hidden></span>
@@ -121,6 +132,8 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
   button.dataset.freshness = freshness;
   button.dataset.headingAvailable = Number.isFinite(heading) ? 'true' : 'false';
   button.dataset.selected = options.selected ? 'true' : 'false';
+  button.dataset.accuracyMeters = Number.isFinite(Number(options.accuracyMeters)) && Number(options.accuracyMeters) >= 0 ? String(Number(options.accuracyMeters)) : '';
+  button.dataset.latitude = Number.isFinite(Number(options.latitude)) ? String(Number(options.latitude)) : '';
   button.style.setProperty('--sml-accent', status.color);
   if (Number.isFinite(heading)) button.style.setProperty('--sml-heading', String(((heading % 360) + 360) % 360) + 'deg');
   const bearing = button.querySelector<HTMLElement>('.sml-device-marker__bearing');
@@ -135,10 +148,37 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
 }
 
 export function setOperationalMarkerDensity(button: HTMLButtonElement, zoom: number, selected = false): void {
-  button.dataset.density = zoom < 7.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
+  const density = zoom < 7.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
+  button.dataset.density = density;
   button.dataset.selected = selected ? 'true' : 'false';
-  const markerSize = selected ? 36 : zoom < 5.8 ? 18 : zoom < 8.5 ? 23 : zoom < 11.2 ? 29 : 36;
+  // At continent/country scale, show a true point, not a miniature vehicle
+  // illustration whose screen footprint can imply a false location.
+  const markerSize = density === 'overview' ? (selected ? 9 : 7) : density === 'regional' ? (selected ? 13 : 10) : (selected ? 30 : 27);
   button.style.setProperty('--sml-marker-size', markerSize + 'px');
   button.style.setProperty('--sml-marker-label-left', (21 + markerSize / 2 + 6) + 'px');
   button.style.setProperty('--sml-bearing-origin', (markerSize / 2 + 7) + 'px');
+
+  // Draw a geospatial uncertainty radius only when it has a meaningful
+  // on-screen size. The true metre value remains in the device detail at all
+  // zooms; no accuracy is invented for sources that do not report one.
+  const accuracy = Number(button.dataset.accuracyMeters);
+  const latitude = Number(button.dataset.latitude);
+  const hasAccuracy = button.dataset.accuracyMeters !== '' &&
+    Number.isFinite(accuracy) && accuracy > 0 &&
+    Number.isFinite(latitude) && Math.abs(latitude) <= 90 &&
+    Number.isFinite(zoom);
+  if (hasAccuracy) {
+    const metresPerPixel = (2 * Math.PI * 6378137 * Math.max(0.000001, Math.cos(latitude * Math.PI / 180))) / (512 * Math.pow(2, zoom));
+    const radiusPx = accuracy / metresPerPixel;
+    if (Number.isFinite(radiusPx) && radiusPx >= 2 && radiusPx <= 180) {
+      button.dataset.accuracyVisible = 'true';
+      button.style.setProperty('--sml-accuracy-diameter', (radiusPx * 2) + 'px');
+    } else {
+      button.dataset.accuracyVisible = 'false';
+      button.style.setProperty('--sml-accuracy-diameter', '0px');
+    }
+  } else {
+    button.dataset.accuracyVisible = 'false';
+    button.style.setProperty('--sml-accuracy-diameter', '0px');
+  }
 }
