@@ -11,14 +11,22 @@ export interface LiveGpsPosition {
   [key: string]: unknown;
 }
 
+function finiteCoordinate(value: unknown): number | null {
+  // Numeric strings are expected from PostgreSQL NUMERIC columns, but null,
+  // blank strings, booleans and other coercible values are not coordinates.
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function normalizeGpsPosition<T extends Partial<LiveGpsPosition>>(
   position: T,
 ): (T & LiveGpsPosition) | null {
-  const lat = Number(position.lat);
-  const lng = Number(position.lng);
-  if (!position.device_id ||
-      !Number.isFinite(lat) || lat < -90 || lat > 90 ||
-      !Number.isFinite(lng) || lng < -180 || lng > 180) return null;
+  const lat = finiteCoordinate(position.lat);
+  const lng = finiteCoordinate(position.lng);
+  if (!position.device_id || lat === null || lat < -90 || lat > 90 ||
+      lng === null || lng < -180 || lng > 180) return null;
   // PostgreSQL NUMERIC/DECIMAL columns are commonly serialized as strings.
   // Convert once at the feed boundary so map projections always receive
   // numeric coordinates; do not round the GPS source precision.
