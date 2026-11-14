@@ -219,6 +219,7 @@ function MovementAtlas({ shipments, onOpen }: { shipments: Shipment[]; onOpen: (
           selected: false,
           zoom: map.getZoom(),
           title: [shipment.reference, detail, shipment.origin, shipment.destination].filter(Boolean).join(' · '),
+          ariaLabel: `Open ${shipment.reference}`,
         });
         button.addEventListener('click', () => selectedRef.current(shipment.convoy_id));
         const marker = new maplibregl.Marker({ element: button, anchor: 'left', offset: [-20, 0] })
