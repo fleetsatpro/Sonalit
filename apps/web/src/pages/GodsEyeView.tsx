@@ -54,18 +54,19 @@ const layerMeta: Record<WorldContextLayer, { short: string; label: string; icon:
 }
 
 function toGlobeMember(v: LiveVehicle): GlobeMember {
+  const hasMeasuredAccuracy = v.accuracy_m != null && Number.isFinite(v.accuracy_m) && v.accuracy_m > 0;
+  const status = v.panic_active || v.status === 'sos' ? 'sos' : v.status === 'move' ? 'moving' : v.status === 'idle' ? 'idle' : v.status === 'stop' ? 'stopped' : 'offline';
   return {
     id: v.id,
     name: v.registration,
     officer_name: v.officer_name,
     lat: v.lat,
     lng: v.lng,
-    status: v.status === 'move' ? 'on_track' : v.status === 'sos' ? 'off_route' : v.status,
-    heading: v.heading,
+    status,
+    heading: v.status === 'move' ? v.heading : null,
     speed_kph: v.speed_kmh,
-    position_state: v.secondsAgo > 1800 ? 'stale' : v.lat == null ? 'no_fix' : 'observed',
-    position_confidence: v.lat == null ? 0 : v.secondsAgo > 1800 ? 0.5 : 1,
-    position_uncertainty_m: v.lat == null ? 9999 : v.secondsAgo > 1800 ? 500 : 25,
+    position_state: v.lat == null || v.lng == null ? 'no_fix' : v.secondsAgo > 300 ? 'stale' : 'observed',
+    position_uncertainty_m: hasMeasuredAccuracy ? v.accuracy_m : null,
     vehicle_type: v.kind === 'guardian' ? 'guardian' : 'vehicle',
   }
 }
