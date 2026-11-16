@@ -1130,7 +1130,7 @@ export default function FleetMap({
     // the same device often sits at almost the same coordinates as the live
     // row, and if it renders on top the operator sees (and taps) OFFLINE while
     // the online marker hides underneath.
-    const zFor = (s: string) => (s === 'sos' ? '40' : s === 'move' ? '30' : s === 'offline' ? '10' : '20')
+    const zFor = (device: LiveVehicle) => (device.panic_active || device.status === 'sos' ? '40' : device.status === 'move' ? '30' : device.status === 'offline' ? '10' : '20')
     const zoom = map.getZoom()
     for (const v of positioned) {
       const selected = v.id === selectedId
@@ -1141,10 +1141,10 @@ export default function FleetMap({
         const el = existing.getElement() as HTMLButtonElement
         updateOperationalDeviceMarker(el, options)
         el.style.display = map.getZoom() <= 8 ? 'none' : ''
-        el.style.zIndex = zFor(v.status)
+        el.style.zIndex = zFor(v)
       } else {
         const el = createOperationalDeviceMarker(options)
-        el.style.display = map.getZoom() <= 8.2 ? 'none' : ''
+        el.style.display = map.getZoom() <= 8 ? 'none' : ''
         el.style.zIndex = zFor(v.status)
         el.addEventListener('click', event => {
           event.stopPropagation()
