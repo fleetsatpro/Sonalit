@@ -11,6 +11,8 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('applyPhotorealisticQuality(tileset, highFidelity)');
     expect(source).toContain("Cesium.RequestScheduler.requestsByServer['tile.googleapis.com:443'] = 18");
     expect(source).toContain('showCreditsOnScreen: true');
+    expect(source).toContain("sos: '#ff5268'");
+    expect(source).toContain("unknown: '#94a3b8'");
     expect(source).toContain('tileset.maximumScreenSpaceError = highFidelity ? 1.5 : 2.25');
     expect(source).toContain('tileset.cacheBytes = highFidelity ? 384 * 1024 * 1024 : 192 * 1024 * 1024');
     expect(source).toContain('tileset.foveatedScreenSpaceError = true');
@@ -56,12 +58,38 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('tileset.skipScreenSpaceErrorFactor = 16');
   });
 
+  it('rejects missing, non-finite and out-of-range GPS positions before Cesium entity creation', () => {
+    expect(source).toContain('const liveMembers = useMemo(() => members.filter(m =>');
+    expect(source).toContain('Number.isFinite(m.lat) && Number.isFinite(m.lng)');
+    expect(source).toContain('m.lat >= -90 && m.lat <= 90 && m.lng >= -180 && m.lng <= 180');
+  });
+
+  it('does not infer a north-facing 3D heading from a missing telemetry value', () => {
+    expect(source).toContain('member.heading != null && Number.isFinite(member.heading)');
+    expect(source).toContain('else headingRef.current.delete(member.id)');
+    expect(source).toContain('existing.orientation = undefined');
+    expect(source).toContain("const operationalState = member.status === 'stale'");
+    expect(source).toContain("' · GPS FIX STALE'");
+  });
+
+  it('clusters global device symbols and zooms into actual member positions', () => {
+    expect(source).toContain("new Cesium.CustomDataSource('gev-operational-devices')");
+    expect(source).toContain('deviceDataSource.clustering.enabled = true');
+    expect(source).toContain('deviceDataSource.clustering.clusterEvent.addEventListener');
+    expect(source).toContain('sonalitCluster: true');
+    expect(source).toContain('flyToBoundingSphere(sphere');
+    expect(source).toContain('function deviceAccuracyEllipse(member: GlobeMember, color: string)');
+    expect(source).toContain('if (accuracy == null || !Number.isFinite(accuracy) || accuracy <= 0) return undefined');
+    expect(source).not.toContain('Number(member.position_uncertainty_m || 12)');
+  });
+
   it('keeps a non-Ion Esri surface and recovers Cesium after render exceptions', () => {
     expect(source).toContain("const STREET_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'");
     expect(source).toContain("const SATELLITE_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'");
+    expect(source).toContain("const PLACES_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}'");
     expect(source).toContain("add(STREET_URL, 'Esri, HERE, Garmin, © OpenStreetMap contributors', 16");
-    expect(source).toContain("add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 16)");
-    expect(source).toContain("add(PLACES_URL, 'Esri', 14)");
+    expect(source).toContain("add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 19)");
+    expect(source).toContain("add(PLACES_URL, 'Esri', 19)");
     expect(source).toContain('failIfMajorPerformanceCaveat: false');
     expect(source).toContain('showRenderLoopErrors: false');
     expect(source).toContain('viewer.scene.renderError.addEventListener(renderErrorHandler)');

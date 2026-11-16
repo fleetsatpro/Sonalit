@@ -1,11 +1,12 @@
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../../lib/spatialRendering.js'
 import { Activity, Car, Focus, Globe2, Layers3, Minus, Plus, Satellite } from 'lucide-react'
-import { STREET_STYLE } from '../../../lib/mapStyles.js'
+import { DARK_STREET_STYLE } from '../../../lib/mapStyles.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import { bindDenseMapLabels } from '../../../lib/mapLabels.js'
-import { createOperationalDeviceMarker, setOperationalMarkerDensity, updateOperationalDeviceMarker } from '../../../lib/operationalMapMarkers.js'
+import { createOperationalDeviceMarker, normalizeHeadingDegrees, resolveOperationalDeviceState, setOperationalMarkerDensity, updateOperationalDeviceMarker } from '../../../lib/operationalMapMarkers.js'
+import { isValidGeographicPosition, minimalLongitudeBounds } from '../../../lib/geographicBounds.js'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
 import {
@@ -305,6 +306,10 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
   return marker
 }
 
+function hasValidDeviceCoordinates(device: Pick<LiveVehicle, 'lat' | 'lng'>): device is Pick<LiveVehicle, 'lat' | 'lng'> & { lat: number; lng: number } {
+  return isValidGeographicPosition(device.lat, device.lng);
+}
+
 function formatFixAge(secondsAgo: number): string {
   if (!Number.isFinite(secondsAgo) || secondsAgo < 0) return 'AGE N/A';
   if (secondsAgo < 60) return Math.floor(secondsAgo) + 's';
@@ -315,24 +320,21 @@ function formatFixAge(secondsAgo: number): string {
 
 function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
   const isOfficer = v.kind === 'guardian';
-  const isSos = v.panic_active || v.status === 'sos';
+  const resolved = resolveOperationalDeviceState({
+    kind: v.kind,
+    status: v.status,
+    panicActive: v.panic_active,
+    lastSeenAt: v.last_seen_at,
+    secondsAgo: v.secondsAgo,
+  });
+  const state = resolved.state;
+  const isSos = state === 'sos';
   const now = Date.now();
-  const heartbeatEpoch = v.last_seen_at ? Date.parse(v.last_seen_at) : Number.NaN;
-  const heartbeatAge = Number.isFinite(heartbeatEpoch) ? (now - heartbeatEpoch) / 1000 : Number.POSITIVE_INFINITY;
-  const heartbeatOnline = heartbeatAge >= -60 && heartbeatAge <= 300;
-  const fixIsAged = !Number.isFinite(v.secondsAgo) || v.secondsAgo > 300;
-  const state = isSos
-    ? 'sos'
-    : isOfficer && heartbeatOnline && fixIsAged
-      ? 'stale'
-      : isOfficer && v.status !== 'offline'
-        ? 'online'
-        : v.status;
   const activity = v.status === 'move'
     ? (Number.isFinite(v.speed_kmh) ? Math.round(v.speed_kmh) + ' km/h' : 'MOVING')
     : v.status === 'idle' || v.status === 'stop'
       ? 'STATIONARY'
-      : v.status === 'offline' ? 'NO RECENT FIX' : 'SOS';
+      : state === 'sos' ? 'SOS' : state.toUpperCase().replaceAll('_', ' ');
   const gpsAge = formatFixAge(v.secondsAgo);
   const healthTimestamp = v.health_recorded_at ? Date.parse(v.health_recorded_at) : Number.NaN;
   const healthAgeMs = now - healthTimestamp;
@@ -346,13 +348,15 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
     ? 'SOS · ALERT ACTIVE'
     : isOfficer && state === 'stale'
       ? 'HEARTBEAT ONLINE · GPS FIX AGED'
-      : v.status === 'offline'
-        ? 'OFFLINE · GPS ' + gpsAge
-        : isOfficer
-          ? (v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
-          : v.status === 'move'
-            ? 'MOVING · ' + activity
-            : state.toUpperCase().replaceAll('_', ' ');
+      : isOfficer && state === 'offline'
+        ? 'HEARTBEAT OFFLINE'
+        : state === 'offline'
+          ? 'OFFLINE · GPS ' + gpsAge
+          : isOfficer
+            ? (v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
+            : state === 'moving'
+              ? 'MOVING · ' + activity
+              : state.toUpperCase().replaceAll('_', ' ');
   const identity = isOfficer ? (v.officer_name || v.registration || 'Field officer') : (v.registration || 'Vehicle');
   const healthSummary = isOfficer && v.battery_level != null
     ? 'BAT ' + Math.round(v.battery_level) + '% · HEALTH ' + healthAge + ' AGO'
@@ -365,12 +369,12 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
     identity,
     state,
     detail,
-    heading: v.heading,
+    heading: v.status === 'move' ? normalizeHeadingDegrees(v.heading) : null,
     accuracyMeters: v.accuracy_m,
     latitude: v.lat,
     selected,
     zoom,
-    title: [identity, state.toUpperCase(), activity, 'GPS FIX ' + gpsAge + ' AGO', accuracySummary, isOfficer && heartbeatOnline ? 'HEARTBEAT ONLINE' : '', healthSummary, v.location_desc].filter(Boolean).join(' · '),
+    title: [identity, state.toUpperCase(), activity, 'GPS FIX ' + gpsAge + ' AGO', accuracySummary, isOfficer && resolved.heartbeatOnline ? 'HEARTBEAT ONLINE' : '', healthSummary, v.location_desc].filter(Boolean).join(' · '),
   };
 }
 interface Props {
@@ -417,6 +421,7 @@ export default function FleetMap({
   onViewportChangeRef.current = onViewportChange
   const coordsRef = useRef<HTMLSpanElement>(null)
   const coordsModeRef = useRef<HTMLSpanElement>(null)
+  const initialDeviceFitRef = useRef(false)
   const animRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
   const [mapMode, setMapMode] = useState<'dark' | 'satellite' | 'earth' | 'latest'>('dark')
@@ -478,7 +483,7 @@ export default function FleetMap({
   // init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const m = new maplibregl.Map({ container: containerRef.current, style: STREET_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
+    const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STREET_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: { compact: true }, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
     bindDenseMapLabels(m);
     m.on('style.load', () => {
       setMapReady(true)
@@ -517,6 +522,28 @@ export default function FleetMap({
     return () => { m.remove(); mapRef.current = null; setMapReady(false) }
   }, [])
 
+  // Frame the first usable operational picture once. Subsequent GPS refreshes never
+  // steal the operator's camera; only the explicit Fit devices control can refit it.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || initialDeviceFitRef.current) return
+    const positioned = vehicles.filter(hasValidDeviceCoordinates)
+    if (!positioned.length) return
+    initialDeviceFitRef.current = true
+    if (positioned.length === 1) {
+      const only = positioned[0]!
+      map.flyTo({ center: [only.lng, only.lat], zoom: 10, duration: 850 })
+      return
+    }
+    const longitudes = positioned.map(device => device.lng)
+    const latitudes = positioned.map(device => device.lat)
+    const [west, east] = minimalLongitudeBounds(longitudes)
+    map.fitBounds(
+      [[west, Math.min(...latitudes)], [east, Math.max(...latitudes)]],
+      { padding: { top: 104, right: 104, bottom: 138, left: 104 }, maxZoom: 8, duration: 900 },
+    )
+  }, [mapReady, vehicles])
+
   const reconCentre = worldViewport
     ? { latitude: worldViewport.latitude, longitude: worldViewport.longitude }
     : null
@@ -540,7 +567,7 @@ export default function FleetMap({
       appliedReconKeyRef.current = ''
       setMapMode('dark')
       setMapReady(false)
-      mapRef.current.setStyle(STREET_STYLE)
+      mapRef.current.setStyle(DARK_STREET_STYLE)
     }
   }, [opticalReconFetching, opticalReconError, mapMode])
 
@@ -550,7 +577,7 @@ export default function FleetMap({
     setMapReady(false)
     appliedReconKeyRef.current = ''
     setMapMode(next)
-    map.setStyle(next === 'dark' ? STREET_STYLE : next === 'satellite' ? SATELLITE_STYLE : EARTH_OBSERVATION_STYLE)
+    map.setStyle(next === 'dark' ? DARK_STREET_STYLE : next === 'satellite' ? SATELLITE_STYLE : EARTH_OBSERVATION_STYLE)
   }
 
   const activateLatestImagery = () => {
@@ -956,8 +983,8 @@ export default function FleetMap({
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
         cluster: true,
-        clusterRadius: 30,
-        clusterMaxZoom: 7,
+        clusterRadius: 42,
+        clusterMaxZoom: 8,
         clusterProperties: {
           sos_count: ['+', ['case', ['==', ['get', 'state'], 'sos'], 1, 0]],
         },
@@ -969,11 +996,12 @@ export default function FleetMap({
         source: sourceId,
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': ['case', ['>', ['get', 'sos_count'], 0], '#f0445d', '#11b9bd'],
-          'circle-radius': ['step', ['get', 'point_count'], 10, 3, 12, 8, 15, 20, 19],
-          'circle-stroke-color': '#07111e',
+          'circle-color': ['case', ['>', ['get', 'sos_count'], 0], '#ed4963', '#087f89'],
+          'circle-radius': ['step', ['get', 'point_count'], 14, 3, 17, 8, 21, 20, 25],
+          'circle-stroke-color': ['case', ['>', ['get', 'sos_count'], 0], '#fff0f2', '#c7fbf2'],
           'circle-stroke-width': 2,
-          'circle-opacity': 0.94,
+          'circle-opacity': 0.97,
+          'circle-blur': 0.04,
         },
       })
       map.addLayer({
@@ -984,7 +1012,7 @@ export default function FleetMap({
         layout: {
           'text-field': ['get', 'point_count_abbreviated'],
           'text-font': ['Open Sans Bold'],
-          'text-size': 10,
+          'text-size': 12,
           'text-allow-overlap': true,
         },
         paint: {
@@ -1001,15 +1029,21 @@ export default function FleetMap({
         paint: {
           'circle-color': ['match', ['get', 'state'],
             'sos', '#f0445d',
+            'alert', '#ff6574',
+            'warning', '#f2b65e',
+            'delayed', '#f0bc62',
+            'stale', '#ef9a64',
             'offline', '#8190a3',
-            'stale', '#e0a34a',
             'stopped', '#8190a3',
             'moving', '#32d6a0',
             'online', '#32d6a0',
             'idle', '#e0b85b',
+            'unavailable', '#94a3b8',
+            'at_port', '#4dcce5',
+            'staged', '#e9b85c',
             '#8ea0b7',
           ],
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 2.2, 7, 4],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 3, 7, 5.5, 8, 6.5],
           'circle-stroke-color': '#07111e',
           'circle-stroke-width': 1.5,
           'circle-opacity': 0.98,
@@ -1019,7 +1053,7 @@ export default function FleetMap({
 
     const deviceSource = map.getSource(sourceId) as maplibregl.GeoJSONSource
     const syncOverviewMode = () => {
-      const overview = map.getZoom() <= 8.2
+      const overview = map.getZoom() <= 8
       const visibility = overview ? 'visible' : 'none'
       for (const layer of [clusterLayer, clusterCountLayer, pointLayer]) {
         if (map.getLayer(layer) && map.getLayoutProperty(layer, 'visibility') !== visibility) {
@@ -1067,24 +1101,19 @@ export default function FleetMap({
     const source = map.getSource('lf-operational-devices') as maplibregl.GeoJSONSource | undefined
     if (!source) return
     const features: GeoJSON.Feature<GeoJSON.Point, Record<string, string>>[] = vehicles
-      .filter(item => item.lat != null && item.lng != null &&
-        Number.isFinite(item.lat) && Number.isFinite(item.lng) &&
-        item.lat >= -90 && item.lat <= 90 && item.lng >= -180 && item.lng <= 180)
+      .filter(hasValidDeviceCoordinates)
       .map(item => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [item.lng!, item.lat!] },
         properties: {
           device_id: item.id,
-          state: item.panic_active || item.status === 'sos'
-            ? 'sos'
-            : item.kind === 'guardian' &&
-              Number.isFinite(Date.parse(item.last_seen_at ?? '')) &&
-              (Date.now() - Date.parse(item.last_seen_at ?? '')) / 1000 <= 300 &&
-              item.secondsAgo > 300
-              ? 'stale'
-              : item.status === 'move' ? 'moving'
-                : item.status === 'stop' ? 'stopped'
-                  : item.status,
+          state: resolveOperationalDeviceState({
+            kind: item.kind,
+            status: item.status,
+            panicActive: item.panic_active,
+            lastSeenAt: item.last_seen_at,
+            secondsAgo: item.secondsAgo,
+          }).state,
         },
       }))
     source.setData({ type: 'FeatureCollection', features })
@@ -1092,8 +1121,8 @@ export default function FleetMap({
 
   // sync vehicle markers
   useEffect(() => {
-    const map = mapRef.current; if (!map) return
-    const positioned = vehicles.filter(v => v.lat != null && v.lng != null)
+    const map = mapRef.current; if (!map || !mapReady) return
+    const positioned = vehicles.filter(hasValidDeviceCoordinates)
     const ids = new Set(positioned.map(v => v.id))
     for (const [id, marker] of markersRef.current) {
       if (!ids.has(id)) { marker.remove(); markersRef.current.delete(id) }
@@ -1102,7 +1131,7 @@ export default function FleetMap({
     // the same device often sits at almost the same coordinates as the live
     // row, and if it renders on top the operator sees (and taps) OFFLINE while
     // the online marker hides underneath.
-    const zFor = (s: string) => (s === 'sos' ? '40' : s === 'move' ? '30' : s === 'offline' ? '10' : '20')
+    const zFor = (state: string) => (state === 'sos' ? '40' : state === 'moving' ? '30' : state === 'offline' ? '10' : '20')
     const zoom = map.getZoom()
     for (const v of positioned) {
       const selected = v.id === selectedId
@@ -1112,12 +1141,12 @@ export default function FleetMap({
         existing.setLngLat([v.lng!, v.lat!])
         const el = existing.getElement() as HTMLButtonElement
         updateOperationalDeviceMarker(el, options)
-        el.style.display = map.getZoom() <= 8.2 ? 'none' : ''
-        el.style.zIndex = zFor(v.status)
+        el.style.display = map.getZoom() <= 8 ? 'none' : ''
+        el.style.zIndex = zFor(options.state)
       } else {
         const el = createOperationalDeviceMarker(options)
-        el.style.display = map.getZoom() <= 8.2 ? 'none' : ''
-        el.style.zIndex = zFor(v.status)
+        el.style.display = map.getZoom() <= 8 ? 'none' : ''
+        el.style.zIndex = zFor(options.state)
         el.addEventListener('click', event => {
           event.stopPropagation()
           const current = vehiclesRef.current.find(item => item.id === v.id)
@@ -1127,7 +1156,7 @@ export default function FleetMap({
         markersRef.current.set(v.id, marker)
       }
     }
-  }, [vehicles, selectedId])
+  }, [mapReady, vehicles, selectedId])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1306,21 +1335,22 @@ export default function FleetMap({
               type="button"
               className="fleet-map-control fleet-map-control--fit"
               onClick={() => {
-                const positioned = vehicles.filter(v => v.lat != null && v.lng != null && Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)))
+                const positioned = vehicles.filter(hasValidDeviceCoordinates)
                 const mapInstance = mapRef.current
                 if (!positioned.length || !mapInstance) return
                 if (positioned.length === 1) {
                   mapInstance.flyTo({ center: [Number(positioned[0].lng), Number(positioned[0].lat)], zoom: Math.max(10, mapInstance.getZoom()), duration: 700 })
                   return
                 }
-                const longitudes = positioned.map(v => Number(v.lng))
-                const latitudes = positioned.map(v => Number(v.lat))
+                const longitudes = positioned.map(v => v.lng)
+                const latitudes = positioned.map(v => v.lat)
+                const [west, east] = minimalLongitudeBounds(longitudes)
                 mapInstance.fitBounds(
-                  [[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]],
+                  [[west, Math.min(...latitudes)], [east, Math.max(...latitudes)]],
                   { padding: { top: 90, right: 90, bottom: 110, left: 90 }, maxZoom: 8, duration: 750 },
                 )
               }}
-              disabled={!vehicles.some(v => v.lat != null && v.lng != null && Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)))}
+              disabled={!vehicles.some(hasValidDeviceCoordinates)}
               title="Fit all positioned operational devices"
             >
               <Focus size={15} aria-hidden="true" />
@@ -1332,7 +1362,7 @@ export default function FleetMap({
 
       <div className="fleet-map-coordinate" role="status" aria-live="polite">
         <span className="fleet-map-coordinate__mode" ref={coordsModeRef}>MAP CENTRE</span>
-        <span className="fleet-map-coordinate__value" ref={coordsRef}>35.5000°N 1.2000°E</span>
+        <span className="fleet-map-coordinate__value" ref={coordsRef}>1.2000°N 35.5000°E</span>
       </div>
     </div>
   )

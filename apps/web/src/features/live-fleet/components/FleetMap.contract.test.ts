@@ -16,24 +16,43 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain("accuracyMeters: v.accuracy_m");
     expect(source).toContain("latitude: v.lat");
     expect(source).toContain("'GPS ACCURACY ±'");
+    expect(source).toContain("(v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail");
     expect(source).toContain("'HEARTBEAT ONLINE · GPS FIX AGED'");
+    expect(source).toContain("isOfficer && resolved.heartbeatOnline ? 'HEARTBEAT ONLINE' : ''");
+    expect(source).not.toContain("isOfficer && heartbeatOnline ? 'HEARTBEAT ONLINE' : ''");
   });
 
   it('uses truthful point clustering before revealing individual devices at regional zoom', () => {
     expect(source).toContain("sourceId = 'lf-operational-devices'");
     expect(source).toContain('cluster: true');
-    expect(source).toContain('clusterRadius: 30');
-    expect(source).toContain('clusterMaxZoom: 7');
+    expect(source).toContain('clusterRadius: 42');
+    expect(source).toContain('map.getZoom() <= 8');
+    expect(source).toContain('clusterMaxZoom: 8');
+    expect(source).toContain('initialDeviceFitRef');
+    expect(source).toContain('function hasValidDeviceCoordinates');
+    expect(source).not.toContain("map.getZoom() <= 8.2 ? 'none' : ''");
+    expect(source).toContain('resolveOperationalDeviceState({');
+    expect(source).toContain('minimalLongitudeBounds(longitudes)');
+    expect(source).toContain('attributionControl: { compact: true }');
     expect(source).toContain("getClusterExpansionZoom(clusterId)");
+    expect(source).toContain("'alert', '#ff6574'");
+    expect(source).toContain("'warning', '#f2b65e'");
+    expect(source).toContain("'stale', '#ef9a64'");
+    expect(source).toContain("const zFor = (state: string)");
+    expect(source).toContain("el.style.zIndex = zFor(options.state)");
     expect(source).toContain("item.id");
-    expect(source).toContain("map.getZoom() <= 8.2 ? 'none' : ''");
+    expect(source).toContain("map.getZoom() <= 8 ? 'none' : ''");
+    expect(source).toContain('1.2000°N 35.5000°E');
     expect(source).toContain("source.setData({ type: 'FeatureCollection', features })");
+    expect(source).toContain("heading: v.status === 'move' ? normalizeHeadingDegrees(v.heading) : null");
+    expect(source).toContain("// sync vehicle markers\n  useEffect(() => {\n    const map = mapRef.current; if (!map || !mapReady) return");
+    expect(source).toContain("}, [mapReady, vehicles, selectedId])");
   });
 
   it('uses the zoom-resilient shared vector basemap and caps Esri satellite tiles', () => {
-    expect(source).toContain("import { STREET_STYLE } from '../../../lib/mapStyles.js'");
-    expect(source).toContain('style: STREET_STYLE');
-    expect(source).toContain("next === 'dark' ? STREET_STYLE");
+    expect(source).toContain("import { DARK_STREET_STYLE } from '../../../lib/mapStyles.js'");
+    expect(source).toContain('style: DARK_STREET_STYLE');
+    expect(source).toContain("next === 'dark' ? DARK_STREET_STYLE");
     expect(source).not.toContain('World_Street_Map/MapServer/tile/');
     expect(source).toContain("anchor: 'center'");
     expect(source).toContain('subpixelPositioning: true');

@@ -57,7 +57,7 @@ function injectStyles(): void {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    .sml-device-marker{--sml-accent:#32d6a0;--sml-marker-size:36px;--sml-marker-label-left:45px;position:relative;display:grid;place-items:center;width:42px;height:42px;min-height:42px;max-width:42px;box-sizing:border-box;margin:0;padding:0;border:0;border-radius:50%;background:transparent;color:#f4f7fb;appearance:none;cursor:pointer;isolation:isolate;outline:none;-webkit-tap-highlight-color:transparent;transition:background .16s ease;white-space:normal}
+    .sml-device-marker{--sml-accent:#32d6a0;--sml-marker-size:36px;--sml-marker-label-left:45px;position:relative;display:grid;place-items:center;width:48px;height:48px;min-height:48px;max-width:48px;box-sizing:border-box;margin:0;padding:0;border:0;border-radius:50%;background:transparent;color:#f4f7fb;appearance:none;cursor:pointer;isolation:isolate;outline:none;-webkit-tap-highlight-color:transparent;transition:background .16s ease;white-space:normal}
     .sml-device-marker:hover,.sml-device-marker:focus-visible,.sml-device-marker[data-selected="true"]{z-index:90}
     .sml-device-marker:focus-visible{outline:2px solid var(--sml-accent);outline-offset:3px}
     .sml-device-marker__accuracy{position:absolute;z-index:0;left:50%;top:50%;width:var(--sml-accuracy-diameter,0px);height:var(--sml-accuracy-diameter,0px);box-sizing:border-box;border:1px solid color-mix(in srgb,var(--sml-accent) 78%,white 22%);border-radius:50%;background:color-mix(in srgb,var(--sml-accent) 9%,transparent);box-shadow:0 0 0 1px rgba(3,10,18,.2);transform:translate(-50%,-50%);pointer-events:none;display:none}
@@ -99,6 +99,52 @@ export function operationalMarkerState(status: string): { key: OperationalMarker
   return STATE_META[normalized] ?? STATE_META.unknown!;
 }
 
+export interface OperationalDeviceStateInput {
+  kind?: string | null;
+  status?: string | null;
+  panicActive?: boolean | null;
+  lastSeenAt?: string | null;
+  secondsAgo?: number | null;
+}
+
+export interface OperationalDeviceState {
+  state: OperationalMarkerState;
+  heartbeatOnline: boolean;
+  gpsFixFresh: boolean;
+}
+
+/**
+ * One canonical display-state resolver for the 2D map, 3D globe and device
+ * markers. Guardian heartbeat and GPS freshness remain separate signals:
+ * a live heartbeat with an aged/missing fix is STALE, not ONLINE; a missing
+ * or expired heartbeat is OFFLINE. SOS always overrides both.
+ */
+export function resolveOperationalDeviceState(input: OperationalDeviceStateInput, now = Date.now()): OperationalDeviceState {
+  const rawStatus = (input.status ?? 'unknown').trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+  const heartbeatEpoch = input.lastSeenAt ? Date.parse(input.lastSeenAt) : Number.NaN;
+  const heartbeatAgeSeconds = Number.isFinite(heartbeatEpoch) ? (now - heartbeatEpoch) / 1000 : Number.NaN;
+  const heartbeatOnline = Number.isFinite(heartbeatAgeSeconds) && heartbeatAgeSeconds >= -60 && heartbeatAgeSeconds <= 300;
+  const fixAge = typeof input.secondsAgo === 'number' ? input.secondsAgo : Number.NaN;
+  const gpsFixFresh = Number.isFinite(fixAge) && fixAge >= 0 && fixAge <= 300;
+
+  let state: OperationalMarkerState;
+  if (input.panicActive === true || rawStatus === 'sos' || rawStatus === 'panic') {
+    state = 'sos';
+  } else if (input.kind === 'guardian') {
+    state = !heartbeatOnline ? 'offline' : !gpsFixFresh ? 'stale' : operationalMarkerState(rawStatus).key;
+  } else {
+    state = operationalMarkerState(rawStatus).key;
+  }
+
+  return { state, heartbeatOnline, gpsFixFresh };
+}
+
+/** Accept only an actual compass bearing; null/undefined must never become 0°. */
+export function normalizeHeadingDegrees(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 360) return null;
+  return value === 360 ? 0 : value;
+}
+
 export function operationalMarkerSvg(kind: OperationalMarkerKind, color = '#eaf2f8'): string {
   return '<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 24 24">' +
     ICONS[kind].replace('<path d="', '<path fill="' + color + '" d="') + '</svg>';
@@ -134,7 +180,7 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
   button.dataset.freshness = freshness;
   button.dataset.headingAvailable = Number.isFinite(heading) ? 'true' : 'false';
   button.dataset.selected = options.selected ? 'true' : 'false';
-  button.dataset.accuracyMeters = Number.isFinite(Number(options.accuracyMeters)) && Number(options.accuracyMeters) >= 0 ? String(Number(options.accuracyMeters)) : '';
+  button.dataset.accuracyMeters = options.accuracyMeters != null && Number.isFinite(options.accuracyMeters) && options.accuracyMeters > 0 ? String(options.accuracyMeters) : '';
   button.dataset.latitude = Number.isFinite(Number(options.latitude)) ? String(Number(options.latitude)) : '';
   button.style.setProperty('--sml-accent', status.color);
   if (Number.isFinite(heading)) button.style.setProperty('--sml-heading', String(((heading % 360) + 360) % 360) + 'deg');
@@ -150,15 +196,15 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
 }
 
 export function setOperationalMarkerDensity(button: HTMLButtonElement, zoom: number, selected = false): void {
-  const density = zoom < 7.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
+  const density = zoom <= 8 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
   button.dataset.density = density;
   button.dataset.selected = selected ? 'true' : 'false';
   // At continent/country scale, show a true point, not a miniature vehicle
   // illustration whose screen footprint can imply a false location.
-  const markerSize = density === 'overview' ? (selected ? 9 : 7) : density === 'regional' ? (selected ? 13 : 10) : (selected ? 30 : 27);
+  const markerSize = density === 'overview' ? (selected ? 13 : 10) : density === 'regional' ? (selected ? 20 : 16) : (selected ? 34 : 30);
   button.style.setProperty('--sml-marker-size', markerSize + 'px');
-  button.style.setProperty('--sml-marker-label-left', (21 + markerSize / 2 + 6) + 'px');
-  button.style.setProperty('--sml-bearing-origin', (markerSize / 2 + 7) + 'px');
+  button.style.setProperty('--sml-marker-label-left', (24 + markerSize / 2 + 8) + 'px');
+  button.style.setProperty('--sml-bearing-origin', (markerSize / 2 + 9) + 'px');
 
   // Draw a geospatial uncertainty radius only when it has a meaningful
   // on-screen size. The true metre value remains in the device detail at all

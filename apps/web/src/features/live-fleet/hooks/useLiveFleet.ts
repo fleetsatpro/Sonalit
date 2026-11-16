@@ -4,7 +4,7 @@ import { api } from '../../../lib/api.js'
 import { subscribe } from '../../../lib/centrifuge.js'
 import { useAuthStore } from '../../../stores/auth.js'
 import type { LiveStatus, LiveVehicle, ConvoyGroup, StatusCounts } from '../types/fleet.js'
-import { indexLatestGpsPositions, isRecentDeviceHeartbeat, mergeGpsSnapshotWithRealtime, normalizeGpsPosition, preferNewerGpsPosition, secondsSinceGpsFix, type LiveGpsPosition } from './liveFleetPosition.js'
+import { heartbeatTimestampForDevice, indexLatestGpsPositions, isRecentDeviceHeartbeat, mergeGpsSnapshotWithRealtime, normalizeGpsPosition, preferNewerGpsPosition, secondsSinceGpsFix, type LiveGpsPosition } from './liveFleetPosition.js'
 
 interface DashVehicle {
   id: string; registration: string; convoy_id: string | null
@@ -247,7 +247,7 @@ export function useLiveFleet() {
           speed_kmh: speedKmh,
           heading: pos.heading,
           last_ping_at: pos.timestamp,
-          last_seen_at: pos.last_seen_at ?? pos.timestamp,
+          last_seen_at: heartbeatTimestampForDevice(pos.last_seen_at, pos.timestamp, pos.vehicle_id == null),
           accuracy_m: pos.accuracy_m ?? null,
           secondsAgo: secsAgo,
           panic_active: isPanic,
@@ -265,7 +265,7 @@ export function useLiveFleet() {
         // mean actually reachable right now, not "has a device record with
         // any position ever", or the badge contradicts the OFFLINE label the
         // same officer's own marker shows a few pixels away.
-        if (lv.kind === 'guardian' && isRecentDeviceHeartbeat(pos.last_seen_at ?? pos.timestamp, now)) counts.officers++
+        if (lv.kind === 'guardian' && isRecentDeviceHeartbeat(lv.last_seen_at, now)) counts.officers++
         standalone.push(lv)
       }
     }
@@ -293,7 +293,7 @@ export function useLiveFleet() {
           speed_kmh: speedKmh,
           heading: pos.heading,
           last_ping_at: pos.timestamp,
-          last_seen_at: pos.last_seen_at ?? pos.timestamp,
+          last_seen_at: heartbeatTimestampForDevice(pos.last_seen_at, pos.timestamp, pos.vehicle_id == null),
           accuracy_m: pos.accuracy_m ?? null,
           secondsAgo: secsAgo,
           panic_active: isPanic,
@@ -307,7 +307,7 @@ export function useLiveFleet() {
         }
         counts.all++
         counts[status]++
-        if (isRecentDeviceHeartbeat(pos.last_seen_at ?? pos.timestamp, now)) counts.officers++
+        if (isRecentDeviceHeartbeat(lv.last_seen_at, now)) counts.officers++
         officers.push(lv)
       }
     }

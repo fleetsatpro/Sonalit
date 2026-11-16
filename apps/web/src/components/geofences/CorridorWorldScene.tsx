@@ -42,16 +42,25 @@ const PHOTOREALISTIC_ION_ASSET_ID = 2275207;
 const STREET_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
 const SATELLITE_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const ROADS_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
-const PLACES_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+const PLACES_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}';
 const MODEL_URL = (import.meta.env['VITE_SONALIT_VEHICLE_MODEL_URL'] as string | undefined)?.trim() ?? '';
 
 const STATUS_COLOR: Record<string, string> = {
+  sos: '#ff5268',
+  alert: '#ff6574',
   off_route: '#ef4444',
+  moving: '#32d6a0',
+  online: '#32d6a0',
+  on_track: '#10b981',
+  idle: '#e9b85c',
+  stopped: '#aab6c5',
+  offline: '#778698',
+  stale: '#e99a64',
   behind: '#f59e0b',
   ahead: '#22d3ee',
-  on_track: '#10b981',
   no_fix: '#737373',
   no_route: '#a78bfa',
+  unknown: '#94a3b8',
 };
 const RISK_COLOR: Record<string, string> = {
   no_go: '#dc2626',
@@ -320,16 +329,44 @@ function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: str
       layer.gamma = 0.9;
     });
   } else {
-    add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 16);
+    add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 19);
     if (mode === 'hybrid') add(ROADS_URL, 'Esri', 14);
     // Place names and administrative labels remain visible in satellite mode too.
-    add(PLACES_URL, 'Esri', 14);
+    add(PLACES_URL, 'Esri', 19);
   }
 }
 
 function statusLabel(member: GlobeMember) {
   const state = member.position_state?.replaceAll('_', ' ');
-  return `${member.officer_name ? `${member.officer_name} · ` : ''}${member.name}${state && state !== 'observed' ? ` · ${state}` : ''}`;
+  const operationalState = member.status === 'stale'
+    ? 'HEARTBEAT ONLINE'
+    : member.status.replaceAll('_', ' ').toUpperCase();
+  const positionState = state === 'stale'
+    ? ' · GPS FIX STALE'
+    : state === 'no_fix'
+      ? ' · GPS NO FIX'
+      : state && state !== 'observed' ? ' · GPS ' + state.toUpperCase() : '';
+  return (member.officer_name ? member.officer_name + ' · ' : '') + member.name + ' · ' + operationalState + positionState;
+}
+
+function deviceAccuracyEllipse(member: GlobeMember, color: string): Cesium.EllipseGraphics | undefined {
+  const accuracy = member.position_uncertainty_m;
+  if (accuracy == null || !Number.isFinite(accuracy) || accuracy <= 0) return undefined;
+  return new Cesium.EllipseGraphics({
+    semiMajorAxis: accuracy,
+    semiMinorAxis: accuracy,
+    height: 0,
+    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    material: css(color, 0.055),
+    outline: true,
+    outlineColor: css(color, 0.48),
+    outlineWidth: 1,
+  });
+}
+
+function deviceClusterSvg(color: string) {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><circle cx="48" cy="48" r="37" fill="#071321" fill-opacity=".97" stroke="' + color + '" stroke-width="4"/><circle cx="48" cy="48" r="28" fill="none" stroke="' + color + '" stroke-opacity=".32" stroke-width="2"/><path d="M28 51h40" stroke="' + color + '" stroke-width="2" stroke-linecap="round" opacity=".55"/></svg>';
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
 
 function singleWorldPoint(liveMembers: GlobeMember[], zones: RiskZone[], worldEntities: SpatialWorldEntity[]) {
@@ -394,6 +431,8 @@ export default function CorridorWorldScene({
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
+  const deviceDataSourceRef = useRef<Cesium.CustomDataSource | null>(null);
+  const liveMembersRef = useRef<GlobeMember[]>(members);
   const entityMapRef = useRef<Map<string, Cesium.Entity>>(new globalThis.Map());
   const externalEntityMapRef = useRef<Map<string, Cesium.Entity>>(new globalThis.Map());
   const currentRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
@@ -431,7 +470,12 @@ export default function CorridorWorldScene({
   surfaceQualityRef.current = surfaceQuality;
 
   const height = Math.max(200, ceilingM || Math.min(1800, Math.max(700, corridorKm * 500)));
-  const liveMembers = useMemo(() => members.filter(m => m.lat != null && m.lng != null), [members]);
+  const liveMembers = useMemo(() => members.filter(m =>
+    m.lat != null && m.lng != null
+    && Number.isFinite(m.lat) && Number.isFinite(m.lng)
+    && m.lat >= -90 && m.lat <= 90 && m.lng >= -180 && m.lng <= 180
+  ), [members]);
+  liveMembersRef.current = liveMembers;
   const routeSignature = useMemo(() => {
     const start = route[0];
     const end = route.at(-1);
@@ -468,6 +512,37 @@ export default function CorridorWorldScene({
     }
 
     viewerRef.current = viewer;
+    const deviceDataSource = new Cesium.CustomDataSource('gev-operational-devices');
+    deviceDataSource.clustering.enabled = true;
+    deviceDataSource.clustering.pixelRange = compactSurface ? 40 : 48;
+    deviceDataSource.clustering.minimumClusterSize = 3;
+    deviceDataSource.clustering.clusterEvent.addEventListener((clusteredEntities, cluster) => {
+      const deviceIds = clusteredEntities.map(entity => String(entity.id)).filter(id => id.startsWith('dev:')).map(id => id.slice(4));
+      const sosCount = deviceIds.filter(id => liveMembersRef.current.find(member => member.id === id)?.status === 'sos').length;
+      const hasSos = sosCount > 0;
+      const accent = hasSos ? '#ff5268' : '#26c6c8';
+      cluster.billboard.show = true;
+      cluster.billboard.image = deviceClusterSvg(accent);
+      cluster.billboard.width = 48;
+      cluster.billboard.height = 48;
+      cluster.billboard.verticalOrigin = Cesium.VerticalOrigin.CENTER;
+      cluster.billboard.horizontalOrigin = Cesium.HorizontalOrigin.CENTER;
+      cluster.billboard.disableDepthTestDistance = Number.POSITIVE_INFINITY;
+      cluster.billboard.id = { sonalitCluster: true, deviceIds };
+      cluster.label.show = true;
+      cluster.label.text = hasSos ? String(deviceIds.length) + '\n' + String(sosCount) + ' SOS' : String(deviceIds.length);
+      cluster.label.font = '800 14px Inter, sans-serif';
+      cluster.label.fillColor = Cesium.Color.WHITE;
+      cluster.label.outlineColor = Cesium.Color.fromCssColorString('#06101b');
+      cluster.label.outlineWidth = 3;
+      cluster.label.style = Cesium.LabelStyle.FILL_AND_OUTLINE;
+      cluster.label.verticalOrigin = Cesium.VerticalOrigin.CENTER;
+      cluster.label.pixelOffset = new Cesium.Cartesian2(0, 0);
+      cluster.label.disableDepthTestDistance = Number.POSITIVE_INFINITY;
+      cluster.point.show = false;
+    });
+    deviceDataSourceRef.current = deviceDataSource;
+    void viewer.dataSources.add(deviceDataSource);
     // Cesium stops its default render loop after a render exception. Keep GEV
     // self-healing for transient shader/texture/tile faults instead of leaving
     // the operator with a permanently frozen or blank globe.
@@ -558,7 +633,22 @@ export default function CorridorWorldScene({
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
       const picked = viewer.scene.pick(movement.position);
-      const id = picked?.id?.id;
+      const pickedId = picked?.id as { id?: string; sonalitCluster?: boolean; deviceIds?: string[] } | string | undefined;
+      if (pickedId && typeof pickedId === 'object' && pickedId.sonalitCluster && Array.isArray(pickedId.deviceIds)) {
+        const positions = pickedId.deviceIds
+          .map(id => liveMembersRef.current.find(member => member.id === id))
+          .filter((member): member is GlobeMember & { lat: number; lng: number } => Boolean(member && member.lat != null && member.lng != null))
+          .map(member => Cesium.Cartesian3.fromDegrees(member.lng, member.lat, 0));
+        if (positions.length) {
+          const sphere = Cesium.BoundingSphere.fromPoints(positions);
+          viewer.camera.flyToBoundingSphere(sphere, {
+            duration: 0.9,
+            offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-48), Math.max(1800, sphere.radius * 3.4)),
+          });
+        }
+        return;
+      }
+      const id = typeof pickedId === 'string' ? pickedId : pickedId && typeof pickedId === 'object' ? pickedId.id : undefined;
       if (typeof id === 'string' && id.startsWith('dev:')) {
         selectRef.current?.(id.slice(4));
         externalSelectRef.current?.(null);
@@ -782,6 +872,7 @@ export default function CorridorWorldScene({
         photoTilesetRef.current = null;
       }
       entityMapRef.current.clear();
+      deviceDataSourceRef.current = null;
       externalEntityMapRef.current.clear();
       currentRef.current.clear();
       targetRef.current.clear();
@@ -912,10 +1003,12 @@ export default function CorridorWorldScene({
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
+    const deviceDataSource = deviceDataSourceRef.current;
+    if (!deviceDataSource) return;
     const activeIds = new Set(liveMembers.map(m => `dev:${m.id}`));
-    viewer.entities.values.filter(e => e.id.startsWith('dev:')).forEach(e => {
+    deviceDataSource.entities.values.filter(e => e.id.startsWith('dev:')).forEach(e => {
       if (!activeIds.has(e.id)) {
-        viewer.entities.remove(e);
+        deviceDataSource.entities.remove(e);
         const id = e.id.slice(4);
         entityMapRef.current.delete(id);
         currentRef.current.delete(id);
@@ -928,11 +1021,14 @@ export default function CorridorWorldScene({
       const target = Cesium.Cartesian3.fromDegrees(member.lng!, member.lat!, 0);
       targetRef.current.set(member.id, target);
       if (!currentRef.current.has(member.id)) currentRef.current.set(member.id, target.clone());
-      const heading = Number(member.heading);
+      const heading = member.heading != null && Number.isFinite(member.heading) && member.heading >= 0 && member.heading < 360
+        ? member.heading
+        : Number.NaN;
       if (Number.isFinite(heading)) headingRef.current.set(member.id, heading);
+      else headingRef.current.delete(member.id);
       const position = currentRef.current.get(member.id)!;
       const selected = member.id === focusId;
-      const color = STATUS_COLOR[member.status] ?? STATUS_COLOR.off_route;
+      const color = STATUS_COLOR[member.status] ?? STATUS_COLOR.unknown!;
       const existing = entityMapRef.current.get(member.id);
       const label = statusLabel(member);
       if (existing) {
@@ -941,23 +1037,26 @@ export default function CorridorWorldScene({
         existing.point = new Cesium.PointGraphics({ pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY });
         if (existing.label?.text) (existing.label.text as Cesium.ConstantProperty).setValue(label);
         if (existing.billboard?.image) (existing.billboard.image as Cesium.ConstantProperty).setValue(vehicleSvg(color, selected));
+        existing.ellipse = deviceAccuracyEllipse(member, color);
         if (Number.isFinite(heading)) {
           existing.orientation = new Cesium.ConstantProperty(
             Cesium.Transforms.headingPitchRollQuaternion(currentRef.current.get(member.id) ?? target, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0)),
           );
+        } else {
+          existing.orientation = undefined;
         }
         if (moved) startVehicleRenderPulseRef.current?.();
         continue;
       }
 
-      const entity = viewer.entities.add({
+      const entity = deviceDataSource.entities.add({
         id: `dev:${member.id}`,
         position: new Cesium.ConstantPositionProperty(position),
         orientation: Number.isFinite(heading) ? new Cesium.ConstantProperty(Cesium.Transforms.headingPitchRollQuaternion(position, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0))) : undefined,
         point: { pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
         billboard: { image: vehicleSvg(color, selected), width: selected ? 42 : 34, height: selected ? 28 : 23, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, alignedAxis: Cesium.Cartesian3.ZERO, scaleByDistance: new Cesium.NearFarScalar(250, 1.18, 300000, 0.62) },
         label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -34), heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, showBackground: true, backgroundColor: css('#06090f', 0.76), backgroundPadding: new Cesium.Cartesian2(7, 4), scaleByDistance: new Cesium.NearFarScalar(300, 1.08, 180000, 0.72), translucencyByDistance: new Cesium.NearFarScalar(35000, 1, 240000, 0) },
-        ellipse: { semiMajorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), semiMinorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), height: 4, material: css(color, 0.06), outline: true, outlineColor: css(color, 0.45), outlineWidth: 1 },
+        ellipse: deviceAccuracyEllipse(member, color),
         ...(member.vehicle_model_url || MODEL_URL ? { model: new Cesium.ModelGraphics({ uri: new Cesium.ConstantProperty(member.vehicle_model_url || MODEL_URL), minimumPixelSize: 34, maximumScale: 220, runAnimations: selected, shadows: selected ? Cesium.ShadowMode.ENABLED : Cesium.ShadowMode.DISABLED, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND }) } : {}),
       });
       entityMapRef.current.set(member.id, entity);

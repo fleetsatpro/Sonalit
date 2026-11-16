@@ -109,3 +109,17 @@ export function isRecentDeviceHeartbeat(timestamp: string | null, now = Date.now
   const age = (now - epoch) / 1000;
   return age >= -60 && age <= limitSeconds;
 }
+
+
+/**
+ * Resolve the heartbeat timestamp without promoting a GPS fix into heartbeat
+ * evidence. Vehicle feeds may fall back to their last position timestamp;
+ * Guardian devices must provide their own last_seen_at heartbeat explicitly.
+ */
+export function heartbeatTimestampForDevice(
+  lastSeenAt: string | null | undefined,
+  positionTimestamp: string | null,
+  isGuardian: boolean,
+): string | null {
+  return lastSeenAt ?? (isGuardian ? null : positionTimestamp);
+}
