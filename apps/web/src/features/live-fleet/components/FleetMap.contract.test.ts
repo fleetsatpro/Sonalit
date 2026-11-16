@@ -16,6 +16,7 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain("accuracyMeters: v.accuracy_m");
     expect(source).toContain("latitude: v.lat");
     expect(source).toContain("'GPS ACCURACY ±'");
+    expect(source).toContain("(v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail");
     expect(source).toContain("'HEARTBEAT ONLINE · GPS FIX AGED'");
   });
 

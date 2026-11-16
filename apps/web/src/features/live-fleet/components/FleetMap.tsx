@@ -333,9 +333,9 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
   const state = resolved.state;
   const isSos = state === 'sos';
   const now = Date.now();
-  const activity = state === 'moving'
+  const activity = v.status === 'move'
     ? (Number.isFinite(v.speed_kmh) ? Math.round(v.speed_kmh) + ' km/h' : 'MOVING')
-    : state === 'idle' || state === 'stopped'
+    : v.status === 'idle' || v.status === 'stop'
       ? 'STATIONARY'
       : state === 'sos' ? 'SOS' : state.toUpperCase().replaceAll('_', ' ');
   const gpsAge = formatFixAge(v.secondsAgo);
@@ -356,7 +356,7 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
         : state === 'offline'
           ? 'OFFLINE · GPS ' + gpsAge
           : isOfficer
-            ? (state === 'moving' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
+            ? (v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
             : state === 'moving'
               ? 'MOVING · ' + activity
               : state.toUpperCase().replaceAll('_', ' ');

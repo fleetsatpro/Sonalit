@@ -62,6 +62,8 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('member.heading != null && Number.isFinite(member.heading)');
     expect(source).toContain('else headingRef.current.delete(member.id)');
     expect(source).toContain('existing.orientation = undefined');
+    expect(source).toContain("const operationalState = member.status === 'stale'");
+    expect(source).toContain("' · GPS FIX STALE'");
   });
 
   it('clusters global device symbols and zooms into actual member positions', () => {

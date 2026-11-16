@@ -338,8 +338,14 @@ function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: str
 
 function statusLabel(member: GlobeMember) {
   const state = member.position_state?.replaceAll('_', ' ');
-  const operationalState = member.status.replaceAll('_', ' ').toUpperCase();
-  const positionState = state && state !== 'observed' ? ' · GPS ' + state.toUpperCase() : '';
+  const operationalState = member.status === 'stale'
+    ? 'HEARTBEAT ONLINE'
+    : member.status.replaceAll('_', ' ').toUpperCase();
+  const positionState = state === 'stale'
+    ? ' · GPS FIX STALE'
+    : state === 'no_fix'
+      ? ' · GPS NO FIX'
+      : state && state !== 'observed' ? ' · GPS ' + state.toUpperCase() : '';
   return (member.officer_name ? member.officer_name + ' · ' : '') + member.name + ' · ' + operationalState + positionState;
 }
 
