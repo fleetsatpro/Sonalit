@@ -167,7 +167,7 @@ export default function GodsEyeView() {
 
   const allVehicles = useMemo(() => groups.flatMap(g => g.vehicles), [groups])
   const positionedVehicles = useMemo(
-    () => allVehicles.filter(v => isValidGeographicPosition(v.lat, v.lng)),
+    () => allVehicles.filter((v): v is LiveVehicle & { lat: number; lng: number } => isValidGeographicPosition(v.lat, v.lng)),
     [allVehicles],
   )
   const members = useMemo(() => allVehicles.map(toGlobeMember), [allVehicles])
