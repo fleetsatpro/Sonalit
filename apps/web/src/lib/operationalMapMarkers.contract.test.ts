@@ -59,6 +59,13 @@ describe('operational device telemetry semantics', () => {
     expect(resolveOperationalDeviceState({
       kind: 'guardian', status: 'active', lastSeenAt: '2026-11-16T18:59:00.000Z',
     }, now)).toMatchObject({ state: 'stale', heartbeatOnline: true, gpsFixFresh: false });
+
+    // useLiveFleet derives raw status 'offline' after 30 minutes without a GPS
+    // fix. A separate, current Guardian heartbeat must still classify this as
+    // stale GPS rather than a lost device heartbeat.
+    expect(resolveOperationalDeviceState({
+      kind: 'guardian', status: 'offline', lastSeenAt: '2026-11-16T18:59:00.000Z', secondsAgo: 1900,
+    }, now)).toMatchObject({ state: 'stale', heartbeatOnline: true, gpsFixFresh: false });
   });
 
   it('treats invalid, expired and implausibly future heartbeats as offline', () => {

@@ -131,7 +131,7 @@ export function resolveOperationalDeviceState(input: OperationalDeviceStateInput
   if (input.panicActive === true || rawStatus === 'sos' || rawStatus === 'panic') {
     state = 'sos';
   } else if (input.kind === 'guardian') {
-    state = rawStatus === 'offline' || !heartbeatOnline ? 'offline' : gpsFixFresh ? 'online' : 'stale';
+    state = !heartbeatOnline ? 'offline' : !gpsFixFresh ? 'stale' : operationalMarkerState(rawStatus).key;
   } else {
     state = operationalMarkerState(rawStatus).key;
   }
