@@ -6,7 +6,7 @@
 export function minimalLongitudeBounds(longitudes: readonly number[]): [number, number] {
   const values = longitudes
     .filter(value => Number.isFinite(value))
-    .map(value => ((value % 360) + 360) % 360)
+    .map(value => value >= 0 && value < 360 ? value : ((value % 360) + 360) % 360)
     .sort((a, b) => a - b);
 
   if (values.length === 0) return [-180, 180];
