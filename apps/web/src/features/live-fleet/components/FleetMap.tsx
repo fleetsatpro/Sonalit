@@ -1121,7 +1121,7 @@ export default function FleetMap({
 
   // sync vehicle markers
   useEffect(() => {
-    const map = mapRef.current; if (!map) return
+    const map = mapRef.current; if (!map || !mapReady) return
     const positioned = vehicles.filter(hasValidDeviceCoordinates)
     const ids = new Set(positioned.map(v => v.id))
     for (const [id, marker] of markersRef.current) {
@@ -1156,7 +1156,7 @@ export default function FleetMap({
         markersRef.current.set(v.id, marker)
       }
     }
-  }, [vehicles, selectedId])
+  }, [mapReady, vehicles, selectedId])
 
   useEffect(() => {
     const map = mapRef.current

@@ -45,6 +45,8 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain('1.2000°N 35.5000°E');
     expect(source).toContain("source.setData({ type: 'FeatureCollection', features })");
     expect(source).toContain("heading: v.status === 'move' ? normalizeHeadingDegrees(v.heading) : null");
+    expect(source).toContain("// sync vehicle markers\n  useEffect(() => {\n    const map = mapRef.current; if (!map || !mapReady) return");
+    expect(source).toContain("}, [mapReady, vehicles, selectedId])");
   });
 
   it('uses the zoom-resilient shared vector basemap and caps Esri satellite tiles', () => {
