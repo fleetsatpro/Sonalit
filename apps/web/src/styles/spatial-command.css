@@ -573,3 +573,224 @@
 :root[data-theme] .spatial-surface [class*="text-neutral-600"] {
   color: var(--d-t3) !important;
 }
+
+
+/* Fleet 2D map — a labeled instrument dock, not a stack of anonymous icon buttons. */
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control-dock {
+  position: absolute;
+  z-index: 500;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+  max-width: min(860px, calc(100% - 36px));
+  padding: 8px;
+  border: 1px solid rgba(194, 211, 232, .19);
+  border-radius: 19px;
+  background: linear-gradient(145deg, rgba(8, 17, 29, .94), rgba(3, 8, 15, .91));
+  box-shadow: 0 22px 64px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .09);
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  min-width: 138px;
+  padding: 2px 7px;
+  border-right: 1px solid rgba(202, 217, 237, .13);
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control-group:last-child {
+  min-width: 190px;
+  padding-right: 2px;
+  border-right: 0;
+}
+.spatial-map-control-group__label {
+  padding: 0 5px 3px;
+  color: #93a9c0;
+  font: 700 9px/1.1 var(--d-font-mono, "Space Mono", ui-monospace, monospace);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 9px;
+  border: 1px solid rgba(206, 221, 241, .10);
+  border-radius: 10px;
+  color: #d9e4f2;
+  background: rgba(255, 255, 255, .035);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease;
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control:hover:not(:disabled),
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-icon-control:hover {
+  border-color: rgba(116, 203, 232, .42);
+  background: rgba(71, 157, 192, .12);
+  color: #f4f9ff;
+  transform: translateY(-1px);
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control[data-active="true"] {
+  border-color: rgba(86, 211, 174, .36);
+  background: linear-gradient(145deg, rgba(47, 176, 143, .17), rgba(47, 176, 143, .07));
+  color: #a8f1d5;
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control svg {
+  flex: 0 0 auto;
+  color: #9bb8d0;
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control[data-active="true"] svg {
+  color: #75e0bc;
+}
+.spatial-map-control__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.spatial-map-control__copy strong {
+  overflow: hidden;
+  color: inherit;
+  font: 700 11px/1.1 var(--d-font, "Sora", Inter, system-ui, sans-serif);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spatial-map-control__copy small {
+  color: #91a1b4;
+  font: 500 9px/1.1 var(--d-font-mono, "Space Mono", ui-monospace, monospace);
+  letter-spacing: .015em;
+  white-space: nowrap;
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}
+.spatial-map-navigation {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-icon-control {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border: 1px solid rgba(206, 221, 241, .12);
+  border-radius: 10px;
+  color: #d7e3f0;
+  background: rgba(255, 255, 255, .04);
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control--fit {
+  flex: 1;
+}
+.fleet-map-coordinate {
+  position: absolute;
+  z-index: 500;
+  left: 16px;
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 154px;
+  padding: 9px 11px;
+  border: 1px solid rgba(194, 211, 232, .15);
+  border-radius: 12px;
+  background: rgba(4, 10, 18, .78);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255, 255, 255, .06);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.fleet-map-coordinate__mode {
+  color: #8298ad;
+  font: 700 8px/1 var(--d-font-mono, "Space Mono", ui-monospace, monospace);
+  letter-spacing: .14em;
+}
+.fleet-map-coordinate__value {
+  color: #e0eaf4;
+  font: 600 10px/1.2 var(--d-font-mono, "Space Mono", ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 860px) {
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control-dock {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr) minmax(0, 1.15fr);
+    gap: 4px;
+    padding: 6px;
+    border-radius: 16px;
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control-group,
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control-group:last-child {
+    min-width: 0;
+    gap: 4px;
+    padding: 3px 5px;
+    border-right: 0;
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control-group:not(:last-child) {
+    border-right: 1px solid rgba(202, 217, 237, .12);
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control {
+    min-height: 35px;
+    gap: 6px;
+    padding: 5px 6px;
+    border-radius: 9px;
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control svg {
+    width: 14px;
+    height: 14px;
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control__copy strong {
+    font-size: 10px;
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control__copy small {
+    font-size: 8px;
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-navigation {
+    display: grid;
+    grid-template-columns: 34px 34px minmax(0, 1fr);
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-icon-control {
+    width: 34px;
+    height: 35px;
+  }
+  .fleet-map-coordinate {
+    left: 12px;
+    bottom: 174px;
+    min-width: 0;
+    padding: 7px 9px;
+  }
+}
+@media (max-width: 420px) {
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control-group__label {
+    font-size: 7px;
+    letter-spacing: .08em;
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control {
+    gap: 4px;
+    padding-inline: 4px;
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control__copy strong {
+    font-size: 9px;
+  }
+  .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control__copy small {
+    font-size: 7px;
+  }
+  .fleet-map-coordinate { bottom: 170px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fleet-map-control-dock *, .fleet-map-coordinate * {
+    transition: none !important;
+  }
+}
