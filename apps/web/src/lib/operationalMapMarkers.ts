@@ -150,7 +150,7 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
 }
 
 export function setOperationalMarkerDensity(button: HTMLButtonElement, zoom: number, selected = false): void {
-  const density = zoom < 8.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
+  const density = zoom <= 8 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
   button.dataset.density = density;
   button.dataset.selected = selected ? 'true' : 'false';
   // At continent/country scale, show a true point, not a miniature vehicle
