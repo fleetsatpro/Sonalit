@@ -1,5 +1,5 @@
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../../lib/spatialRendering.js'
-import { Globe2, Layers3, LocateFixed, Minus, Plus, ScanSearch, TrafficCone } from 'lucide-react'
+import { Activity, Car, Focus, Globe2, Layers3, Minus, Plus, Satellite } from 'lucide-react'
 import { STREET_STYLE } from '../../../lib/mapStyles.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -1261,7 +1261,7 @@ export default function FleetMap({
               onClick={() => setTrafficOn(value => !value)}
               title={trafficOn ? 'Hide traffic conditions' : 'Show traffic conditions'}
             >
-              <TrafficCone size={16} aria-hidden="true" />
+              <Activity size={16} aria-hidden="true" />
               <span className="fleet-map-control__copy"><strong>Traffic</strong><small>{trafficOn ? 'Visible' : 'Off'}</small></span>
             </button>
           )}
@@ -1288,7 +1288,7 @@ export default function FleetMap({
             onClick={() => mapMode === 'latest' ? cycleMapMode() : activateLatestImagery()}
             title={mapMode === 'latest' ? 'Return to the standard basemap' : 'Open the latest validated satellite observation'}
           >
-            <ScanSearch size={16} aria-hidden="true" />
+            <Satellite size={16} aria-hidden="true" />
             <span className="fleet-map-control__copy"><strong>Latest imagery</strong><small>{reconLoading ? 'Loading' : mapMode === 'latest' ? 'Active' : 'On demand'}</small></span>
           </button>
         </section>
@@ -1323,7 +1323,7 @@ export default function FleetMap({
               disabled={!vehicles.some(v => v.lat != null && v.lng != null && Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)))}
               title="Fit all positioned operational devices"
             >
-              <LocateFixed size={15} aria-hidden="true" />
+              <Focus size={15} aria-hidden="true" />
               <span className="fleet-map-control__copy"><strong>Fit devices</strong><small>All positions</small></span>
             </button>
           </div>
