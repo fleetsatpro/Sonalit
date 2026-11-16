@@ -475,6 +475,7 @@ export default function GodsEyeView() {
     <div
       className="gev-shell"
       data-overview-collapsed={!overviewOpen}
+      data-view={view}
       data-intelligence-collapsed={!intelligenceOpen}
       data-navigation-expanded={mapNavigationExpanded}
     >
