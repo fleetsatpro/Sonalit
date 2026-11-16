@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import { bindDenseMapLabels } from '../../../lib/mapLabels.js'
 import { createOperationalDeviceMarker, normalizeHeadingDegrees, resolveOperationalDeviceState, setOperationalMarkerDensity, updateOperationalDeviceMarker } from '../../../lib/operationalMapMarkers.js'
-import { minimalLongitudeBounds } from '../../../lib/geographicBounds.js'
+import { isValidGeographicPosition, minimalLongitudeBounds } from '../../../lib/geographicBounds.js'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
 import {
@@ -307,10 +307,7 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
 }
 
 function hasValidDeviceCoordinates(device: Pick<LiveVehicle, 'lat' | 'lng'>): device is Pick<LiveVehicle, 'lat' | 'lng'> & { lat: number; lng: number } {
-  return device.lat != null && device.lng != null
-    && Number.isFinite(Number(device.lat)) && Number.isFinite(Number(device.lng))
-    && Number(device.lat) >= -90 && Number(device.lat) <= 90
-    && Number(device.lng) >= -180 && Number(device.lng) <= 180;
+  return isValidGeographicPosition(device.lat, device.lng);
 }
 
 function formatFixAge(secondsAgo: number): string {
@@ -377,7 +374,7 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
     latitude: v.lat,
     selected,
     zoom,
-    title: [identity, state.toUpperCase(), activity, 'GPS FIX ' + gpsAge + ' AGO', accuracySummary, isOfficer && heartbeatOnline ? 'HEARTBEAT ONLINE' : '', healthSummary, v.location_desc].filter(Boolean).join(' · '),
+    title: [identity, state.toUpperCase(), activity, 'GPS FIX ' + gpsAge + ' AGO', accuracySummary, isOfficer && resolved.heartbeatOnline ? 'HEARTBEAT ONLINE' : '', healthSummary, v.location_desc].filter(Boolean).join(' · '),
   };
 }
 interface Props {
@@ -1032,12 +1029,18 @@ export default function FleetMap({
         paint: {
           'circle-color': ['match', ['get', 'state'],
             'sos', '#f0445d',
+            'alert', '#ff6574',
+            'warning', '#f2b65e',
+            'delayed', '#f0bc62',
+            'stale', '#ef9a64',
             'offline', '#8190a3',
-            'stale', '#e0a34a',
             'stopped', '#8190a3',
             'moving', '#32d6a0',
             'online', '#32d6a0',
             'idle', '#e0b85b',
+            'unavailable', '#94a3b8',
+            'at_port', '#4dcce5',
+            'staged', '#e9b85c',
             '#8ea0b7',
           ],
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 3, 7, 5.5, 8, 6.5],
@@ -1128,7 +1131,7 @@ export default function FleetMap({
     // the same device often sits at almost the same coordinates as the live
     // row, and if it renders on top the operator sees (and taps) OFFLINE while
     // the online marker hides underneath.
-    const zFor = (device: LiveVehicle) => (device.panic_active || device.status === 'sos' ? '40' : device.status === 'move' ? '30' : device.status === 'offline' ? '10' : '20')
+    const zFor = (state: string) => (state === 'sos' ? '40' : state === 'moving' ? '30' : state === 'offline' ? '10' : '20')
     const zoom = map.getZoom()
     for (const v of positioned) {
       const selected = v.id === selectedId
@@ -1139,11 +1142,11 @@ export default function FleetMap({
         const el = existing.getElement() as HTMLButtonElement
         updateOperationalDeviceMarker(el, options)
         el.style.display = map.getZoom() <= 8 ? 'none' : ''
-        el.style.zIndex = zFor(v)
+        el.style.zIndex = zFor(options.state)
       } else {
         const el = createOperationalDeviceMarker(options)
         el.style.display = map.getZoom() <= 8 ? 'none' : ''
-        el.style.zIndex = zFor(v)
+        el.style.zIndex = zFor(options.state)
         el.addEventListener('click', event => {
           event.stopPropagation()
           const current = vehiclesRef.current.find(item => item.id === v.id)

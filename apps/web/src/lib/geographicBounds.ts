@@ -28,3 +28,10 @@ export function minimalLongitudeBounds(longitudes: readonly number[]): [number, 
   const west = west360 >= 180 ? west360 - 360 : west360;
   return [west, west + Math.max(0, east360 - west360)];
 }
+
+
+/** Return true only for a real, finite WGS84 latitude/longitude pair. */
+export function isValidGeographicPosition(latitude: unknown, longitude: unknown): boolean {
+  return typeof latitude === 'number' && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+    && typeof longitude === 'number' && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+}

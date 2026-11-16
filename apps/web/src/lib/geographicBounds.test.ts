@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { minimalLongitudeBounds } from './geographicBounds.js';
+import { isValidGeographicPosition, minimalLongitudeBounds } from './geographicBounds.js';
 
 describe('minimal longitude bounds', () => {
   it('keeps devices on opposite sides of the date line in one narrow viewport', () => {
@@ -20,5 +20,23 @@ describe('minimal longitude bounds', () => {
     expect(minimalLongitudeBounds([12, 12])).toEqual([12, 12]);
     expect(minimalLongitudeBounds([-170])).toEqual([-170, -170]);
     expect(minimalLongitudeBounds([Number.NaN, Number.POSITIVE_INFINITY])).toEqual([-180, 180]);
+  });
+});
+
+
+describe('geographic position validation', () => {
+  it('accepts valid WGS84 positions, including the equator and coordinate limits', () => {
+    expect(isValidGeographicPosition(0, 0)).toBe(true);
+    expect(isValidGeographicPosition(-90, -180)).toBe(true);
+    expect(isValidGeographicPosition(90, 180)).toBe(true);
+  });
+
+  it('rejects absent, non-finite and out-of-range coordinates', () => {
+    for (const [latitude, longitude] of [
+      [null, 0], [0, undefined], [Number.NaN, 0], [0, Number.POSITIVE_INFINITY],
+      [-90.0001, 0], [90.0001, 0], [0, -180.0001], [0, 180.0001],
+    ] as const) {
+      expect(isValidGeographicPosition(latitude, longitude)).toBe(false);
+    }
   });
 });

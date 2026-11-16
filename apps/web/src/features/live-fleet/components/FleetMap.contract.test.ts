@@ -18,6 +18,8 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain("'GPS ACCURACY ±'");
     expect(source).toContain("(v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail");
     expect(source).toContain("'HEARTBEAT ONLINE · GPS FIX AGED'");
+    expect(source).toContain("isOfficer && resolved.heartbeatOnline ? 'HEARTBEAT ONLINE' : ''");
+    expect(source).not.toContain("isOfficer && heartbeatOnline ? 'HEARTBEAT ONLINE' : ''");
   });
 
   it('uses truthful point clustering before revealing individual devices at regional zoom', () => {
@@ -33,6 +35,11 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain('minimalLongitudeBounds(longitudes)');
     expect(source).toContain('attributionControl: { compact: true }');
     expect(source).toContain("getClusterExpansionZoom(clusterId)");
+    expect(source).toContain("'alert', '#ff6574'");
+    expect(source).toContain("'warning', '#f2b65e'");
+    expect(source).toContain("'stale', '#ef9a64'");
+    expect(source).toContain("const zFor = (state: string)");
+    expect(source).toContain("el.style.zIndex = zFor(options.state)");
     expect(source).toContain("item.id");
     expect(source).toContain("map.getZoom() <= 8 ? 'none' : ''");
     expect(source).toContain('1.2000°N 35.5000°E');

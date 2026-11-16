@@ -35,6 +35,7 @@ import CctvViewerPanel from '../components/geofences/CctvViewerPanel.js'
 import type { GlobeMember, RiskZone } from '../components/geofences/CorridorWorldScene.js'
 import type { LiveVehicle } from '../features/live-fleet/types/fleet.js'
 import { normalizeHeadingDegrees, resolveOperationalDeviceState } from '../lib/operationalMapMarkers.js'
+import { isValidGeographicPosition, minimalLongitudeBounds } from '../lib/geographicBounds.js'
 import '../styles/gev-command.css'
 import '../styles/cctv-wall.css'
 
@@ -56,9 +57,7 @@ const layerMeta: Record<WorldContextLayer, { short: string; label: string; icon:
 
 function toGlobeMember(v: LiveVehicle): GlobeMember {
   const hasMeasuredAccuracy = v.accuracy_m != null && Number.isFinite(v.accuracy_m) && v.accuracy_m > 0;
-  const hasValidCoordinates = v.lat != null && v.lng != null
-    && Number.isFinite(v.lat) && Number.isFinite(v.lng)
-    && v.lat >= -90 && v.lat <= 90 && v.lng >= -180 && v.lng <= 180;
+  const hasValidCoordinates = isValidGeographicPosition(v.lat, v.lng);
   const resolved = resolveOperationalDeviceState({
     kind: v.kind,
     status: v.status,
@@ -167,16 +166,19 @@ export default function GodsEyeView() {
   }
 
   const allVehicles = useMemo(() => groups.flatMap(g => g.vehicles), [groups])
+  const positionedVehicles = useMemo(
+    () => allVehicles.filter(v => isValidGeographicPosition(v.lat, v.lng)),
+    [allVehicles],
+  )
   const members = useMemo(() => allVehicles.map(toGlobeMember), [allVehicles])
   const initialWorldCenter = useMemo(() => {
-    const positioned = allVehicles.filter(v => v.lat != null && v.lng != null)
-    if (!positioned.length) return { latitude: 35.5, longitude: 1.2 }
-    const total = positioned.reduce(
-      (sum, v) => ({ latitude: sum.latitude + Number(v.lat), longitude: sum.longitude + Number(v.lng) }),
-      { latitude: 0, longitude: 0 },
-    )
-    return { latitude: total.latitude / positioned.length, longitude: total.longitude / positioned.length }
-  }, [allVehicles])
+    if (!positionedVehicles.length) return { latitude: 35.5, longitude: 1.2 }
+    const latitude = positionedVehicles.reduce((sum, v) => sum + v.lat, 0) / positionedVehicles.length
+    const [west, east] = minimalLongitudeBounds(positionedVehicles.map(v => v.lng))
+    const midpoint = (west + east) / 2
+    const longitude = midpoint > 180 ? midpoint - 360 : midpoint < -180 ? midpoint + 360 : midpoint
+    return { latitude, longitude }
+  }, [positionedVehicles])
 
   const [worldViewport, setWorldViewport] = useState<{ latitude:number; longitude:number; radiusM:number; bbox?:[number,number,number,number] }>({ ...initialWorldCenter, radiusM: 100000 })
   const worldViewportRef = useRef(worldViewport)
@@ -216,7 +218,6 @@ export default function GodsEyeView() {
     }
     return snapSpatialBounds(bounds)
   }, [weatherQueryViewport.latitude, weatherQueryViewport.longitude, weatherQueryViewport.radiusM, weatherQueryViewport.bbox])
-  const positionedVehicles = useMemo(() => allVehicles.filter(v => v.lat != null && v.lng != null), [allVehicles])
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 1000)
