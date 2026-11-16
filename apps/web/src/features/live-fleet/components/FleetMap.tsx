@@ -372,7 +372,7 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
     identity,
     state,
     detail,
-    heading: v.heading,
+    heading: v.status === 'move' ? v.heading : null,
     accuracyMeters: v.accuracy_m,
     latitude: v.lat,
     selected,
@@ -542,7 +542,7 @@ export default function FleetMap({
     const latitudes = positioned.map(device => device.lat)
     map.fitBounds(
       [[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]],
-      { padding: { top: 104, right: 104, bottom: 138, left: 104 }, maxZoom: 8.2, duration: 900 },
+      { padding: { top: 104, right: 104, bottom: 138, left: 104 }, maxZoom: 8, duration: 900 },
     )
   }, [mapReady, vehicles])
 
@@ -986,7 +986,7 @@ export default function FleetMap({
         data: { type: 'FeatureCollection', features: [] },
         cluster: true,
         clusterRadius: 42,
-        clusterMaxZoom: 8.2,
+        clusterMaxZoom: 8,
         clusterProperties: {
           sos_count: ['+', ['case', ['==', ['get', 'state'], 'sos'], 1, 0]],
         },
@@ -1039,7 +1039,7 @@ export default function FleetMap({
             'idle', '#e0b85b',
             '#8ea0b7',
           ],
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 3, 7, 5.5, 8.2, 6.5],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 3, 7, 5.5, 8, 6.5],
           'circle-stroke-color': '#07111e',
           'circle-stroke-width': 1.5,
           'circle-opacity': 0.98,
@@ -1049,7 +1049,7 @@ export default function FleetMap({
 
     const deviceSource = map.getSource(sourceId) as maplibregl.GeoJSONSource
     const syncOverviewMode = () => {
-      const overview = map.getZoom() <= 8.2
+      const overview = map.getZoom() <= 8
       const visibility = overview ? 'visible' : 'none'
       for (const layer of [clusterLayer, clusterCountLayer, pointLayer]) {
         if (map.getLayer(layer) && map.getLayoutProperty(layer, 'visibility') !== visibility) {
