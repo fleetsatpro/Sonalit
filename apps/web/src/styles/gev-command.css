@@ -3016,7 +3016,7 @@
   .gev-shell .gev-topcenter > .gev-cctv-trigger svg { width: 13px; height: 13px; }
 
   .gev-shell .gev-left-rail {
-    top: 114px;
+    top: 122px;
     left: 10px;
     right: 10px;
     bottom: auto;
@@ -3073,7 +3073,7 @@
   .gev-shell .gev-overview-panel {
     left: 10px;
     right: auto;
-    top: 170px;
+    top: 178px;
     width: min(420px, calc(100vw - 20px));
     min-width: 0;
   }
@@ -3084,7 +3084,7 @@
     min-width: 64px;
   }
   .gev-shell .gev-right-panel[data-collapsed="true"] {
-    top: 170px;
+    top: 178px;
     right: 10px;
     left: auto;
     bottom: auto;
@@ -3111,10 +3111,10 @@
   .gev-shell .gev-topcenter { left: 8px; right: 8px; }
   .gev-shell .gev-topcenter > .gev-segment,
   .gev-shell .gev-topcenter > .gev-cctv-trigger { padding-inline: 8px; }
-  .gev-shell .gev-left-rail { top: 112px; left: 8px; right: 8px; max-width: calc(100% - 16px); }
-  .gev-shell .gev-overview-panel { top: 166px; }
+  .gev-shell .gev-left-rail { top: 120px; left: 8px; right: 8px; max-width: calc(100% - 16px); }
+  .gev-shell .gev-overview-panel { top: 176px; }
   .gev-shell .gev-overview-panel[data-collapsed="true"],
-  .gev-shell .gev-right-panel[data-collapsed="true"] { top: 166px; }
+  .gev-shell .gev-right-panel[data-collapsed="true"] { top: 176px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .gev-shell .gev-topcenter,
