@@ -23,7 +23,8 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain("sourceId = 'lf-operational-devices'");
     expect(source).toContain('cluster: true');
     expect(source).toContain('clusterRadius: 42');
-    expect(source).toContain('clusterMaxZoom: 8.2');
+    expect(source).toContain('map.getZoom() <= 8');
+    expect(source).toContain('clusterMaxZoom: 8');
     expect(source).toContain('initialDeviceFitRef');
     expect(source).toContain('function hasValidDeviceCoordinates');
     expect(source).toContain('attributionControl: { compact: true }');
