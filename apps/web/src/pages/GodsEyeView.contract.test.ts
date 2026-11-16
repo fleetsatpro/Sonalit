@@ -4,6 +4,11 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('./GodsEyeView.tsx', import.meta.url), 'utf8');
 
 describe("God's Eye View interaction contract", () => {
+  it('marks invalid GPS coordinates as no-fix rather than treating them as locations', () => {
+    expect(source).toContain('isValidGeographicPosition(v.lat, v.lng)');
+    expect(source).toContain("position_state: !hasValidCoordinates ? 'no_fix'");
+  });
+
   it('retains the full 11-layer spatial surface and view switching', () => {
     for (const layer of [
       'aircraft',

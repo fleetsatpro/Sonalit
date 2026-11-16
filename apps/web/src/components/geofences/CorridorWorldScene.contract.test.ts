@@ -58,6 +58,12 @@ describe('GEV 3D render resilience contract', () => {
     expect(source).toContain('tileset.skipScreenSpaceErrorFactor = 16');
   });
 
+  it('rejects missing, non-finite and out-of-range GPS positions before Cesium entity creation', () => {
+    expect(source).toContain('const liveMembers = useMemo(() => members.filter(m =>');
+    expect(source).toContain('Number.isFinite(m.lat) && Number.isFinite(m.lng)');
+    expect(source).toContain('m.lat >= -90 && m.lat <= 90 && m.lng >= -180 && m.lng <= 180');
+  });
+
   it('does not infer a north-facing 3D heading from a missing telemetry value', () => {
     expect(source).toContain('member.heading != null && Number.isFinite(member.heading)');
     expect(source).toContain('else headingRef.current.delete(member.id)');

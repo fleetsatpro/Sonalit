@@ -206,8 +206,14 @@ export async function fetchLiveEventSimulation(input: LiveEventSimulationQuery):
   return response.data.data
 }
 
+export const WORLD_CONTEXT_REQUEST_TIMEOUT_MS = 30_000
+
 export async function fetchWorldContext(input: WorldContextQuery): Promise<SpatialWorldContext> {
   const config: AxiosRequestConfig = {
+    // Global spatial aggregation fans out across multiple external providers.
+    // Production observations show valid 200 responses can take up to ~19s;
+    // the shared 15s API default otherwise aborts them on the client.
+    timeout: WORLD_CONTEXT_REQUEST_TIMEOUT_MS,
     signal: input.signal,
     params: {
       lat: input.center.latitude,
