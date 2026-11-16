@@ -305,6 +305,13 @@ function makeNaturalEventMarker(item: SpatialWorldEntity, onSelect: (entity: Spa
   return marker
 }
 
+function hasValidDeviceCoordinates(device: Pick<LiveVehicle, 'lat' | 'lng'>): device is Pick<LiveVehicle, 'lat' | 'lng'> & { lat: number; lng: number } {
+  return device.lat != null && device.lng != null
+    && Number.isFinite(Number(device.lat)) && Number.isFinite(Number(device.lng))
+    && Number(device.lat) >= -90 && Number(device.lat) <= 90
+    && Number(device.lng) >= -180 && Number(device.lng) <= 180;
+}
+
 function formatFixAge(secondsAgo: number): string {
   if (!Number.isFinite(secondsAgo) || secondsAgo < 0) return 'AGE N/A';
   if (secondsAgo < 60) return Math.floor(secondsAgo) + 's';
@@ -417,6 +424,7 @@ export default function FleetMap({
   onViewportChangeRef.current = onViewportChange
   const coordsRef = useRef<HTMLSpanElement>(null)
   const coordsModeRef = useRef<HTMLSpanElement>(null)
+  const initialDeviceFitRef = useRef(false)
   const animRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
   const [mapMode, setMapMode] = useState<'dark' | 'satellite' | 'earth' | 'latest'>('dark')
@@ -478,7 +486,7 @@ export default function FleetMap({
   // init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const m = new maplibregl.Map({ container: containerRef.current, style: STREET_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
+    const m = new maplibregl.Map({ container: containerRef.current, style: STREET_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: { compact: true }, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
     bindDenseMapLabels(m);
     m.on('style.load', () => {
       setMapReady(true)
@@ -516,6 +524,27 @@ export default function FleetMap({
     mapRef.current = m
     return () => { m.remove(); mapRef.current = null; setMapReady(false) }
   }, [])
+
+  // Frame the first usable operational picture once. Subsequent GPS refreshes never
+  // steal the operator's camera; only the explicit Fit devices control can refit it.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || initialDeviceFitRef.current) return
+    const positioned = vehicles.filter(hasValidDeviceCoordinates)
+    if (!positioned.length) return
+    initialDeviceFitRef.current = true
+    if (positioned.length === 1) {
+      const only = positioned[0]!
+      map.flyTo({ center: [only.lng, only.lat], zoom: 10, duration: 850 })
+      return
+    }
+    const longitudes = positioned.map(device => device.lng)
+    const latitudes = positioned.map(device => device.lat)
+    map.fitBounds(
+      [[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]],
+      { padding: { top: 104, right: 104, bottom: 138, left: 104 }, maxZoom: 8.2, duration: 900 },
+    )
+  }, [mapReady, vehicles])
 
   const reconCentre = worldViewport
     ? { latitude: worldViewport.latitude, longitude: worldViewport.longitude }
@@ -956,8 +985,8 @@ export default function FleetMap({
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
         cluster: true,
-        clusterRadius: 30,
-        clusterMaxZoom: 7,
+        clusterRadius: 42,
+        clusterMaxZoom: 8.2,
         clusterProperties: {
           sos_count: ['+', ['case', ['==', ['get', 'state'], 'sos'], 1, 0]],
         },
@@ -969,11 +998,12 @@ export default function FleetMap({
         source: sourceId,
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': ['case', ['>', ['get', 'sos_count'], 0], '#f0445d', '#11b9bd'],
-          'circle-radius': ['step', ['get', 'point_count'], 10, 3, 12, 8, 15, 20, 19],
-          'circle-stroke-color': '#07111e',
+          'circle-color': ['case', ['>', ['get', 'sos_count'], 0], '#ed4963', '#087f89'],
+          'circle-radius': ['step', ['get', 'point_count'], 14, 3, 17, 8, 21, 20, 25],
+          'circle-stroke-color': ['case', ['>', ['get', 'sos_count'], 0], '#fff0f2', '#c7fbf2'],
           'circle-stroke-width': 2,
-          'circle-opacity': 0.94,
+          'circle-opacity': 0.97,
+          'circle-blur': 0.04,
         },
       })
       map.addLayer({
@@ -984,7 +1014,7 @@ export default function FleetMap({
         layout: {
           'text-field': ['get', 'point_count_abbreviated'],
           'text-font': ['Open Sans Bold'],
-          'text-size': 10,
+          'text-size': 12,
           'text-allow-overlap': true,
         },
         paint: {
@@ -1009,7 +1039,7 @@ export default function FleetMap({
             'idle', '#e0b85b',
             '#8ea0b7',
           ],
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 2.2, 7, 4],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 3, 7, 5.5, 8.2, 6.5],
           'circle-stroke-color': '#07111e',
           'circle-stroke-width': 1.5,
           'circle-opacity': 0.98,
@@ -1067,9 +1097,7 @@ export default function FleetMap({
     const source = map.getSource('lf-operational-devices') as maplibregl.GeoJSONSource | undefined
     if (!source) return
     const features: GeoJSON.Feature<GeoJSON.Point, Record<string, string>>[] = vehicles
-      .filter(item => item.lat != null && item.lng != null &&
-        Number.isFinite(item.lat) && Number.isFinite(item.lng) &&
-        item.lat >= -90 && item.lat <= 90 && item.lng >= -180 && item.lng <= 180)
+      .filter(hasValidDeviceCoordinates)
       .map(item => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [item.lng!, item.lat!] },
@@ -1093,7 +1121,7 @@ export default function FleetMap({
   // sync vehicle markers
   useEffect(() => {
     const map = mapRef.current; if (!map) return
-    const positioned = vehicles.filter(v => v.lat != null && v.lng != null)
+    const positioned = vehicles.filter(hasValidDeviceCoordinates)
     const ids = new Set(positioned.map(v => v.id))
     for (const [id, marker] of markersRef.current) {
       if (!ids.has(id)) { marker.remove(); markersRef.current.delete(id) }
@@ -1306,21 +1334,21 @@ export default function FleetMap({
               type="button"
               className="fleet-map-control fleet-map-control--fit"
               onClick={() => {
-                const positioned = vehicles.filter(v => v.lat != null && v.lng != null && Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)))
+                const positioned = vehicles.filter(hasValidDeviceCoordinates)
                 const mapInstance = mapRef.current
                 if (!positioned.length || !mapInstance) return
                 if (positioned.length === 1) {
                   mapInstance.flyTo({ center: [Number(positioned[0].lng), Number(positioned[0].lat)], zoom: Math.max(10, mapInstance.getZoom()), duration: 700 })
                   return
                 }
-                const longitudes = positioned.map(v => Number(v.lng))
-                const latitudes = positioned.map(v => Number(v.lat))
+                const longitudes = positioned.map(v => v.lng)
+                const latitudes = positioned.map(v => v.lat)
                 mapInstance.fitBounds(
                   [[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]],
                   { padding: { top: 90, right: 90, bottom: 110, left: 90 }, maxZoom: 8, duration: 750 },
                 )
               }}
-              disabled={!vehicles.some(v => v.lat != null && v.lng != null && Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)))}
+              disabled={!vehicles.some(hasValidDeviceCoordinates)}
               title="Fit all positioned operational devices"
             >
               <Focus size={15} aria-hidden="true" />
@@ -1332,7 +1360,7 @@ export default function FleetMap({
 
       <div className="fleet-map-coordinate" role="status" aria-live="polite">
         <span className="fleet-map-coordinate__mode" ref={coordsModeRef}>MAP CENTRE</span>
-        <span className="fleet-map-coordinate__value" ref={coordsRef}>35.5000°N 1.2000°E</span>
+        <span className="fleet-map-coordinate__value" ref={coordsRef}>1.2000°N 35.5000°E</span>
       </div>
     </div>
   )
