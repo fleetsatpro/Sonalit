@@ -57,7 +57,7 @@ function injectStyles(): void {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    .sml-device-marker{--sml-accent:#32d6a0;--sml-marker-size:36px;--sml-marker-label-left:45px;position:relative;display:grid;place-items:center;width:42px;height:42px;min-height:42px;max-width:42px;box-sizing:border-box;margin:0;padding:0;border:0;border-radius:50%;background:transparent;color:#f4f7fb;appearance:none;cursor:pointer;isolation:isolate;outline:none;-webkit-tap-highlight-color:transparent;transition:background .16s ease;white-space:normal}
+    .sml-device-marker{--sml-accent:#32d6a0;--sml-marker-size:36px;--sml-marker-label-left:45px;position:relative;display:grid;place-items:center;width:48px;height:48px;min-height:48px;max-width:48px;box-sizing:border-box;margin:0;padding:0;border:0;border-radius:50%;background:transparent;color:#f4f7fb;appearance:none;cursor:pointer;isolation:isolate;outline:none;-webkit-tap-highlight-color:transparent;transition:background .16s ease;white-space:normal}
     .sml-device-marker:hover,.sml-device-marker:focus-visible,.sml-device-marker[data-selected="true"]{z-index:90}
     .sml-device-marker:focus-visible{outline:2px solid var(--sml-accent);outline-offset:3px}
     .sml-device-marker__accuracy{position:absolute;z-index:0;left:50%;top:50%;width:var(--sml-accuracy-diameter,0px);height:var(--sml-accuracy-diameter,0px);box-sizing:border-box;border:1px solid color-mix(in srgb,var(--sml-accent) 78%,white 22%);border-radius:50%;background:color-mix(in srgb,var(--sml-accent) 9%,transparent);box-shadow:0 0 0 1px rgba(3,10,18,.2);transform:translate(-50%,-50%);pointer-events:none;display:none}
@@ -150,15 +150,15 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
 }
 
 export function setOperationalMarkerDensity(button: HTMLButtonElement, zoom: number, selected = false): void {
-  const density = zoom < 7.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
+  const density = zoom < 8.2 ? 'overview' : zoom < 11.2 ? 'regional' : 'full';
   button.dataset.density = density;
   button.dataset.selected = selected ? 'true' : 'false';
   // At continent/country scale, show a true point, not a miniature vehicle
   // illustration whose screen footprint can imply a false location.
-  const markerSize = density === 'overview' ? (selected ? 9 : 7) : density === 'regional' ? (selected ? 13 : 10) : (selected ? 30 : 27);
+  const markerSize = density === 'overview' ? (selected ? 13 : 10) : density === 'regional' ? (selected ? 20 : 16) : (selected ? 34 : 30);
   button.style.setProperty('--sml-marker-size', markerSize + 'px');
-  button.style.setProperty('--sml-marker-label-left', (21 + markerSize / 2 + 6) + 'px');
-  button.style.setProperty('--sml-bearing-origin', (markerSize / 2 + 7) + 'px');
+  button.style.setProperty('--sml-marker-label-left', (24 + markerSize / 2 + 8) + 'px');
+  button.style.setProperty('--sml-bearing-origin', (markerSize / 2 + 9) + 'px');
 
   // Draw a geospatial uncertainty radius only when it has a meaningful
   // on-screen size. The true metre value remains in the device detail at all
