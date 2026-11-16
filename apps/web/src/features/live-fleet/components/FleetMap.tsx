@@ -1,6 +1,6 @@
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../../lib/spatialRendering.js'
 import { Activity, Car, Focus, Globe2, Layers3, Minus, Plus, Satellite } from 'lucide-react'
-import { STREET_STYLE } from '../../../lib/mapStyles.js'
+import { DARK_STREET_STYLE } from '../../../lib/mapStyles.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
@@ -486,7 +486,7 @@ export default function FleetMap({
   // init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const m = new maplibregl.Map({ container: containerRef.current, style: STREET_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: { compact: true }, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
+    const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STREET_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: { compact: true }, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
     bindDenseMapLabels(m);
     m.on('style.load', () => {
       setMapReady(true)
@@ -569,7 +569,7 @@ export default function FleetMap({
       appliedReconKeyRef.current = ''
       setMapMode('dark')
       setMapReady(false)
-      mapRef.current.setStyle(STREET_STYLE)
+      mapRef.current.setStyle(DARK_STREET_STYLE)
     }
   }, [opticalReconFetching, opticalReconError, mapMode])
 
@@ -579,7 +579,7 @@ export default function FleetMap({
     setMapReady(false)
     appliedReconKeyRef.current = ''
     setMapMode(next)
-    map.setStyle(next === 'dark' ? STREET_STYLE : next === 'satellite' ? SATELLITE_STYLE : EARTH_OBSERVATION_STYLE)
+    map.setStyle(next === 'dark' ? DARK_STREET_STYLE : next === 'satellite' ? SATELLITE_STYLE : EARTH_OBSERVATION_STYLE)
   }
 
   const activateLatestImagery = () => {
@@ -1140,7 +1140,7 @@ export default function FleetMap({
         existing.setLngLat([v.lng!, v.lat!])
         const el = existing.getElement() as HTMLButtonElement
         updateOperationalDeviceMarker(el, options)
-        el.style.display = map.getZoom() <= 8.2 ? 'none' : ''
+        el.style.display = map.getZoom() <= 8 ? 'none' : ''
         el.style.zIndex = zFor(v.status)
       } else {
         const el = createOperationalDeviceMarker(options)
