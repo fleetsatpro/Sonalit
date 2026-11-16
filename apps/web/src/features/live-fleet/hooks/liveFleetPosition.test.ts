@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   indexLatestGpsPositions,
+  heartbeatTimestampForDevice,
   isRecentDeviceHeartbeat,
   isValidGpsPosition,
   mergeGpsSnapshotWithRealtime,
@@ -73,6 +74,14 @@ describe('Live Fleet GPS position integrity', () => {
   it('treats future-dated or missing fix times as unavailable rather than live', () => {
     expect(secondsSinceGpsFix(null, Date.parse('2026-11-14T06:00:00.000Z'))).toBe(Number.POSITIVE_INFINITY);
     expect(secondsSinceGpsFix('2026-11-14T06:02:00.000Z', Date.parse('2026-11-14T06:00:00.000Z'))).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('does not infer a Guardian heartbeat from a recent GPS fix', () => {
+    const gpsFix = '2026-11-14T06:00:00.000Z';
+    expect(heartbeatTimestampForDevice(null, gpsFix, true)).toBeNull();
+    expect(heartbeatTimestampForDevice(undefined, gpsFix, true)).toBeNull();
+    expect(heartbeatTimestampForDevice('2026-11-14T05:59:00.000Z', gpsFix, true)).toBe('2026-11-14T05:59:00.000Z');
+    expect(heartbeatTimestampForDevice(null, gpsFix, false)).toBe(gpsFix);
   });
 
   it('keeps heartbeat freshness separate from GPS fix age', () => {
