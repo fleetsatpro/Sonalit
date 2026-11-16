@@ -27,6 +27,8 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain('clusterMaxZoom: 8');
     expect(source).toContain('initialDeviceFitRef');
     expect(source).toContain('function hasValidDeviceCoordinates');
+    expect(source).not.toContain("map.getZoom() <= 8.2 ? 'none' : ''");
+    expect(source).toContain('device.panic_active || device.status === \'sos\'');
     expect(source).toContain('attributionControl: { compact: true }');
     expect(source).toContain("getClusterExpansionZoom(clusterId)");
     expect(source).toContain("item.id");
