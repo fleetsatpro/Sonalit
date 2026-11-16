@@ -512,7 +512,8 @@ export default function CorridorWorldScene({
     deviceDataSource.clustering.minimumClusterSize = 3;
     deviceDataSource.clustering.clusterEvent.addEventListener((clusteredEntities, cluster) => {
       const deviceIds = clusteredEntities.map(entity => String(entity.id)).filter(id => id.startsWith('dev:')).map(id => id.slice(4));
-      const hasSos = deviceIds.some(id => liveMembersRef.current.find(member => member.id === id)?.status === 'sos');
+      const sosCount = deviceIds.filter(id => liveMembersRef.current.find(member => member.id === id)?.status === 'sos').length;
+      const hasSos = sosCount > 0;
       const accent = hasSos ? '#ff5268' : '#26c6c8';
       cluster.billboard.show = true;
       cluster.billboard.image = deviceClusterSvg(accent);
@@ -523,7 +524,7 @@ export default function CorridorWorldScene({
       cluster.billboard.disableDepthTestDistance = Number.POSITIVE_INFINITY;
       cluster.billboard.id = { sonalitCluster: true, deviceIds };
       cluster.label.show = true;
-      cluster.label.text = String(deviceIds.length);
+      cluster.label.text = hasSos ? String(deviceIds.length) + '\n' + String(sosCount) + ' SOS' : String(deviceIds.length);
       cluster.label.font = '800 14px Inter, sans-serif';
       cluster.label.fillColor = Cesium.Color.WHITE;
       cluster.label.outlineColor = Cesium.Color.fromCssColorString('#06101b');
