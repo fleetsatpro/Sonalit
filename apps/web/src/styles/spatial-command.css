@@ -579,8 +579,9 @@
 .spatial-map-surface[data-spatial-surface="fleet-2d"] .fleet-map-control-dock {
   position: absolute;
   z-index: 500;
-  right: 18px;
+  left: 50%;
   bottom: 18px;
+  transform: translateX(-50%);
   display: flex;
   align-items: stretch;
   gap: 7px;
@@ -724,6 +725,7 @@
     left: 10px;
     right: 10px;
     bottom: 10px;
+    transform: none;
     max-width: none;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr) minmax(0, 1.15fr);
