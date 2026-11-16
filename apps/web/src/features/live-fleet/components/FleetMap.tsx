@@ -1,4 +1,5 @@
 import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../../lib/spatialRendering.js'
+import { Globe2, Layers3, LocateFixed, Minus, Plus, ScanSearch, TrafficCone } from 'lucide-react'
 import { STREET_STYLE } from '../../../lib/mapStyles.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -415,6 +416,7 @@ export default function FleetMap({
   onNaturalEventSelectRef.current = onNaturalEventSelect
   onViewportChangeRef.current = onViewportChange
   const coordsRef = useRef<HTMLSpanElement>(null)
+  const coordsModeRef = useRef<HTMLSpanElement>(null)
   const animRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
   const [mapMode, setMapMode] = useState<'dark' | 'satellite' | 'earth' | 'latest'>('dark')
@@ -482,13 +484,15 @@ export default function FleetMap({
       setMapReady(true)
       syncWorldViewport()
     })
-    m.on('mousemove', e => {
+    const updateCoordinateReadout = (lat: number, lng: number, source: 'POINTER' | 'MAP CENTRE') => {
       if (!coordsRef.current) return
-      const { lat, lng } = e.lngLat
       coordsRef.current.textContent = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`
-    })
+      if (coordsModeRef.current) coordsModeRef.current.textContent = source
+    }
+    m.on('mousemove', e => updateCoordinateReadout(e.lngLat.lat, e.lngLat.lng, 'POINTER'))
     const syncWorldViewport = () => {
       const center = m.getCenter()
+      updateCoordinateReadout(center.lat, center.lng, 'MAP CENTRE')
       const bounds = m.getBounds()
       let west = bounds.getWest()
       let east = bounds.getEast()
@@ -1234,71 +1238,101 @@ export default function FleetMap({
     <div className="spatial-map-surface" data-spatial-surface="fleet-2d" style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%', background: '#05070d' }} />
 
-      {/* top-right controls */}
-      <div className="spatial-control-rail" style={{ position: 'absolute', right: 14, top: 14, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <button
-          onClick={() => setWorldSpatialOn(v => !v)}
-          title={worldSpatialOn ? 'Hide external world intelligence' : 'Show external world intelligence'}
-          aria-label={worldSpatialOn ? 'Hide external world intelligence' : 'Show external world intelligence'}
-          style={{ width: 34, height: 34, borderRadius: 9, background: worldSpatialOn ? 'rgba(196,181,253,.15)' : 'rgba(8,11,20,.92)', border: `1px solid ${worldSpatialOn ? 'rgba(196,181,253,.58)' : 'rgba(255,255,255,.11)'}`, color: worldSpatialOn ? '#c4b5fd' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: worldSpatialOn ? '0 0 18px rgba(196,181,253,.16), inset 0 0 12px rgba(196,181,253,.06)' : 'none', transition: 'all .18s ease' }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
-        </button>
-        {/* traffic toggle — hidden entirely if no TOMTOM_API_KEY is configured server-side */}
-        {trafficStatus?.configured && (
+      <div className="fleet-map-control-dock" role="group" aria-label="Map controls">
+        <section className="fleet-map-control-group" aria-label="World context">
+          <div className="fleet-map-control-group__label">World context</div>
           <button
-            onClick={() => setTrafficOn(v => !v)}
-            title={trafficOn ? 'Hide traffic (congestion + incidents)' : 'Show traffic (congestion + incidents) — coverage is sparse or absent in some conflict corridors'}
-            style={{ width: 34, height: 34, borderRadius: 7, background: trafficOn ? 'rgba(239,68,68,.18)' : 'rgba(8,11,20,.92)', border: `1px solid ${trafficOn ? 'rgba(239,68,68,.6)' : 'rgba(255,255,255,.11)'}`, color: trafficOn ? '#ef4444' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="2" width="6" height="20" rx="1"/><circle cx="12" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
+            type="button"
+            className="fleet-map-control"
+            data-active={worldSpatialOn}
+            aria-pressed={worldSpatialOn}
+            onClick={() => setWorldSpatialOn(value => !value)}
+            title={worldSpatialOn ? 'Hide external world intelligence' : 'Show external world intelligence'}
+          >
+            <Globe2 size={16} aria-hidden="true" />
+            <span className="fleet-map-control__copy"><strong>World signals</strong><small>{!worldSpatialOn ? 'Hidden' : worldError ? 'Source issue' : worldFetching ? 'Updating' : 'Visible'}</small></span>
           </button>
-        )}
-        {/* dedicated latest-optical control: normal map remains one click away */}
-        <button
-          onClick={() => mapMode === 'latest' ? cycleMapMode() : activateLatestImagery()}
-          title={mapMode === 'latest' ? 'Return to normal map' : 'Latest validated satellite observation'}
-          aria-label={mapMode === 'latest' ? 'Return to normal map' : 'Latest satellite imagery'}
-          style={{
-            width: 34, height: 34, borderRadius: 7,
-            background: mapMode === 'latest' ? 'rgba(45,212,191,.18)' : 'rgba(8,11,20,.92)',
-            border: mapMode === 'latest' ? '1px solid rgba(45,212,191,.72)' : '1px solid rgba(255,255,255,.11)',
-            color: mapMode === 'latest' ? '#5eead4' : '#7a7e8a',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
-          }}
-        >
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-          {reconLoading && <span style={{ position: 'absolute', inset: 2, border: '2px solid rgba(94,234,212,.18)', borderTopColor: '#5eead4', borderRadius: '50%', animation: 'lf-recon-spin .9s linear infinite' }} />}
-        </button>
-        {/* base-layer cycle: operational map → reference satellite → NASA Earth observation */}
-        <button
-          onClick={cycleMapMode}
-          title={mapMode === 'dark' ? 'Reference satellite' : mapMode === 'satellite' ? 'Earth observation' : 'Normal map'}
-          style={{
-            width: 34, height: 34, borderRadius: 7,
-            background: mapMode !== 'dark' && mapMode !== 'latest' ? 'rgba(232,168,48,.18)' : 'rgba(8,11,20,.92)',
-            border: mapMode !== 'dark' && mapMode !== 'latest' ? '1px solid rgba(232,168,48,.6)' : '1px solid rgba(255,255,255,.11)',
-            color: mapMode !== 'dark' && mapMode !== 'latest' ? '#e8a830' : '#7a7e8a',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
-        </button>
-        {/* zoom in */}
-        <button onClick={() => mapRef.current?.zoomIn()} style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.11)', color: '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-        {/* zoom out */}
-        <button onClick={() => mapRef.current?.zoomOut()} style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.11)', color: '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-        {/* fit all */}
-        <button onClick={() => {
-          const p = vehicles.filter(v => v.lat != null); if (!p.length || !mapRef.current) return
-          const lngs = p.map(v => v.lng!); const lats = p.map(v => v.lat!)
-          mapRef.current.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 8 })
-        }} style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.11)', color: '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⊕</button>
+          {trafficStatus?.configured && (
+            <button
+              type="button"
+              className="fleet-map-control"
+              data-active={trafficOn}
+              aria-pressed={trafficOn}
+              onClick={() => setTrafficOn(value => !value)}
+              title={trafficOn ? 'Hide traffic conditions' : 'Show traffic conditions'}
+            >
+              <TrafficCone size={16} aria-hidden="true" />
+              <span className="fleet-map-control__copy"><strong>Traffic</strong><small>{trafficOn ? 'Visible' : 'Off'}</small></span>
+            </button>
+          )}
+        </section>
+
+        <section className="fleet-map-control-group" aria-label="Imagery and basemap">
+          <div className="fleet-map-control-group__label">Map appearance</div>
+          <button
+            type="button"
+            className="fleet-map-control"
+            data-active={mapMode !== 'dark' && mapMode !== 'latest'}
+            onClick={cycleMapMode}
+            title="Cycle between vector, satellite and Earth-observation basemaps"
+            aria-label={`Change basemap. Current: ${mapMode === 'dark' ? 'Vector' : mapMode === 'satellite' ? 'Satellite' : mapMode === 'earth' ? 'Earth observation' : 'Latest imagery'}`}
+          >
+            <Layers3 size={16} aria-hidden="true" />
+            <span className="fleet-map-control__copy"><strong>Basemap</strong><small>{mapMode === 'dark' ? 'Vector' : mapMode === 'satellite' ? 'Satellite' : mapMode === 'earth' ? 'Earth view' : 'Latest'}</small></span>
+          </button>
+          <button
+            type="button"
+            className="fleet-map-control"
+            data-active={mapMode === 'latest'}
+            aria-pressed={mapMode === 'latest'}
+            onClick={() => mapMode === 'latest' ? cycleMapMode() : activateLatestImagery()}
+            title={mapMode === 'latest' ? 'Return to the standard basemap' : 'Open the latest validated satellite observation'}
+          >
+            <ScanSearch size={16} aria-hidden="true" />
+            <span className="fleet-map-control__copy"><strong>Latest imagery</strong><small>{reconLoading ? 'Loading' : mapMode === 'latest' ? 'Active' : 'On demand'}</small></span>
+          </button>
+        </section>
+
+        <section className="fleet-map-control-group fleet-map-control-group--navigation" aria-label="Map navigation">
+          <div className="fleet-map-control-group__label">Navigation</div>
+          <div className="fleet-map-navigation">
+            <button type="button" className="fleet-map-icon-control" onClick={() => mapRef.current?.zoomOut()} title="Zoom out" aria-label="Zoom out">
+              <Minus size={16} aria-hidden="true" />
+            </button>
+            <button type="button" className="fleet-map-icon-control" onClick={() => mapRef.current?.zoomIn()} title="Zoom in" aria-label="Zoom in">
+              <Plus size={16} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="fleet-map-control fleet-map-control--fit"
+              onClick={() => {
+                const positioned = vehicles.filter(v => v.lat != null && v.lng != null && Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)))
+                const mapInstance = mapRef.current
+                if (!positioned.length || !mapInstance) return
+                if (positioned.length === 1) {
+                  mapInstance.flyTo({ center: [Number(positioned[0].lng), Number(positioned[0].lat)], zoom: Math.max(10, mapInstance.getZoom()), duration: 700 })
+                  return
+                }
+                const longitudes = positioned.map(v => Number(v.lng))
+                const latitudes = positioned.map(v => Number(v.lat))
+                mapInstance.fitBounds(
+                  [[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]],
+                  { padding: { top: 90, right: 90, bottom: 110, left: 90 }, maxZoom: 8, duration: 750 },
+                )
+              }}
+              disabled={!vehicles.some(v => v.lat != null && v.lng != null && Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)))}
+              title="Fit all positioned operational devices"
+            >
+              <LocateFixed size={15} aria-hidden="true" />
+              <span className="fleet-map-control__copy"><strong>Fit devices</strong><small>All positions</small></span>
+            </button>
+          </div>
+        </section>
       </div>
 
-      {/* coords */}
-      <div className="spatial-coordinate" style={{ position: 'absolute', bottom: 14, left: 14, zIndex: 500, background: 'rgba(8,11,20,.64)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 7, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6, backdropFilter: 'blur(10px)', boxShadow: '0 8px 24px rgba(0,0,0,.2)' }}>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8f96a3" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        <span ref={coordsRef} style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8.5, color: '#8f96a3' }}>hover for coords</span>
+      <div className="fleet-map-coordinate" role="status" aria-live="polite">
+        <span className="fleet-map-coordinate__mode" ref={coordsModeRef}>MAP CENTRE</span>
+        <span className="fleet-map-coordinate__value" ref={coordsRef}>35.5000°N 1.2000°E</span>
       </div>
     </div>
   )
