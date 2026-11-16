@@ -42,7 +42,7 @@ const PHOTOREALISTIC_ION_ASSET_ID = 2275207;
 const STREET_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
 const SATELLITE_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const ROADS_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
-const PLACES_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+const PLACES_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}';
 const MODEL_URL = (import.meta.env['VITE_SONALIT_VEHICLE_MODEL_URL'] as string | undefined)?.trim() ?? '';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -329,10 +329,10 @@ function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: str
       layer.gamma = 0.9;
     });
   } else {
-    add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 16);
+    add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 19);
     if (mode === 'hybrid') add(ROADS_URL, 'Esri', 14);
     // Place names and administrative labels remain visible in satellite mode too.
-    add(PLACES_URL, 'Esri', 14);
+    add(PLACES_URL, 'Esri', 19);
   }
 }
 
