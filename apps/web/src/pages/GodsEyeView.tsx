@@ -55,7 +55,18 @@ const layerMeta: Record<WorldContextLayer, { short: string; label: string; icon:
 
 function toGlobeMember(v: LiveVehicle): GlobeMember {
   const hasMeasuredAccuracy = v.accuracy_m != null && Number.isFinite(v.accuracy_m) && v.accuracy_m > 0;
-  const status = v.panic_active || v.status === 'sos' ? 'sos' : v.status === 'move' ? 'moving' : v.status === 'idle' ? 'idle' : v.status === 'stop' ? 'stopped' : 'offline';
+  const heartbeatEpoch = v.last_seen_at ? Date.parse(v.last_seen_at) : Number.NaN;
+  const heartbeatAge = Number.isFinite(heartbeatEpoch) ? (Date.now() - heartbeatEpoch) / 1000 : Number.POSITIVE_INFINITY;
+  const heartbeatOnline = heartbeatAge >= -60 && heartbeatAge <= 300;
+  const fixIsAged = !Number.isFinite(v.secondsAgo) || v.secondsAgo > 300;
+  const isGuardian = v.kind === 'guardian';
+  const status = v.panic_active || v.status === 'sos' ? 'sos'
+    : isGuardian && heartbeatOnline && fixIsAged ? 'stale'
+      : isGuardian && v.status !== 'offline' ? 'online'
+        : v.status === 'move' ? 'moving'
+          : v.status === 'idle' ? 'idle'
+            : v.status === 'stop' ? 'stopped'
+              : 'offline';
   return {
     id: v.id,
     name: v.registration,
