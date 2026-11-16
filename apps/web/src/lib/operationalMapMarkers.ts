@@ -134,7 +134,7 @@ export function updateOperationalDeviceMarker(button: HTMLButtonElement, options
   button.dataset.freshness = freshness;
   button.dataset.headingAvailable = Number.isFinite(heading) ? 'true' : 'false';
   button.dataset.selected = options.selected ? 'true' : 'false';
-  button.dataset.accuracyMeters = Number.isFinite(Number(options.accuracyMeters)) && Number(options.accuracyMeters) >= 0 ? String(Number(options.accuracyMeters)) : '';
+  button.dataset.accuracyMeters = options.accuracyMeters != null && Number.isFinite(options.accuracyMeters) && options.accuracyMeters > 0 ? String(options.accuracyMeters) : '';
   button.dataset.latitude = Number.isFinite(Number(options.latitude)) ? String(Number(options.latitude)) : '';
   button.style.setProperty('--sml-accent', status.color);
   if (Number.isFinite(heading)) button.style.setProperty('--sml-heading', String(((heading % 360) + 360) % 360) + 'deg');
