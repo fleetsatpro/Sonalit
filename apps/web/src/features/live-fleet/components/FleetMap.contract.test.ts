@@ -22,11 +22,15 @@ describe('GEV 2D basemap contract', () => {
   it('uses truthful point clustering before revealing individual devices at regional zoom', () => {
     expect(source).toContain("sourceId = 'lf-operational-devices'");
     expect(source).toContain('cluster: true');
-    expect(source).toContain('clusterRadius: 30');
-    expect(source).toContain('clusterMaxZoom: 7');
+    expect(source).toContain('clusterRadius: 42');
+    expect(source).toContain('clusterMaxZoom: 8.2');
+    expect(source).toContain('initialDeviceFitRef');
+    expect(source).toContain('function hasValidDeviceCoordinates');
+    expect(source).toContain('attributionControl: { compact: true }');
     expect(source).toContain("getClusterExpansionZoom(clusterId)");
     expect(source).toContain("item.id");
     expect(source).toContain("map.getZoom() <= 8.2 ? 'none' : ''");
+    expect(source).toContain('1.2000°N 35.5000°E');
     expect(source).toContain("source.setData({ type: 'FeatureCollection', features })");
   });
 
