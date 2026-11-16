@@ -2972,10 +2972,9 @@
 }
 
 
-/* Final GEV coherence pass: preserve core navigation on touch screens. */
-.gev-shell[data-view="2D"] .gev-left-rail {
-  display: none;
-}
+/* GEV responsive map hierarchy: navigation, layers and inspectors own separate lanes. */
+.gev-shell[data-view="2D"] .gev-left-rail { display: none; }
+
 @media (max-width: 860px) {
   .gev-shell .gev-topbar { position: relative; }
   .gev-shell .gev-topcenter {
@@ -3015,13 +3014,111 @@
   }
   .gev-shell .gev-topcenter > .gev-segment svg,
   .gev-shell .gev-topcenter > .gev-cctv-trigger svg { width: 13px; height: 13px; }
+
+  .gev-shell .gev-left-rail {
+    top: 114px;
+    left: 10px;
+    right: 10px;
+    bottom: auto;
+    width: auto;
+    max-width: calc(100% - 20px);
+  }
+  .gev-shell .gev-rail {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 4px;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 5px;
+    border-radius: 13px;
+    scrollbar-width: none;
+  }
+  .gev-shell .gev-rail::-webkit-scrollbar { display: none; }
+  .gev-shell .gev-rail-head {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    padding: 0 7px 0 5px;
+    border-right: 1px solid rgba(255,255,255,.09);
+  }
+  .gev-shell .gev-rail-title {
+    color: #b7c5d6;
+    font: 700 8px/1 var(--d-font-mono, "Space Mono", ui-monospace, monospace);
+    letter-spacing: .1em;
+  }
+  .gev-shell .gev-rail-toggle {
+    width: 27px;
+    height: 30px;
+    flex: 0 0 27px;
+  }
+  .gev-shell .gev-layer-label { display: none; }
+  .gev-shell .gev-rail-button {
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+  }
+  .gev-shell .gev-rail-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 4px;
+    padding-left: 6px;
+    border-left: 1px solid rgba(255,255,255,.09);
+  }
+  .gev-shell .gev-status-orbit { display: none; }
+
+  .gev-shell .gev-overview-panel {
+    left: 10px;
+    right: auto;
+    top: 170px;
+    width: min(420px, calc(100vw - 20px));
+    min-width: 0;
+  }
+  .gev-shell .gev-overview-panel[data-collapsed="true"] {
+    left: 10px;
+    right: auto;
+    width: 64px;
+    min-width: 64px;
+  }
+  .gev-shell .gev-right-panel[data-collapsed="true"] {
+    top: 170px;
+    right: 10px;
+    left: auto;
+    bottom: auto;
+    width: 64px;
+    height: 64px;
+  }
+  .gev-shell .gev-right-panel:not([data-collapsed="true"]) {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: 10px;
+    width: auto;
+    height: min(39vh, 300px);
+    max-width: none;
+  }
+  .gev-shell .gev-detail {
+    left: 10px;
+    right: 10px;
+    bottom: calc(min(39vh, 300px) + 18px);
+    width: auto;
+  }
 }
 @media (max-width: 560px) {
   .gev-shell .gev-topcenter { left: 8px; right: 8px; }
   .gev-shell .gev-topcenter > .gev-segment,
   .gev-shell .gev-topcenter > .gev-cctv-trigger { padding-inline: 8px; }
+  .gev-shell .gev-left-rail { top: 112px; left: 8px; right: 8px; max-width: calc(100% - 16px); }
+  .gev-shell .gev-overview-panel { top: 166px; }
+  .gev-shell .gev-overview-panel[data-collapsed="true"],
+  .gev-shell .gev-right-panel[data-collapsed="true"] { top: 166px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .gev-shell .gev-topcenter,
-  .gev-shell .gev-topcenter * { transition: none !important; }
+  .gev-shell .gev-topcenter *,
+  .gev-shell .gev-rail,
+  .gev-shell .gev-rail * { transition: none !important; }
 }
