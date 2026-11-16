@@ -1015,8 +1015,11 @@ export default function CorridorWorldScene({
       const target = Cesium.Cartesian3.fromDegrees(member.lng!, member.lat!, 0);
       targetRef.current.set(member.id, target);
       if (!currentRef.current.has(member.id)) currentRef.current.set(member.id, target.clone());
-      const heading = Number(member.heading);
+      const heading = member.heading != null && Number.isFinite(member.heading) && member.heading >= 0 && member.heading < 360
+        ? member.heading
+        : Number.NaN;
       if (Number.isFinite(heading)) headingRef.current.set(member.id, heading);
+      else headingRef.current.delete(member.id);
       const position = currentRef.current.get(member.id)!;
       const selected = member.id === focusId;
       const color = STATUS_COLOR[member.status] ?? STATUS_COLOR.unknown!;
@@ -1033,6 +1036,8 @@ export default function CorridorWorldScene({
           existing.orientation = new Cesium.ConstantProperty(
             Cesium.Transforms.headingPitchRollQuaternion(currentRef.current.get(member.id) ?? target, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0)),
           );
+        } else {
+          existing.orientation = undefined;
         }
         if (moved) startVehicleRenderPulseRef.current?.();
         continue;

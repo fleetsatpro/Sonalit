@@ -34,6 +34,7 @@ import CorridorGlobe from '../components/geofences/CorridorGlobe.js'
 import CctvViewerPanel from '../components/geofences/CctvViewerPanel.js'
 import type { GlobeMember, RiskZone } from '../components/geofences/CorridorWorldScene.js'
 import type { LiveVehicle } from '../features/live-fleet/types/fleet.js'
+import { normalizeHeadingDegrees, resolveOperationalDeviceState } from '../lib/operationalMapMarkers.js'
 import '../styles/gev-command.css'
 import '../styles/cctv-wall.css'
 
@@ -55,28 +56,26 @@ const layerMeta: Record<WorldContextLayer, { short: string; label: string; icon:
 
 function toGlobeMember(v: LiveVehicle): GlobeMember {
   const hasMeasuredAccuracy = v.accuracy_m != null && Number.isFinite(v.accuracy_m) && v.accuracy_m > 0;
-  const heartbeatEpoch = v.last_seen_at ? Date.parse(v.last_seen_at) : Number.NaN;
-  const heartbeatAge = Number.isFinite(heartbeatEpoch) ? (Date.now() - heartbeatEpoch) / 1000 : Number.POSITIVE_INFINITY;
-  const heartbeatOnline = heartbeatAge >= -60 && heartbeatAge <= 300;
-  const fixIsAged = !Number.isFinite(v.secondsAgo) || v.secondsAgo > 300;
-  const isGuardian = v.kind === 'guardian';
-  const status = v.panic_active || v.status === 'sos' ? 'sos'
-    : isGuardian && heartbeatOnline && fixIsAged ? 'stale'
-      : isGuardian && v.status !== 'offline' ? 'online'
-        : v.status === 'move' ? 'moving'
-          : v.status === 'idle' ? 'idle'
-            : v.status === 'stop' ? 'stopped'
-              : 'offline';
+  const hasValidCoordinates = v.lat != null && v.lng != null
+    && Number.isFinite(v.lat) && Number.isFinite(v.lng)
+    && v.lat >= -90 && v.lat <= 90 && v.lng >= -180 && v.lng <= 180;
+  const resolved = resolveOperationalDeviceState({
+    kind: v.kind,
+    status: v.status,
+    panicActive: v.panic_active,
+    lastSeenAt: v.last_seen_at,
+    secondsAgo: v.secondsAgo,
+  });
   return {
     id: v.id,
     name: v.registration,
     officer_name: v.officer_name,
     lat: v.lat,
     lng: v.lng,
-    status,
-    heading: v.status === 'move' ? v.heading : null,
+    status: resolved.state,
+    heading: v.status === 'move' ? normalizeHeadingDegrees(v.heading) : null,
     speed_kph: v.speed_kmh,
-    position_state: v.lat == null || v.lng == null ? 'no_fix' : v.secondsAgo > 300 ? 'stale' : 'observed',
+    position_state: !hasValidCoordinates ? 'no_fix' : resolved.gpsFixFresh ? 'observed' : 'stale',
     position_uncertainty_m: hasMeasuredAccuracy ? v.accuracy_m : null,
     vehicle_type: v.kind === 'guardian' ? 'guardian' : 'vehicle',
   }

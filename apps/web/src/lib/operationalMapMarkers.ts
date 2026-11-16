@@ -99,6 +99,52 @@ export function operationalMarkerState(status: string): { key: OperationalMarker
   return STATE_META[normalized] ?? STATE_META.unknown!;
 }
 
+export interface OperationalDeviceStateInput {
+  kind?: string | null;
+  status?: string | null;
+  panicActive?: boolean | null;
+  lastSeenAt?: string | null;
+  secondsAgo?: number | null;
+}
+
+export interface OperationalDeviceState {
+  state: OperationalMarkerState;
+  heartbeatOnline: boolean;
+  gpsFixFresh: boolean;
+}
+
+/**
+ * One canonical display-state resolver for the 2D map, 3D globe and device
+ * markers. Guardian heartbeat and GPS freshness remain separate signals:
+ * a live heartbeat with an aged/missing fix is STALE, not ONLINE; a missing
+ * or expired heartbeat is OFFLINE. SOS always overrides both.
+ */
+export function resolveOperationalDeviceState(input: OperationalDeviceStateInput, now = Date.now()): OperationalDeviceState {
+  const rawStatus = (input.status ?? 'unknown').trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+  const heartbeatEpoch = input.lastSeenAt ? Date.parse(input.lastSeenAt) : Number.NaN;
+  const heartbeatAgeSeconds = Number.isFinite(heartbeatEpoch) ? (now - heartbeatEpoch) / 1000 : Number.NaN;
+  const heartbeatOnline = Number.isFinite(heartbeatAgeSeconds) && heartbeatAgeSeconds >= -60 && heartbeatAgeSeconds <= 300;
+  const fixAge = typeof input.secondsAgo === 'number' ? input.secondsAgo : Number.NaN;
+  const gpsFixFresh = Number.isFinite(fixAge) && fixAge >= 0 && fixAge <= 300;
+
+  let state: OperationalMarkerState;
+  if (input.panicActive === true || rawStatus === 'sos' || rawStatus === 'panic') {
+    state = 'sos';
+  } else if (input.kind === 'guardian') {
+    state = rawStatus === 'offline' || !heartbeatOnline ? 'offline' : gpsFixFresh ? 'online' : 'stale';
+  } else {
+    state = operationalMarkerState(rawStatus).key;
+  }
+
+  return { state, heartbeatOnline, gpsFixFresh };
+}
+
+/** Accept only an actual compass bearing; null/undefined must never become 0°. */
+export function normalizeHeadingDegrees(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 360) return null;
+  return value === 360 ? 0 : value;
+}
+
 export function operationalMarkerSvg(kind: OperationalMarkerKind, color = '#eaf2f8'): string {
   return '<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 24 24">' +
     ICONS[kind].replace('<path d="', '<path fill="' + color + '" d="') + '</svg>';

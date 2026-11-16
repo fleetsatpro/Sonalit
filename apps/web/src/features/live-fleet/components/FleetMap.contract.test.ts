@@ -28,13 +28,15 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain('initialDeviceFitRef');
     expect(source).toContain('function hasValidDeviceCoordinates');
     expect(source).not.toContain("map.getZoom() <= 8.2 ? 'none' : ''");
-    expect(source).toContain('device.panic_active || device.status === \'sos\'');
+    expect(source).toContain('resolveOperationalDeviceState({');
+    expect(source).toContain('minimalLongitudeBounds(longitudes)');
     expect(source).toContain('attributionControl: { compact: true }');
     expect(source).toContain("getClusterExpansionZoom(clusterId)");
     expect(source).toContain("item.id");
     expect(source).toContain("map.getZoom() <= 8 ? 'none' : ''");
     expect(source).toContain('1.2000°N 35.5000°E');
     expect(source).toContain("source.setData({ type: 'FeatureCollection', features })");
+    expect(source).toContain("heading: v.status === 'move' ? normalizeHeadingDegrees(v.heading) : null");
   });
 
   it('uses the zoom-resilient shared vector basemap and caps Esri satellite tiles', () => {

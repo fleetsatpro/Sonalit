@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import { bindDenseMapLabels } from '../../../lib/mapLabels.js'
-import { createOperationalDeviceMarker, setOperationalMarkerDensity, updateOperationalDeviceMarker } from '../../../lib/operationalMapMarkers.js'
+import { createOperationalDeviceMarker, normalizeHeadingDegrees, resolveOperationalDeviceState, setOperationalMarkerDensity, updateOperationalDeviceMarker } from '../../../lib/operationalMapMarkers.js'
+import { minimalLongitudeBounds } from '../../../lib/geographicBounds.js'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
 import {
@@ -322,24 +323,21 @@ function formatFixAge(secondsAgo: number): string {
 
 function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
   const isOfficer = v.kind === 'guardian';
-  const isSos = v.panic_active || v.status === 'sos';
+  const resolved = resolveOperationalDeviceState({
+    kind: v.kind,
+    status: v.status,
+    panicActive: v.panic_active,
+    lastSeenAt: v.last_seen_at,
+    secondsAgo: v.secondsAgo,
+  });
+  const state = resolved.state;
+  const isSos = state === 'sos';
   const now = Date.now();
-  const heartbeatEpoch = v.last_seen_at ? Date.parse(v.last_seen_at) : Number.NaN;
-  const heartbeatAge = Number.isFinite(heartbeatEpoch) ? (now - heartbeatEpoch) / 1000 : Number.POSITIVE_INFINITY;
-  const heartbeatOnline = heartbeatAge >= -60 && heartbeatAge <= 300;
-  const fixIsAged = !Number.isFinite(v.secondsAgo) || v.secondsAgo > 300;
-  const state = isSos
-    ? 'sos'
-    : isOfficer && heartbeatOnline && fixIsAged
-      ? 'stale'
-      : isOfficer && v.status !== 'offline'
-        ? 'online'
-        : v.status;
-  const activity = v.status === 'move'
+  const activity = state === 'moving'
     ? (Number.isFinite(v.speed_kmh) ? Math.round(v.speed_kmh) + ' km/h' : 'MOVING')
-    : v.status === 'idle' || v.status === 'stop'
+    : state === 'idle' || state === 'stopped'
       ? 'STATIONARY'
-      : v.status === 'offline' ? 'NO RECENT FIX' : 'SOS';
+      : state === 'sos' ? 'SOS' : state.toUpperCase().replaceAll('_', ' ');
   const gpsAge = formatFixAge(v.secondsAgo);
   const healthTimestamp = v.health_recorded_at ? Date.parse(v.health_recorded_at) : Number.NaN;
   const healthAgeMs = now - healthTimestamp;
@@ -353,13 +351,15 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
     ? 'SOS · ALERT ACTIVE'
     : isOfficer && state === 'stale'
       ? 'HEARTBEAT ONLINE · GPS FIX AGED'
-      : v.status === 'offline'
-        ? 'OFFLINE · GPS ' + gpsAge
-        : isOfficer
-          ? (v.status === 'move' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
-          : v.status === 'move'
-            ? 'MOVING · ' + activity
-            : state.toUpperCase().replaceAll('_', ' ');
+      : isOfficer && state === 'offline'
+        ? 'HEARTBEAT OFFLINE'
+        : state === 'offline'
+          ? 'OFFLINE · GPS ' + gpsAge
+          : isOfficer
+            ? (state === 'moving' ? 'MOVING · ' + activity : 'STATIONARY') + batteryDetail
+            : state === 'moving'
+              ? 'MOVING · ' + activity
+              : state.toUpperCase().replaceAll('_', ' ');
   const identity = isOfficer ? (v.officer_name || v.registration || 'Field officer') : (v.registration || 'Vehicle');
   const healthSummary = isOfficer && v.battery_level != null
     ? 'BAT ' + Math.round(v.battery_level) + '% · HEALTH ' + healthAge + ' AGO'
@@ -372,7 +372,7 @@ function markerOptions(v: LiveVehicle, selected: boolean, zoom: number) {
     identity,
     state,
     detail,
-    heading: v.status === 'move' ? v.heading : null,
+    heading: v.status === 'move' ? normalizeHeadingDegrees(v.heading) : null,
     accuracyMeters: v.accuracy_m,
     latitude: v.lat,
     selected,
@@ -540,8 +540,9 @@ export default function FleetMap({
     }
     const longitudes = positioned.map(device => device.lng)
     const latitudes = positioned.map(device => device.lat)
+    const [west, east] = minimalLongitudeBounds(longitudes)
     map.fitBounds(
-      [[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]],
+      [[west, Math.min(...latitudes)], [east, Math.max(...latitudes)]],
       { padding: { top: 104, right: 104, bottom: 138, left: 104 }, maxZoom: 8, duration: 900 },
     )
   }, [mapReady, vehicles])
@@ -1103,16 +1104,13 @@ export default function FleetMap({
         geometry: { type: 'Point', coordinates: [item.lng!, item.lat!] },
         properties: {
           device_id: item.id,
-          state: item.panic_active || item.status === 'sos'
-            ? 'sos'
-            : item.kind === 'guardian' &&
-              Number.isFinite(Date.parse(item.last_seen_at ?? '')) &&
-              (Date.now() - Date.parse(item.last_seen_at ?? '')) / 1000 <= 300 &&
-              item.secondsAgo > 300
-              ? 'stale'
-              : item.status === 'move' ? 'moving'
-                : item.status === 'stop' ? 'stopped'
-                  : item.status,
+          state: resolveOperationalDeviceState({
+            kind: item.kind,
+            status: item.status,
+            panicActive: item.panic_active,
+            lastSeenAt: item.last_seen_at,
+            secondsAgo: item.secondsAgo,
+          }).state,
         },
       }))
     source.setData({ type: 'FeatureCollection', features })
@@ -1343,8 +1341,9 @@ export default function FleetMap({
                 }
                 const longitudes = positioned.map(v => v.lng)
                 const latitudes = positioned.map(v => v.lat)
+                const [west, east] = minimalLongitudeBounds(longitudes)
                 mapInstance.fitBounds(
-                  [[Math.min(...longitudes), Math.min(...latitudes)], [Math.max(...longitudes), Math.max(...latitudes)]],
+                  [[west, Math.min(...latitudes)], [east, Math.max(...latitudes)]],
                   { padding: { top: 90, right: 90, bottom: 110, left: 90 }, maxZoom: 8, duration: 750 },
                 )
               }}
