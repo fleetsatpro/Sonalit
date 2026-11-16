@@ -30,15 +30,15 @@ describe('GEV 2D basemap contract', () => {
     expect(source).toContain('attributionControl: { compact: true }');
     expect(source).toContain("getClusterExpansionZoom(clusterId)");
     expect(source).toContain("item.id");
-    expect(source).toContain("map.getZoom() <= 8.2 ? 'none' : ''");
+    expect(source).toContain("map.getZoom() <= 8 ? 'none' : ''");
     expect(source).toContain('1.2000°N 35.5000°E');
     expect(source).toContain("source.setData({ type: 'FeatureCollection', features })");
   });
 
   it('uses the zoom-resilient shared vector basemap and caps Esri satellite tiles', () => {
-    expect(source).toContain("import { STREET_STYLE } from '../../../lib/mapStyles.js'");
-    expect(source).toContain('style: STREET_STYLE');
-    expect(source).toContain("next === 'dark' ? STREET_STYLE");
+    expect(source).toContain("import { DARK_STREET_STYLE } from '../../../lib/mapStyles.js'");
+    expect(source).toContain('style: DARK_STREET_STYLE');
+    expect(source).toContain("next === 'dark' ? DARK_STREET_STYLE");
     expect(source).not.toContain('World_Street_Map/MapServer/tile/');
     expect(source).toContain("anchor: 'center'");
     expect(source).toContain('subpixelPositioning: true');
