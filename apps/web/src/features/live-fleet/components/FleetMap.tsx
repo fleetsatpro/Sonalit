@@ -1145,7 +1145,7 @@ export default function FleetMap({
       } else {
         const el = createOperationalDeviceMarker(options)
         el.style.display = map.getZoom() <= 8 ? 'none' : ''
-        el.style.zIndex = zFor(v.status)
+        el.style.zIndex = zFor(v)
         el.addEventListener('click', event => {
           event.stopPropagation()
           const current = vehiclesRef.current.find(item => item.id === v.id)
